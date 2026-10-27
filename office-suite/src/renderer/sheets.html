@@ -182,6 +182,8 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="dedupe"><span class="ico">⧉</span>Remove<br>Duplicates</button>
       <button class="btn big" id="textToCols"><span class="ico">⇹</span>Text to<br>Columns</button>
+      <button class="btn big" id="dataValidation" title="Data Validation: allowed values, dropdown lists, input and error messages"><span class="ico">☑</span>Data<br>Validation</button>
+      <button class="btn big" id="circleInvalid" title="Circle cells whose values break their validation rule"><span class="ico">◯</span>Circle<br>Invalid</button>
     </div><div class="label">Data Tools</div></div>
   </div>
 
@@ -210,6 +212,9 @@
       <div class="sel-box" id="selBox"></div>
       <textarea class="cell-editor" id="cellEditor" spellcheck="false" data-app-editor="1" hidden></textarea>
       <div class="charts-layer" id="chartsLayer"></div>
+      <button class="dv-arrow" id="dvArrow" tabindex="-1" title="Choose from the list (Alt+Down)" hidden>▾</button>
+      <div class="dv-list" id="dvList" role="listbox" hidden></div>
+      <div class="dv-prompt" id="dvPrompt" hidden><b></b><span></span></div>
     </div>
   </div>
   <div class="findbar" id="findbar">
@@ -264,6 +269,7 @@
 <script src="js/xlsx-patch.js"></script>
 <script src="js/sheets-cf.js"></script>
 <script src="js/sheets-pivot.js"></script>
+<script src="js/sheets-dv.js"></script>
 <script src="js/sheets.js"></script>
 </body>
 </html>

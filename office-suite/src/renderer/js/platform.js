@@ -202,6 +202,22 @@
       const r = await UI.form(title, [{ name: 'v', label, value }]);
       return r ? r.v : null;
     },
+    /** A message with a row of buttons; resolves to the index of the one pressed, or -1 (Escape). */
+    choose(title, message, buttons, icon = '') {
+      return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'modal-backdrop';
+        back.innerHTML = '<div class="modal" role="alertdialog"><h2></h2><p style="white-space:pre-wrap"></p><div class="actions"></div></div>';
+        back.querySelector('h2').textContent = (icon ? icon + ' ' : '') + title;
+        back.querySelector('p').textContent = message;
+        const row = back.querySelector('.actions');
+        const done = i => { back.remove(); resolve(i); };
+        buttons.forEach((label, i) => { const b = document.createElement('button'); b.textContent = label; if (i === 0) b.className = 'primary'; b.onclick = () => done(i); row.appendChild(b); });
+        back.addEventListener('keydown', e => { if (e.key === 'Escape') { e.preventDefault(); done(-1); } });
+        document.body.appendChild(back);
+        row.querySelector('button').focus();
+      });
+    },
     confirm(title, message) {
       return new Promise(resolve => {
         const back = document.createElement('div');

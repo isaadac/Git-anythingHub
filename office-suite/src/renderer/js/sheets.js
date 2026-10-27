@@ -34,7 +34,7 @@
   UI.initRibbon();
 
   // ---------- Model ----------
-  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [], pivots: [] });
+  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [], pivots: [], dv: [] });
   let book = { sheets: [newSheet('Sheet1')], active: 0 };
   const sheet = () => book.sheets[book.active];
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
@@ -67,6 +67,7 @@
   });
   const valueAt = (r, c) => engine.value(sheet().name, r, c);
   const cf = SheetsCF({ engine, sheet: () => sheet() });
+  const dv = SheetsDV({ engine, sheet: () => sheet(), sheetByName: n => sheetByName(n) });
 
   function setCell(r, c, props, s = sheet()) {
     const key = addr(r, c);
@@ -208,6 +209,7 @@
     syncToolbar();
     updateAggregate();
     updatePivotPane();
+    updateDvUi();
   }
   function scrollIntoView(r, c) {
     const z = zoomLevel();
@@ -372,6 +374,7 @@
     style.borderRight = bd.r ? '1px solid #000' : '';
     style.borderBottom = bd.b ? '1px solid #000' : '';
     if (fmt) applyCf(style, fmt);
+    if (circleInvalid) { const rule = dv.ruleAt(r, c); if (rule && !dv.check(rule, r, c, valueAt(r, c))) t.classList.add('dv-bad'); }
     const s = sheet();
     if (s.hiddenRows.length && r === 0 && s.filterCol === c) t.firstChild ? (t.firstChild.textContent += ' ⏷') : (t.textContent = '⏷');
     paintedCells.push(t);
@@ -568,6 +571,8 @@
     // Close unbalanced parentheses like Excel does.
     if (v[0] === '=') { const open = (v.match(/\(/g) || []).length - (v.match(/\)/g) || []).length; if (open > 0) v += ')'.repeat(open); v = v.replace(/^=\s*/, '='); }
     if (v !== rawAt(active.r, active.c)) {
+      const before = cellAt(active.r, active.c);
+      const prev = before ? JSON.parse(JSON.stringify(before)) : null;
       snapshot();
       setCell(active.r, active.c, { v });
       autoFormat(active.r, active.c, v);
@@ -576,6 +581,12 @@
       ensureSize(active.r, active.c);
       fitRows(new Set([active.r]));
       changed();
+      const rule = dv.ruleAt(active.r, active.c);
+      if (rule && rule.error.show !== false && !dv.check(rule, active.r, active.c, valueAt(active.r, active.c))) {
+        document.getElementById('stMode').textContent = 'Ready';
+        refuseValue(rule, active.r, active.c, prev, editor.value, moveR, moveC);
+        return;
+      }
     }
     document.getElementById('stMode').textContent = 'Ready';
     wrap.focus();
@@ -813,6 +824,8 @@
     if (editing) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key;
+    if (!dvList.hidden && dvListKey(e)) return;
+    if (e.altKey && k === 'ArrowDown' && !dvArrow.hidden) { e.preventDefault(); openDvList(); return; }
     const s = sheet();
     const moves = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
     if (moves[k]) {
@@ -1096,6 +1109,7 @@
       return n;
     }).filter(Boolean);
     s.cf = SheetsCF.shift(s.cf, axis, index, count, s.name);
+    s.dv = SheetsCF.shift(s.dv, axis, index, count, s.name);
     shiftPivots(s, axis, index, count);
     buildGrid();
     state.markDirty();
@@ -1249,6 +1263,204 @@
   }
   document.getElementById('condFmt').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) conditionalFormat(v); });
   document.getElementById('cfManage').addEventListener('click', manageCfRules);
+
+  // ---------- Data validation ----------
+  const dvArrow = document.getElementById('dvArrow');
+  const dvList = document.getElementById('dvList');
+  const dvPrompt = document.getElementById('dvPrompt');
+  let circleInvalid = false;
+  /** A typed value broke the cell's rule: Stop refuses it, Warning and Information ask. */
+  async function refuseValue(rule, r, c, prev, typed, moveR, moveC) {
+    const undoRefused = () => {
+      const k = addr(r, c);
+      if (prev) sheet().cells[k] = prev; else delete sheet().cells[k];
+      const j = undoStack.pop(); if (j) undoBytes -= j.length;
+      changed(false);
+    };
+    const msg = rule.error.text || SheetsDV.defaultError(rule);
+    const title = rule.error.title || 'Atlas Sheets';
+    const reopen = () => { select(r, c); startEdit(typed); };
+    if (rule.error.style === 'stop') {
+      undoRefused();
+      const i = await UI.choose(title, msg, ['Retry', 'Cancel'], '⛔');
+      if (i === 0) reopen(); else select(r, c);
+      return;
+    }
+    if (rule.error.style === 'warning') {
+      const i = await UI.choose(title, msg + '\n\nContinue?', ['Yes', 'No', 'Cancel'], '⚠️');
+      if (i === 0) { select(r + moveR, c + moveC); return; }
+      undoRefused();
+      if (i === 1) reopen(); else select(r, c);
+      return;
+    }
+    const i = await UI.choose(title, msg, ['OK', 'Cancel'], 'ℹ️');
+    if (i === 0) { select(r + moveR, c + moveC); return; }
+    undoRefused();
+    select(r, c);
+  }
+  /** Shows the dropdown arrow and input message for the active cell. */
+  function updateDvUi() {
+    dvList.hidden = true;
+    const rule = dv.ruleAt(active.r, active.c);
+    const b = rangeBox({ r1: active.r, c1: active.c, r2: active.r, c2: active.c });
+    const showArrow = !!rule && rule.type === 'list' && rule.dropdown;
+    dvArrow.hidden = !showArrow;
+    if (showArrow) Object.assign(dvArrow.style, { left: (b.x + b.w + 1) + 'px', top: (b.y + Math.max(0, b.h - 21)) + 'px' });
+    const p = rule && rule.prompt;
+    dvPrompt.hidden = !p;
+    if (p) {
+      dvPrompt.querySelector('b').textContent = p.title;
+      dvPrompt.querySelector('span').textContent = p.text;
+      Object.assign(dvPrompt.style, { left: (b.x + Math.min(b.w, 40)) + 'px', top: (b.y + b.h + 6) + 'px' });
+    }
+  }
+  function openDvList() {
+    const rule = dv.ruleAt(active.r, active.c);
+    if (!rule || rule.type !== 'list') return;
+    const items = dv.listItems(rule, active.r, active.c);
+    dvList.textContent = '';
+    const cur = String(valueAt(active.r, active.c)).toLowerCase();
+    items.forEach(it => {
+      const d = document.createElement('div');
+      d.setAttribute('role', 'option');
+      d.textContent = it;
+      if (it.toLowerCase() === cur) d.className = 'on';
+      d.addEventListener('mousedown', e => { e.preventDefault(); pickDv(it); });
+      dvList.appendChild(d);
+    });
+    if (!items.length) { const d = document.createElement('div'); d.textContent = '(no items)'; d.style.color = '#888'; dvList.appendChild(d); }
+    const b = rangeBox({ r1: active.r, c1: active.c, r2: active.r, c2: active.c });
+    Object.assign(dvList.style, { left: b.x + 'px', top: (b.y + b.h + 1) + 'px', minWidth: (b.w + 19) + 'px' });
+    dvList.hidden = false;
+    dvPrompt.hidden = true;
+    (dvList.querySelector('.on') || dvList.firstChild).scrollIntoView({ block: 'nearest' });
+  }
+  function pickDv(text) {
+    dvList.hidden = true;
+    snapshot();
+    setCell(active.r, active.c, { v: typeof F.parseLiteral(text) !== 'string' && !/^(TRUE|FALSE)$/.test(text) ? text : (text[0] === '=' ? "'" + text : text) });
+    changed();
+    wrap.focus();
+  }
+  function dvListKey(e) {
+    const opts = [...dvList.children];
+    let i = opts.findIndex(o => o.classList.contains('on'));
+    if (e.key === 'Escape') { dvList.hidden = true; e.preventDefault(); return true; }
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      i = Math.max(0, Math.min(opts.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)));
+      opts.forEach((o, j) => o.classList.toggle('on', j === i));
+      opts[i] && opts[i].scrollIntoView({ block: 'nearest' });
+      return true;
+    }
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); if (opts[i] && opts[i].getAttribute('role')) pickDv(opts[i].textContent); else dvList.hidden = true; return true; }
+    return false;
+  }
+  dvArrow.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); if (dvList.hidden) openDvList(); else dvList.hidden = true; });
+  document.addEventListener('mousedown', e => { if (!dvList.hidden && !dvList.contains(e.target) && e.target !== dvArrow) dvList.hidden = true; });
+
+  function validationDialog() {
+    commitEdit();
+    const g = selRange();
+    const ref = SheetsCF.refOf(g);
+    const cur = dv.ruleAt(active.r, active.c) || { type: 'any', allowBlank: true, dropdown: true, error: { style: 'stop' } };
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = `<div class="modal dv-dialog" role="dialog" aria-label="Data Validation"><h2>Data Validation</h2>
+      <div class="dv-tabs"><button data-p="0" class="on">Settings</button><button data-p="1">Input Message</button><button data-p="2">Error Alert</button></div>
+      <div class="dv-page" data-p="0">
+        <label>Allow<select name="type"><option value="any">Any value</option><option value="whole">Whole number</option><option value="decimal">Decimal</option><option value="list">List</option><option value="date">Date</option><option value="time">Time</option><option value="textLength">Text length</option><option value="custom">Custom</option></select></label>
+        <label data-for="op">Data<select name="op">${SheetsDV.OPS.map(o => `<option value="${o}">${SheetsDV.OP_WORDS[o]}</option>`).join('')}</select></label>
+        <label data-for="v1"><span>Minimum</span><input name="v1" spellcheck="false"></label>
+        <label data-for="v2"><span>Maximum</span><input name="v2" spellcheck="false"></label>
+        <label data-for="src">Source<input name="src" placeholder="Yes,No,Maybe  or  =$E$1:$E$9" spellcheck="false"></label>
+        <label data-for="formula">Formula<input name="formula" placeholder="=LEN(A1)<=10" spellcheck="false"></label>
+        <label class="chk" data-for="blank"><input type="checkbox" name="blank"> Ignore blank</label>
+        <label class="chk" data-for="dropdown"><input type="checkbox" name="dropdown"> In-cell dropdown</label>
+        <small style="color:var(--muted)">Applies to ${ref}</small>
+      </div>
+      <div class="dv-page" data-p="1" hidden>
+        <label class="chk"><input type="checkbox" name="showPrompt"> Show input message when cell is selected</label>
+        <label>Title<input name="ptitle" maxlength="32"></label>
+        <label>Input message<textarea name="ptext" maxlength="255"></textarea></label>
+      </div>
+      <div class="dv-page" data-p="2" hidden>
+        <label class="chk"><input type="checkbox" name="showError"> Show error alert after invalid data is entered</label>
+        <label>Style<select name="estyle"><option value="stop">Stop</option><option value="warning">Warning</option><option value="information">Information</option></select></label>
+        <label>Title<input name="etitle" maxlength="32"></label>
+        <label>Error message<textarea name="etext" maxlength="255"></textarea></label>
+      </div>
+      <div class="actions"><button class="left clear">Clear All</button><button class="cancel">Cancel</button><button class="primary ok">OK</button></div></div>`;
+    const q = n => back.querySelector(`[name="${n}"]`);
+    q('type').value = cur.type;
+    q('op').value = cur.op || 'between';
+    if (cur.type === 'list') q('src').value = cur.v1;
+    else if (cur.type === 'custom') q('formula').value = cur.v1;
+    else { q('v1').value = cur.v1 || ''; q('v2').value = cur.v2 || ''; }
+    q('blank').checked = cur.allowBlank !== false;
+    q('dropdown').checked = cur.dropdown !== false;
+    q('showPrompt').checked = !!cur.prompt;
+    q('ptitle').value = cur.prompt ? cur.prompt.title : '';
+    q('ptext').value = cur.prompt ? cur.prompt.text : '';
+    q('showError').checked = cur.error.show !== false;
+    q('estyle').value = cur.error.style;
+    q('etitle').value = cur.error.title || '';
+    q('etext').value = cur.error.text || '';
+    const sync = () => {
+      const t = q('type').value, op = q('op').value, between = /etween/.test(op);
+      const show = { op: !['any', 'list', 'custom'].includes(t), v1: !['any', 'list', 'custom'].includes(t), v2: !['any', 'list', 'custom'].includes(t) && between, src: t === 'list', formula: t === 'custom', blank: t !== 'any', dropdown: t === 'list' };
+      back.querySelectorAll('[data-for]').forEach(l => { l.hidden = !show[l.dataset.for]; });
+      const unit = t === 'date' ? ' (date, e.g. 2024-12-31)' : t === 'time' ? ' (time, e.g. 17:30)' : '';
+      back.querySelector('[data-for="v1"] span').textContent = (between ? 'Minimum' : 'Value') + unit;
+      back.querySelector('[data-for="v2"] span').textContent = 'Maximum' + unit;
+    };
+    q('type').addEventListener('change', sync); q('op').addEventListener('change', sync);
+    sync();
+    back.querySelectorAll('.dv-tabs button').forEach(b => b.addEventListener('click', () => {
+      back.querySelectorAll('.dv-tabs button').forEach(x => x.classList.toggle('on', x === b));
+      back.querySelectorAll('.dv-page').forEach(pg => { pg.hidden = pg.dataset.p !== b.dataset.p; });
+    }));
+    const close = () => back.remove();
+    const inside = rule => { const a = SheetsCF.area(rule.ref); return a.r1 >= g.r1 && a.r2 <= g.r2 && a.c1 >= g.c1 && a.c2 <= g.c2; };
+    back.querySelector('.cancel').addEventListener('click', close);
+    back.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    back.querySelector('.clear').addEventListener('click', () => {
+      close();
+      snapshot();
+      sheet().dv = (sheet().dv || []).filter(r => !inside(r));
+      changed();
+    });
+    back.querySelector('.ok').addEventListener('click', () => {
+      const t = q('type').value;
+      const others = (sheet().dv || []).filter(r => !inside(r));
+      if (t === 'any') { close(); snapshot(); sheet().dv = others; changed(); return; }
+      const rule = SheetsDV.clean({
+        ref, type: t, op: q('op').value,
+        v1: t === 'list' ? q('src').value.trim() : t === 'custom' ? q('formula').value.trim() : q('v1').value.trim(),
+        v2: q('v2').value.trim(), allowBlank: q('blank').checked, dropdown: q('dropdown').checked,
+        prompt: q('showPrompt').checked ? { title: q('ptitle').value, text: q('ptext').value } : null,
+        error: { style: q('estyle').value, title: q('etitle').value, text: q('etext').value, show: q('showError').checked }
+      });
+      if (!rule) { UI.toast(t === 'list' ? 'Enter the list items or a range for Source' : 'Fill in the values for this rule', 3500); return; }
+      close();
+      snapshot();
+      sheet().dv = [rule, ...others]; // the new rule wins where it overlaps an older one
+      changed();
+    });
+    document.body.appendChild(back);
+    q('type').focus();
+  }
+  document.getElementById('dataValidation').addEventListener('click', validationDialog);
+  document.getElementById('circleInvalid').addEventListener('click', e => {
+    circleInvalid = !circleInvalid;
+    e.currentTarget.classList.toggle('on', circleInvalid);
+    renderVisibleCells();
+    if (circleInvalid) {
+      let n = 0;
+      (sheet().dv || []).forEach(rule => { const a = SheetsCF.area(rule.ref); const u = usedBounds(); for (let r = a.r1; r <= Math.min(a.r2, u.r); r++) for (let c = a.c1; c <= Math.min(a.c2, u.c); c++) if (cellAt(r, c) && dv.ruleAt(r, c) === rule && !dv.check(rule, r, c, valueAt(r, c))) n++; });
+      UI.toast(n ? `${n} cell${n === 1 ? '' : 's'} with invalid data` : 'No invalid data found');
+    }
+  });
 
   // ---------- PivotTables ----------
   const pivotPane = document.getElementById('pivotPane');
@@ -2016,6 +2228,10 @@
       else if (ex && typeof ex.cf === 'string' && ex.cf) {
         try { s.cf = SheetsCF.fromXlsx(ex.cf, typeof wb.Extras.dxfs === 'string' ? wb.Extras.dxfs : ''); } catch (err) { console.info('Conditional formatting skipped:', err); }
       }
+      if (ms && ms.name === sn && Array.isArray(ms.dv)) s.dv = ms.dv.map(SheetsDV.clean).filter(Boolean).slice(0, 500);
+      else if (ex && typeof ex.dv === 'string' && ex.dv) {
+        try { s.dv = SheetsDV.fromXlsx(ex.dv); } catch (err) { console.info('Data validation skipped:', err); }
+      }
       return s;
     });
     if (!sheets.length) sheets.push(newSheet('Sheet1'));
@@ -2058,7 +2274,7 @@
       if (rows.length) ws['!rows'] = rows;
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
-      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [] });
+      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [] });
     });
     // Cell styling and charts live in a custom document property so Atlas can restore them;
     // other apps ignore it and still get values, formulas, number formats, widths and merges.
@@ -2087,7 +2303,7 @@
     if (bookType !== 'xlsx') return bytes;
     // What SheetJS can't write goes into the XML afterwards.
     const dxfs = [];
-    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs) }));
+    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv) }));
     return XlsxPatch.patch(bytes, { sheets, dxfs });
   }
 
@@ -2237,6 +2453,7 @@
     book.sheets.forEach(s => {
       s.cf = (Array.isArray(s.cf) ? s.cf : []).map(SheetsCF.clean).filter(Boolean);
       s.pivots = (Array.isArray(s.pivots) ? s.pivots : []).map(SheetsPivot.clean).filter(Boolean);
+      s.dv = (Array.isArray(s.dv) ? s.dv : []).map(SheetsDV.clean).filter(Boolean);
     });
     book.active = Math.max(0, Math.min(book.active | 0, book.sheets.length - 1));
     undoStack.length = redoStack.length = 0;

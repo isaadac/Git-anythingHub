@@ -32,7 +32,7 @@ self.onmessage = e => {
 
 /**
  * Raw XML that SheetJS doesn't read, for the app to parse as XML (no code): each sheet's
- * <conditionalFormatting> elements and the workbook's differential styles (<dxfs>).
+ * <conditionalFormatting> and <dataValidations> elements and the workbook's differential styles (<dxfs>).
  */
 function excelExtras(wb) {
   const out = { sheets: [], dxfs: '' };
@@ -69,7 +69,10 @@ function excelExtras(wb) {
   for (const tag of sheetTags) {
     const id = (tag.match(/\br:id="([^"]{1,200})"/) || [])[1];
     const xml = id && target[id] ? text(target[id]) : '';
-    out.sheets.push({ cf: between(xml, '<conditionalFormatting', '</conditionalFormatting>', true) });
+    out.sheets.push({
+      cf: between(xml, '<conditionalFormatting', '</conditionalFormatting>', true),
+      dv: between(xml, '<dataValidations', '</dataValidations>', false) + between(xml, '<x14:dataValidations', '</x14:dataValidations>', false)
+    });
   }
   out.dxfs = between(text('xl/styles.xml'), '<dxfs', '</dxfs>', false);
   return out;
