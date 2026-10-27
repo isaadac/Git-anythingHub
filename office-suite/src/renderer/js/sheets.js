@@ -1542,7 +1542,27 @@
     return out;
   };
 
-  function workbookFromFile(bytes, name) {
+  /**
+   * Parses an Excel/ODS file in a throwaway worker with a time limit, so a hostile file can't
+   * pollute this page's objects or freeze it (SheetJS advisories CVE-2023-30533, CVE-2024-22363).
+   */
+  function parseSpreadsheet(bytes) {
+    return new Promise((resolve, reject) => {
+      let worker;
+      try { worker = new Worker('js/xlsx-worker.js'); } catch (err) { reject(err); return; }
+      const timer = setTimeout(() => { worker.terminate(); reject(new Error('the file took too long to read')); }, 30000);
+      worker.onmessage = e => {
+        clearTimeout(timer);
+        worker.terminate();
+        if (e.data && e.data.ok) resolve(e.data); else reject(new Error((e.data && e.data.error) || 'unreadable file'));
+      };
+      worker.onerror = e => { clearTimeout(timer); worker.terminate(); reject(new Error(e.message || 'unreadable file')); };
+      const copy = bytes.slice();
+      worker.postMessage(copy, [copy.buffer]);
+    });
+  }
+
+  async function workbookFromFile(bytes, name) {
     const ext = Platform.extOf(name);
     if (ext === 'csv' || ext === 'tsv') {
       const text = Platform.bytesToText(bytes).replace(/^﻿/, '');
@@ -1557,12 +1577,12 @@
       s.rows = Math.max(100, u.r + 20); s.cols = Math.max(26, u.c + 5);
       return { sheets: [s], active: 0 };
     }
-    const wb = XLSX.read(bytes, { type: 'array', cellFormula: true, cellNF: true, cellStyles: true });
+    const wb = await parseSpreadsheet(bytes);
     let meta = null;
-    try { meta = wb.Custprops && typeof wb.Custprops.AtlasMeta === 'string' ? JSON.parse(wb.Custprops.AtlasMeta) : null; } catch { meta = null; }
+    try { meta = typeof wb.AtlasMeta === 'string' ? JSON.parse(wb.AtlasMeta) : null; } catch { meta = null; }
     const usedNames = new Set();
     const sheets = wb.SheetNames.map((sn, si) => {
-      const ws = wb.Sheets[sn];
+      const ws = wb.Sheets[si] || {};
       let name = cleanSheetName(sn) || 'Sheet' + (si + 1);
       while (usedNames.has(name.toLowerCase())) name = name.slice(0, 27) + '_' + si;
       usedNames.add(name.toLowerCase());
@@ -1579,7 +1599,7 @@
         else if (cell.t === 'n') v = String(cell.v);
         else if (cell.t === 'b') v = cell.v ? 'TRUE' : 'FALSE';
         else if (cell.t === 'e') v = cell.w || '#N/A';
-        else if (cell.t === 'd') v = String(F.dateToSerial(cell.v));
+        else if (cell.t === 'd' || cell.isDate) v = String(F.dateToSerial(new Date(cell.v)));
         else if (cell.t === 'z') v = '';
         else {
           v = cell.v === undefined ? '' : String(cell.v);
@@ -1689,7 +1709,7 @@
   async function loadFile(f) {
     let next;
     try {
-      next = workbookFromFile(f.data, f.name);
+      next = await workbookFromFile(f.data, f.name);
     } catch (err) {
       UI.toast('Could not open file: ' + err.message, 4000);
       return;

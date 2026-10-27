@@ -54,6 +54,7 @@ To publish a release with installers for all three systems, push a tag such as `
 
 - Documents are treated as untrusted. Opened and pasted content is sanitized (no scripts, frames, forms or remote content), and every page runs under a strict Content Security Policy.
 - The renderer runs sandboxed with no Node.js access. It can only read or overwrite files the user picked in a dialog, opened from the OS or reopened from the recent list.
+- Spreadsheet files are parsed in a throwaway Web Worker with a time limit, so a malicious file can't affect the app or freeze it. This contains the known SheetJS advisories (CVE-2023-30533 and CVE-2024-22363) in the npm build of `xlsx` 0.18.5. Upgrading to SheetJS 0.20.3 (`npm i https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`) removes them entirely.
 - Sheets renders only the visible part of the grid, so workbooks with hundreds of thousands of rows open and scroll smoothly. Formula chains of any length (such as running totals down 100,000 rows) calculate without hitting the JavaScript stack limit.
 
 ## Known limitations
