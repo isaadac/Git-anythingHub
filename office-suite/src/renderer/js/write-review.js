@@ -227,7 +227,25 @@
       const zip = await JSZip.loadAsync(bytes);
       const f = zip.file('word/document.xml');
       let xml = await f.async('string');
-      if (!/[\uE020\uE021\uE030]/.test(xml)) return bytes;
+      if (!/[\uE020\uE021\uE030\uE040]/.test(xml)) return bytes;
+      // Mail-merge fields: a marked run becomes a MERGEFIELD showing «Name».
+      xml = xml.replace(/<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, run => {
+        if (!/\uE040/.test(run)) return run;
+        const rPr = (run.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+        const t = run.match(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/);
+        if (!t) return run;
+        const re = /\uE040([\w .'-]{1,64})\uE0FF([\s\S]*?)\uE041\uE0FF/g;
+        let out = '', last = 0, m;
+        const piece = s => (s ? `<w:r>${rPr}<w:t xml:space="preserve">${s}</w:t></w:r>` : '');
+        while ((m = re.exec(t[1]))) {
+          out += piece(t[1].slice(last, m.index));
+          const name = /\s/.test(m[1]) ? `&quot;${m[1]}&quot;` : m[1];
+          out += `<w:fldSimple w:instr=" MERGEFIELD ${name} ">${piece(m[2])}</w:fldSimple>`;
+          last = re.lastIndex;
+        }
+        out += piece(t[1].slice(last).replace(/[\uE040\uE041][^\uE0FF]*\uE0FF/g, ''));
+        return out;
+      });
       // Citations: a marked run becomes a CITATION field showing the same text.
       xml = xml.replace(/<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, run => {
         if (!/\uE030/.test(run)) return run;
@@ -308,6 +326,12 @@
         meta.cites[id] = { src, pages: pages || '' };
         return mk('\uE030', id) + inner + mk('\uE031', id);
       });
+      meta.fields = {};
+      xml = xml.replace(/<w:fldSimple\b[^>]*w:instr="\s*MERGEFIELD\s+(?:&quot;([^&]+)&quot;|(\S+))[^"]*"[^>]*>([\s\S]*?)<\/w:fldSimple>/g, (all, q, plain, inner) => {
+        const id = ++n;
+        meta.fields[id] = (q || plain || '').replace(/[^\w .'-]/g, '').slice(0, 64);
+        return mk('\uE040', id) + inner + mk('\uE041', id);
+      });
       if (!n && !Object.keys(meta.comments).length) return { bytes, meta: null };
       zip.file('word/document.xml', xml);
       return { bytes: new Uint8Array(await zip.generateAsync({ type: 'uint8array' })), meta };
@@ -319,19 +343,19 @@
       // 1. Replace each marker text with an empty boundary element.
       const walker = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT);
       const texts = [];
-      while (walker.nextNode()) if (/[\uE010-\uE031]/.test(walker.currentNode.nodeValue)) texts.push(walker.currentNode);
+      while (walker.nextNode()) if (/[\uE010-\uE041]/.test(walker.currentNode.nodeValue)) texts.push(walker.currentNode);
       texts.forEach(t => {
-        const parts = t.nodeValue.split(/([\uE010\uE011\uE012\uE013\uE020\uE021\uE030\uE031]\d+\uE0FF)/);
+        const parts = t.nodeValue.split(/([\uE010\uE011\uE012\uE013\uE020\uE021\uE030\uE031\uE040\uE041]\d+\uE0FF)/);
         const frag = d.createDocumentFragment();
         parts.forEach(p => {
-          const m = /^([\uE010-\uE031])(\d+)\uE0FF$/.exec(p);
+          const m = /^([\uE010-\uE041])(\d+)\uE0FF$/.exec(p);
           if (m) { const b = d.createElement('x-mark'); b.setAttribute('k', m[1]); b.setAttribute('i', m[2]); frag.appendChild(b); }
           else if (p) frag.appendChild(d.createTextNode(p));
         });
         t.replaceWith(frag);
       });
       // 2. Wrap the text between each start/end pair.
-      const pairs = [[MARK.insS, MARK.insE], [MARK.delS, MARK.delE], [MARK.cmtS, MARK.cmtE], ['\uE030', '\uE031']];
+      const pairs = [[MARK.insS, MARK.insE], [MARK.delS, MARK.delE], [MARK.cmtS, MARK.cmtE], ['\uE030', '\uE031'], ['\uE040', '\uE041']];
       for (const [s, e] of pairs) {
         d.querySelectorAll(`x-mark[k="${s}"]`).forEach(start => {
           const id = start.getAttribute('i');
@@ -345,7 +369,14 @@
           while (w.nextNode()) if (range.intersectsNode(w.currentNode) && w.currentNode.nodeValue) nodes.push(w.currentNode);
           nodes.forEach(n => {
             let el;
-            if (s === '\uE030') {
+            if (s === '\uE040') {
+              // A merge field is one element showing «Name»; drop the other text pieces.
+              if (n !== nodes[0]) { n.remove(); return; }
+              el = d.createElement('span');
+              el.className = 'mergefield';
+              el.dataset.field = (meta.fields || {})[id] || 'Field';
+              n.nodeValue = `«${el.dataset.field}»`;
+            } else if (s === '\uE030') {
               const c = (meta.cites || {})[id] || {};
               el = d.createElement('cite');
               el.className = 'citation';

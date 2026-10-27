@@ -88,6 +88,23 @@
     });
   }
 
+  // Write templates
+  const tplBox = document.getElementById('templates');
+  WriteTemplates.list.filter(t => t.id !== 'blank').slice(0, 6).forEach(t => {
+    const b = document.createElement('button');
+    b.className = 'tpl';
+    b.innerHTML = '<span class="tpl-icon"></span><b></b><small></small>';
+    b.querySelector('.tpl-icon').textContent = t.icon;
+    b.querySelector('b').textContent = t.name;
+    b.querySelector('small').textContent = t.desc;
+    b.addEventListener('click', () => WriteTemplates.open(t, !Platform.desktop));
+    tplBox.appendChild(b);
+  });
+  document.getElementById('moreTemplates').addEventListener('click', async () => {
+    const t = await WriteTemplates.pick('Write templates');
+    if (t) WriteTemplates.open(t, !Platform.desktop);
+  });
+
   render();
   renderRecovered();
   window.addEventListener('focus', () => { render(); renderRecovered(); });

@@ -60,7 +60,10 @@
       try { raw = sessionStorage.getItem('atlas-handoff'); sessionStorage.removeItem('atlas-handoff'); } catch { /* ignore */ }
       if (!raw) return null;
       const { name, dataUrl } = JSON.parse(raw);
-      const bytes = new Uint8Array(await (await fetch(dataUrl)).arrayBuffer());
+      // Decode directly: fetch() of a data: URL is (rightly) blocked by the pages' CSP.
+      const bin = atob(String(dataUrl).slice(String(dataUrl).indexOf(',') + 1));
+      const bytes = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
       return { name, path: null, data: bytes };
     },
     /** Desktop: asks where to save without writing anything yet. Web: asks for a file name. */
@@ -89,6 +92,14 @@
       window.open(app === 'home' ? 'index.html' : app + '.html', '_blank');
     },
     openPath(p) { return desktop && window.atlas.openPath(p); },
+    /** Opens new, unsaved content (bytes) in an app window: a template, a merge result… */
+    async openData(app, name, bytes, sameTab) {
+      if (desktop) return window.atlas.openData(app, name, bytes);
+      const dataUrl = await Platform.bytesToDataUrl(bytes, 'application/octet-stream');
+      try { sessionStorage.setItem('atlas-handoff', JSON.stringify({ name, dataUrl })); } catch { UI.toast('Too large to open in a new tab'); return false; }
+      if (sameTab) location.href = app + '.html'; else window.open(app + '.html', '_blank');
+      return true;
+    },
     setTitle(t) { document.title = t; if (desktop) window.atlas.setTitle(t); },
     closeNow() { if (desktop) window.atlas.closeNow(); },
     fullscreen(on) {
@@ -276,7 +287,7 @@
    */
   const DROP_TAGS = 'script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,option,base,frame,frameset,noscript,template,svg,math,canvas,audio,video,source,track,portal,applet,dialog,slot,title,head';
   const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'style', 'class', 'id', 'colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'color', 'face', 'size', 'start', 'type', 'dir', 'lang', 'reversed', 'value', 'border', 'cellpadding', 'cellspacing', 'bgcolor', 'span', 'headers', 'scope']);
-  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry']);
+  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry', 'mergefield']);
   Platform.sanitizeHtml = function (html) {
     const d = new DOMParser().parseFromString(String(html || ''), 'text/html');
     d.querySelectorAll(DROP_TAGS).forEach(n => n.remove());
@@ -291,6 +302,7 @@
         if (n === 'data-kind' && ['foot', 'end'].includes(a.value)) return;   // footnote / endnote
         if (n === 'data-src' && /^s[a-z0-9]{4,24}$/.test(a.value)) return;    // citation source id
         if (n === 'data-pages' && /^[\w .,–-]{1,40}$/.test(a.value)) return;
+        if (n === 'data-field' && /^[\w .'-]{1,64}$/.test(a.value)) return; // mail-merge field name
         if (!ALLOWED_ATTRS.has(n)) { el.removeAttribute(a.name); return; }
         if (n === 'href' && !/^(https?:|mailto:|#)/i.test(clean(a.value))) el.removeAttribute(a.name);
         if (n === 'src' && !/^data:image\/(png|jpe?g|gif|webp|bmp|svg\+xml)[;,]/i.test(clean(a.value))) el.removeAttribute(a.name);
@@ -305,6 +317,31 @@
     });
     d.body.querySelectorAll('img:not([src])').forEach(n => n.remove());
     return d.body.innerHTML;
+  };
+  /**
+   * Inserts inline HTML (a field, a note marker…) exactly at the caret. Chromium's insertHTML
+   * moves non-editable inline elements out of the paragraph at a line end and drops the space
+   * before them, so this uses the DOM directly and then reports an input to the editor.
+   */
+  Platform.insertInline = function (html) {
+    const sel = getSelection();
+    if (!sel.rangeCount) return null;
+    const range = sel.getRangeAt(0);
+    const host = (range.startContainer.nodeType === 1 ? range.startContainer : range.startContainer.parentElement).closest('[contenteditable="true"]');
+    if (!host) return null;
+    range.deleteContents();
+    const tpl = document.createElement('template');
+    tpl.innerHTML = html;
+    const nodes = [...tpl.content.childNodes];
+    range.insertNode(tpl.content);
+    const last = nodes[nodes.length - 1];
+    const after = document.createRange();
+    after.setStartAfter(last);
+    after.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(after);
+    host.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertFromPaste' }));
+    return nodes;
   };
   Platform.isColor = v => typeof v === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v);
 

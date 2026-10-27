@@ -61,6 +61,10 @@ body.markup-final .doc ins.tc, body.markup-original .doc del.tc { color: inherit
 .comments-pane .acts { display: flex; gap: 6px; margin-top: 6px; }
 .comments-pane .acts button { border: 1px solid var(--border); background: #fff; border-radius: 3px; font-size: 12px; cursor: pointer; padding: 2px 8px; }
 .comments-pane .empty { color: var(--muted); }
+.doc span.mergefield { background: #e7eefb; border-radius: 2px; padding: 0 2px; color: #1f3763; }
+.doc span.mergefield.preview { background: #fff2cc; color: inherit; }
+.mm-source { font-size: 11px; color: var(--muted); max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mm-index { min-width: 64px; text-align: center; font-size: 12px; }
 ::highlight(find-match) { background-color: #ffd54f; color: #000; }
 .doc img.selected { outline: 2px solid var(--accent); }
 .doc a { color: #0563c1; }

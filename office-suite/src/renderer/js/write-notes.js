@@ -91,7 +91,7 @@
       const r = await UI.form(kind === 'foot' ? 'Insert Footnote' : 'Insert Endnote', [{ name: 't', label: 'Note text', type: 'textarea' }], 'Insert');
       if (!r || !r.t.trim()) return;
       o.restoreSelection();
-      document.execCommand('insertHTML', false, `<sup class="note" data-kind="${kind}" title="${esc(r.t.trim())}" contenteditable="false">0</sup>​`);
+      Platform.insertInline(`<sup class="note" data-kind="${kind}" title="${esc(r.t.trim())}" contenteditable="false">0</sup>`);
       renumber();
       o.changed();
     }
@@ -160,7 +160,7 @@
       if (!sourceById(src.id)) sources.push(src);
       o.restoreSelection();
       const pages = r.pages.trim().slice(0, 40);
-      document.execCommand('insertHTML', false, `<cite class="citation" data-src="${src.id}"${pages ? ` data-pages="${esc(pages)}"` : ''} contenteditable="false">${esc(inText(src, pages, style()))}</cite>​`);
+      Platform.insertInline(` <cite class="citation" data-src="${src.id}"${pages ? ` data-pages="${esc(pages)}"` : ''} contenteditable="false">${esc(inText(src, pages, style()))}</cite>`);
       refreshCitations();
       o.changed();
     }

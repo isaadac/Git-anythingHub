@@ -330,7 +330,7 @@
       layout.run(); changed(); return;
     }
     const [where, align, kind] = v.split(':');
-    if (where === 'here') { exec('insertHTML', fieldHtml(kind) + '\u200b'); fixFields(editable()); layout.run(); return; }
+    if (where === 'here') { restoreSelection(); Platform.insertInline(fieldHtml(kind)); fixFields(editable()); layout.run(); return; }
     const targets = setup.differentFirst ? [where === 'header' ? firstHeader : firstFooter, where === 'header' ? header : footer] : [where === 'header' ? header : footer];
     const html = kind === 'nofm' ? `Page ${fieldHtml('page')} of ${fieldHtml('numpages')}` : fieldHtml('page');
     targets.forEach(el => {
@@ -666,6 +666,45 @@
   document.getElementById('insBibliography').addEventListener('click', () => notes.insertBibliography());
   document.getElementById('manageSources').addEventListener('click', () => notes.manageSources());
   document.getElementById('citeStyle').addEventListener('change', e => { setup.citeStyle = e.target.value; notes.refreshCitations(); changed(); });
+
+  // ---------- Mailings ----------
+  const merge = WriteMerge({
+    doc, extraRoots: () => HF, restoreSelection, changed: () => changed(),
+    onChange: () => updateMailings(), buildHtml: fn => toHtml(fn), docName: () => state.name
+  });
+  function updateMailings() {
+    const sel = document.getElementById('mmField');
+    const names = [...new Set([...merge.fields, ...merge.fieldsInDocument()])];
+    sel.innerHTML = '<option value="">Insert Merge Field…</option>' + names.map(n => `<option>${escapeHtml(n)}</option>`).join('') + '<option value="__other">Other field…</option>';
+    document.getElementById('mmSource').textContent = merge.count ? `${merge.count} recipients · ${merge.source}` : 'No recipient list';
+    document.getElementById('mmIndex').textContent = merge.count ? `${merge.index + 1} of ${merge.count}` : '–';
+    const pv = document.getElementById('mmPreview');
+    pv.classList.toggle('on', merge.previewing);
+    pv.setAttribute('aria-pressed', String(merge.previewing));
+  }
+  document.getElementById('mmRecipients').addEventListener('click', () => merge.selectRecipients());
+  document.getElementById('mmField').addEventListener('change', async e => {
+    let v = e.target.value;
+    e.target.value = '';
+    if (v === '__other') v = (await UI.prompt('Merge field', 'Field name (a column in your list)', '')) || '';
+    if (v) merge.insertField(v.trim());
+  });
+  document.getElementById('mmPreview').addEventListener('click', () => { merge.setPreview(!merge.previewing); layout.schedule(); });
+  [['mmFirst', 'first'], ['mmPrev', 'previous'], ['mmNext', 'next'], ['mmLast', 'last']].forEach(([id, fn]) => document.getElementById(id).addEventListener('click', () => { merge[fn](); layout.schedule(); }));
+  document.getElementById('mmFinish').addEventListener('click', () => merge.finish());
+  updateMailings();
+
+  // ---------- Templates ----------
+  async function newFromTemplate() {
+    const t = await WriteTemplates.pick();
+    if (!t) return;
+    const empty = !state.dirty && !doc.innerText.trim() && !state.path;
+    // Fill this window if it's still blank; otherwise open a new one.
+    if (empty) {
+      await loadFile({ name: (t.id === 'blank' ? 'Document1' : t.name) + '.docx', path: null, data: new TextEncoder().encode(WriteTemplates.toHtml(t)), recovered: true });
+      state.set({ dirty: t.id !== 'blank' });
+    } else WriteTemplates.open(t);
+  }
   window.addEventListener('resize', () => layout.schedule());
   const pageCount = () => layout.pages;
   let caretPage = 1;
@@ -809,7 +848,7 @@
     let hfHtml = { header: '', footer: '', firstHeader: '', firstFooter: '' };
     let nextSources = [];
     try {
-      if (ext === 'docx') {
+      if (ext === 'docx' && !/^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
         // Page setup, headers, footers and page numbers come from the section properties (mammoth skips them).
         try {
           const sec = await readDocxSection(f.data);
@@ -826,7 +865,7 @@
         });
         html = notes.importMammothNotes(review.postprocessHtml(res.value, pre.meta));
         if (res.messages.some(m => m.type === 'warning')) console.info('Import notes:', res.messages);
-      } else if (ext === 'html' || ext === 'htm') {
+      } else if (ext === 'html' || ext === 'htm' || /^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
         const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
         const src = d.querySelector('meta[name=atlas-sources]');
         if (src) { try { nextSources = JSON.parse(src.content); } catch { /* ignore */ } }
@@ -854,6 +893,7 @@
     notes.loadSources(nextSources);
     notes.renumber();
     notes.refreshCitations();
+    merge.refresh();
     savedRange = null;
     applySetup();
     syncSetupControls();
@@ -981,6 +1021,7 @@
     const clone = el.cloneNode(true);
     layout.clearPushes(clone);
     notes.clean(clone);
+    clone.querySelectorAll('span.mergefield').forEach(m => { m.textContent = `«${m.dataset.field}»`; m.classList.remove('preview'); });
     clone.querySelectorAll('.selected').forEach(n => n.classList.remove('selected'));
     clone.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     clone.querySelectorAll('hr.page-break').forEach(n => { const d = document.createElement('div'); d.style.pageBreakAfter = 'always'; n.replaceWith(d); });
@@ -1010,6 +1051,7 @@
     while (tw.nextNode()) tw.currentNode.nodeValue = tw.currentNode.nodeValue.replace(/(^|[^\u00a0 ])\u00a0(?=[^\u00a0 ]|$)/g, '$1 ');
     const cmts = review.markCommentsForDocx(body);
     notes.prepareForDocx(body);
+    merge.prepareForDocx(body);
     section.children = [...docxHtml.htmlToContent(body.innerHTML, { ...opts, trackChanges: { author: getAuthor() } })];
     const has = el => el.textContent.trim() !== '' || !!el.querySelector('img');
     const headers = {}, footers = {};
@@ -1059,7 +1101,7 @@
     }
     return out;
   }
-  function toHtml() {
+  function toHtml(bodyTransform) {
     const css = [...document.styleSheets].find(s => s.href && s.href.endsWith('write.css'));
     let rules = '';
     try { rules = [...css.cssRules].map(r => r.cssText).filter(t => t.startsWith('.doc')).join('\n').replace(/\.doc\b/g, 'main.atlas-doc'); } catch { /* ignore */ }
@@ -1070,7 +1112,7 @@
 ${notes.sources.length ? `<meta name="atlas-sources" content="${escapeHtml(JSON.stringify(notes.sources))}">` : ''}
 <style>body{max-width:8.5in;margin:auto;padding:1in;font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.15;background:${setup.color}}
 ${rules}</style></head>
-<body>${hfOut(firstHeader, 'header', 'atlas-first-header')}${hfOut(header, 'header', 'atlas-header')}<main class="atlas-doc">${cleanHtmlFor(doc)}</main>${hfOut(footer, 'footer', 'atlas-footer')}${hfOut(firstFooter, 'footer', 'atlas-first-footer')}</body></html>`;
+<body>${hfOut(firstHeader, 'header', 'atlas-first-header')}${hfOut(header, 'header', 'atlas-header')}<main class="atlas-doc">${bodyTransform ? bodyTransform(cleanHtmlFor(doc)) : cleanHtmlFor(doc)}</main>${hfOut(footer, 'footer', 'atlas-footer')}${hfOut(firstFooter, 'footer', 'atlas-first-footer')}</body></html>`;
   }
   function hfOut(el, tag, cls) {
     return el.textContent.trim() || el.querySelector('img') ? `<${tag} class="${cls}">${cleanHtmlFor(el)}</${tag}>` : '';
@@ -1118,6 +1160,7 @@ ${rules}</style></head>
   Platform.onMenu(async cmd => {
     switch (cmd) {
       case 'new': Platform.newWindow('write'); break;
+      case 'new-template': newFromTemplate(); break;
       case 'open': {
         const f = await Platform.open(OPEN_FILTERS);
         if (!f) break;

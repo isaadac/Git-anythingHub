@@ -25,6 +25,7 @@
   <button data-tab="home" class="active">Home</button>
   <button data-tab="insert">Insert</button>
   <button data-tab="layout">Layout</button>
+  <button data-tab="mailings">Mailings</button>
   <button data-tab="review">Review</button>
   <button data-tab="view">View</button>
 </div>
@@ -191,6 +192,32 @@
     </div><div class="label">Arrange</div></div>
   </div>
 
+  <!-- MAILINGS -->
+  <div class="ribbon-panel" data-panel="mailings">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="mmRecipients"><span class="ico">👥</span>Select<br>Recipients</button>
+      <div class="controls col">
+        <select class="ctl" id="mmField" title="Insert merge field" style="width:170px"><option value="">Insert Merge Field…</option></select>
+        <span class="mm-source" id="mmSource">No recipient list</span>
+      </div>
+    </div><div class="label">Start Mail Merge</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="mmPreview" aria-pressed="false"><span class="ico">👁</span>Preview<br>Results</button>
+      <div class="controls col">
+        <div class="row">
+          <button class="btn" id="mmFirst" title="First record">⏮</button>
+          <button class="btn" id="mmPrev" title="Previous record">◀</button>
+          <span id="mmIndex" class="mm-index">–</span>
+          <button class="btn" id="mmNext" title="Next record">▶</button>
+          <button class="btn" id="mmLast" title="Last record">⏭</button>
+        </div>
+      </div>
+    </div><div class="label">Preview Results</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="mmFinish"><span class="ico">✉</span>Finish &amp;<br>Merge</button>
+    </div><div class="label">Finish</div></div>
+  </div>
+
   <!-- REVIEW -->
   <div class="ribbon-panel" data-panel="review">
     <div class="group"><div class="controls">
@@ -295,7 +322,7 @@
 <div class="backstage">
   <nav>
     <button class="back" title="Back">←</button>
-    <button data-cmd="new">New</button>
+    <button data-cmd="new-template">New</button>
     <button data-cmd="open">Open</button>
     <button data-cmd="save">Save</button>
     <button data-cmd="save-as">Save As</button>
@@ -319,6 +346,8 @@
 <script src="js/write-layout.js"></script>
 <script src="js/write-review.js"></script>
 <script src="js/write-notes.js"></script>
+<script src="js/write-templates.js"></script>
+<script src="js/write-merge.js"></script>
 <script src="js/write.js"></script>
 </body>
 </html>

@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('atlas', {
   recent: () => ipcRenderer.invoke('app:recent'),
   clearRecent: () => ipcRenderer.invoke('app:clear-recent'),
   newWindow: appName => ipcRenderer.invoke('app:new-window', appName),
+  openData: (appName, name, data) => ipcRenderer.invoke('app:open-data', { app: appName, name, data }),
   openPath: p => ipcRenderer.invoke('app:open-path', p),
   setTitle: t => ipcRenderer.invoke('app:set-title', t),
   closeNow: () => ipcRenderer.invoke('app:close-now'),

@@ -750,7 +750,7 @@
     const walk = (node, fmt, paraOpts) => {
       if (node.nodeType === 3) {
         if (!cur) startPara(paraOpts);
-        const text = node.nodeValue.replace(/ /g, ' ');
+        const text = node.nodeValue.replace(/\u00a0/g, ' ');
         if (text) cur.runs.push({ text, fmt: { ...fmt } });
         return;
       }

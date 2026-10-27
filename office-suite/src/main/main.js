@@ -159,6 +159,8 @@ ipcMain.handle('file:pending', e => {
   const p = pendingFiles.get(e.sender.id);
   pendingFiles.delete(e.sender.id);
   if (!p) return null;
+  // New, unsaved content (a template, a mail-merge result): no file behind it.
+  if (typeof p === 'object') return { path: null, name: p.name, data: p.data };
   try {
     addRecent(p);
     return { path: p, name: path.basename(p), data: new Uint8Array(fs.readFileSync(p)) };
@@ -182,6 +184,12 @@ ipcMain.handle('app:print', e => new Promise(resolve => e.sender.print({ printBa
 ipcMain.handle('app:recent', () => readRecent().filter(r => fs.existsSync(r.path)).map(r => ({ ...r, path: approve(r.path) })));
 ipcMain.handle('app:clear-recent', () => { try { fs.unlinkSync(recentPath()); } catch { /* none */ } app.clearRecentDocuments(); return true; });
 ipcMain.handle('app:new-window', (_e, appName) => { createWindow(APPS[appName] ? appName : 'home'); return true; });
+ipcMain.handle('app:open-data', (_e, { app: appName, name, data }) => {
+  if (!APPS[appName] || appName === 'home' || typeof name !== 'string' || !(data instanceof Uint8Array) || data.length > 100e6) return false;
+  const win = createWindow(appName);
+  pendingFiles.set(win.webContents.id, { name: path.basename(name).slice(0, 255), data });
+  return true;
+});
 ipcMain.handle('app:open-path', (_e, p) => {
   if (!isApproved(p)) return false;
   openPath(p);

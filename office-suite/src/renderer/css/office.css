@@ -93,6 +93,14 @@ input.ctl[type=color] { width: 30px; padding: 1px; }
 .modal .actions button { padding: 6px 16px; border-radius: 3px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
 .modal .actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 
+/* Template gallery (Write templates, also on Home) */
+.template-gallery { width: min(760px, 94vw); }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 6px 0 14px; max-height: 60vh; overflow: auto; padding: 2px; }
+.tpl { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; padding: 12px; border: 1px solid var(--border); border-radius: 6px; background: #fff; cursor: pointer; }
+.tpl:hover, .tpl:focus-visible { border-color: #2b579a; box-shadow: 0 2px 8px rgba(0,0,0,.08); outline: none; }
+.tpl .tpl-icon { font-size: 24px; }
+.tpl small { color: var(--muted); }
+
 /* Toast */
 .toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #323130; color: #fff; padding: 8px 16px; border-radius: 4px; z-index: 200; opacity: 0; transition: opacity .2s; pointer-events: none; }
 .toast.show { opacity: 1; }
