@@ -1739,7 +1739,7 @@
       if (h > (s.rowHeights[p.row] || ROW_H)) s.rowHeights[p.row] = h;
     }
   }
-  async function save(saveAs, forcedExt) {
+  async function save(saveAs, forcedExt, quiet) {
     commitEdit();
     let name = state.name;
     if (!/\.(xlsx|ods|csv|xls)$/i.test(name)) name = Platform.baseName(name) + '.xlsx';
@@ -1758,7 +1758,7 @@
         await Platform.save({ data: serialize(ext), name, path: state.path });
         state.set({ dirty: false });
       }
-      UI.toast('Saved');
+      if (!quiet) UI.toast('Saved');
       return true;
     } catch (err) {
       UI.toast('Save failed: ' + err.message, 4000);
@@ -1828,8 +1828,33 @@
     wrap.focus();
     const f = await Platform.pending();
     if (f && f.error) UI.toast('Could not open file: ' + f.error, 4000);
+    else if (f && f.recovered) loadRecovered(f.recovered);
     else if (f) await loadFile(f);
   })();
+
+  // ---------- Crash recovery & AutoSave ----------
+  const recovery = Platform.enableRecovery({
+    app: 'sheets', state,
+    snapshot: () => JSON.stringify(book),
+    autosave: () => save(false, null, true),
+    canAutoSave: () => !Platform.desktop ? 'AutoSave needs the desktop app' : !state.path ? 'Save the workbook first to turn on AutoSave'
+      : /\.(xlsx|ods)$/i.test(state.path) ? true : 'AutoSave works with .xlsx and .ods files'
+  });
+  function loadRecovered(d) {
+    let next;
+    try { next = JSON.parse(d.data); } catch { return UI.toast('The recovered workbook could not be read', 4000); }
+    if (!next || !Array.isArray(next.sheets) || !next.sheets.length) return;
+    book = next;
+    book.active = Math.max(0, Math.min(book.active | 0, book.sheets.length - 1));
+    undoStack.length = redoStack.length = 0;
+    undoBytes = 0;
+    engine.astCache.clear();
+    active = anchor = { r: 0, c: 0 };
+    buildGrid();
+    state.set({ name: d.name, path: d.path, dirty: true });
+    recovery.adopt(d.draftId);
+    UI.toast('Recovered your unsaved changes', 4000);
+  }
 
   window.AtlasSheets = {
     loadFile, serialize, select,

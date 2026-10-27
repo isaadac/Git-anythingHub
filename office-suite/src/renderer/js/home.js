@@ -65,6 +65,30 @@
       box.appendChild(row);
     });
   }
+  async function renderRecovered() {
+    const list = await Platform.drafts.list();
+    const box = document.getElementById('recovered');
+    document.getElementById('recoveredBox').hidden = !list.length;
+    box.innerHTML = '';
+    list.forEach(d => {
+      const info = APP_INFO[d.app] || APP_INFO.write;
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = `<div class="badge ${info.cls}">${info.label}</div><div class="meta"><div class="n"></div><div class="p"></div></div><div class="acts"><button class="primary">Open</button><button>Discard</button></div>`;
+      row.querySelector('.n').textContent = d.name;
+      row.querySelector('.p').textContent = 'Last changed ' + ago(d.savedAt);
+      const [open, discard] = row.querySelectorAll('button');
+      open.addEventListener('click', async () => { await Platform.drafts.open(d.id, d.app); if (Platform.desktop) renderRecovered(); });
+      discard.addEventListener('click', async () => {
+        if (!(await UI.confirm('Discard recovered document', `Throw away the unsaved changes to "${d.name}"?`))) return;
+        await Platform.drafts.discard(d.id);
+        renderRecovered();
+      });
+      box.appendChild(row);
+    });
+  }
+
   render();
-  window.addEventListener('focus', render);
+  renderRecovered();
+  window.addEventListener('focus', () => { render(); renderRecovered(); });
 })();

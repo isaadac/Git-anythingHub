@@ -6,6 +6,7 @@ const path = require('path');
 const fs = require('fs');
 const settings = require('./settings');
 const updater = require('./updater');
+const recovery = require('./recovery');
 
 const APPS = {
   home: { page: 'index.html', title: 'Atlas Office', width: 1100, height: 720 },
@@ -60,6 +61,7 @@ function createWindow(appName = 'home', filePath = null) {
     }
   });
   if (filePath) pendingFiles.set(win.webContents.id, filePath);
+  recovery.watchWindow(win);
   win.loadFile(path.join(__dirname, '../renderer', cfg.page));
 
   // Open external links in the user's browser, never inside the app.
@@ -87,7 +89,7 @@ function createWindow(appName = 'home', filePath = null) {
     Promise.race([win.webContents.executeJavaScript('window.__atlasDirty === true').catch(() => false), timeout]).then(dirty => {
       asking = false;
       if (win.isDestroyed()) return;
-      if (!dirty) { allowClose = true; win.close(); return; }
+      if (!dirty) { recovery.closedCleanly(win.webContents); allowClose = true; win.close(); return; }
       const choice = dialog.showMessageBoxSync(win, {
         type: 'warning',
         buttons: ['Save', "Don't Save", 'Cancel'],
@@ -96,7 +98,7 @@ function createWindow(appName = 'home', filePath = null) {
         message: 'Do you want to save your changes?',
         detail: 'Your changes will be lost if you don\'t save them.'
       });
-      if (choice === 1) { allowClose = true; win.close(); }
+      if (choice === 1) { recovery.closedCleanly(win.webContents); allowClose = true; win.close(); }
       else if (choice === 0) win.webContents.send('menu', 'save-and-close');
     });
   });
@@ -152,6 +154,8 @@ ipcMain.handle('file:choose-save-path', async (e, { defaultName, filters }) => {
 });
 
 ipcMain.handle('file:pending', e => {
+  const draft = recovery.takePending(e.sender.id);
+  if (draft) return { recovered: draft };
   const p = pendingFiles.get(e.sender.id);
   pendingFiles.delete(e.sender.id);
   if (!p) return null;
@@ -186,10 +190,12 @@ ipcMain.handle('app:open-path', (_e, p) => {
 ipcMain.handle('app:set-title', (e, title) => { BrowserWindow.fromWebContents(e.sender)?.setTitle(title); return true; });
 ipcMain.handle('app:close-now', e => {
   const win = BrowserWindow.fromWebContents(e.sender);
-  if (win) { win.removeAllListeners('close'); win.close(); }
+  if (win) { recovery.closedCleanly(e.sender); win.removeAllListeners('close'); win.close(); }
   return true;
 });
 ipcMain.handle('app:fullscreen', (e, on) => { BrowserWindow.fromWebContents(e.sender)?.setFullScreen(!!on); return true; });
+
+recovery.init({ createWindow, approve, isApproved });
 
 // ---------- Menu ----------
 function send(cmd) {
@@ -295,7 +301,8 @@ if (!app.requestSingleInstanceLock()) {
     const files = [...fileArgs(process.argv), ...macOpenQueue];
     macOpenQueue = [];
     if (files.length) files.forEach(f => openPath(f));
-    else createWindow('home');
+    // Drafts left behind mean the last session ended unexpectedly: show them on Home.
+    if (!files.length || recovery.list().length) createWindow('home');
     updater.start();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow('home'); });
   });

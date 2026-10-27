@@ -16,7 +16,10 @@ A free office suite for **Windows, macOS and Linux** (and any modern browser). I
 
 **Slides**: slide layouts, 6 themes, text boxes, 8 shape types, pictures, tables, drag/resize with snap guides, ordering and alignment, backgrounds (colour or picture), speaker notes, transitions, drag-to-reorder thumbnails, and a full-screen slide show.
 
-All apps have undo/redo, unsaved-changes prompts, recent files, print and PDF export.
+All apps have undo/redo, unsaved-changes prompts, recent files, print and PDF export, plus:
+
+- **AutoSave**: the switch in the title bar saves to the file a few seconds after each change (desktop app; `.docx`/`.html`, `.xlsx`/`.ods`, `.pptx`/`.aslides`).
+- **Crash recovery**: unsaved changes are kept as a draft every 30 seconds. If the app crashes or the computer loses power, Home lists the recovered documents next time. If a single window crashes, it offers to reopen with your changes.
 
 ## Install
 

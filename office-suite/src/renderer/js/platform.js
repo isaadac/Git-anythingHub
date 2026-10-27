@@ -49,7 +49,13 @@
     },
     async pending() {
       if (desktop) return window.atlas.pendingFile();
-      // Web: the start page hands a picked file over through sessionStorage.
+      // Web: a draft to restore (?recover=id), or a file handed over by the start page.
+      const rid = new URLSearchParams(location.search).get('recover');
+      if (rid) {
+        const d = await Drafts.get(rid);
+        history.replaceState(null, '', location.pathname);
+        if (d) { sessionStorage.setItem('atlas-draft-id', rid); return { recovered: { draftId: rid, name: d.name, path: null, data: d.data } }; }
+      }
       let raw = null;
       try { raw = sessionStorage.getItem('atlas-handoff'); sessionStorage.removeItem('atlas-handoff'); } catch { /* ignore */ }
       if (!raw) return null;
@@ -295,6 +301,141 @@
     return d.body.innerHTML;
   };
   Platform.isColor = v => typeof v === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v);
+
+  // ---------- Drafts: crash recovery storage ----------
+  // Desktop keeps drafts in the app's data folder (main process); the web uses IndexedDB.
+  const idb = () => new Promise((resolve, reject) => {
+    const req = indexedDB.open('atlas-recovery', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('drafts');
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+  const idbDo = async (mode, fn) => {
+    const db = await idb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction('drafts', mode);
+      const r = fn(tx.objectStore('drafts'));
+      tx.oncomplete = () => resolve(r && r.result);
+      tx.onerror = () => reject(tx.error);
+    });
+  };
+  const Drafts = {
+    async save(d) {
+      if (desktop) return window.atlas.recoverySave(d);
+      try { await idbDo('readwrite', st => st.put({ app: d.app, name: d.name, data: d.data, savedAt: Date.now() }, d.draftId)); } catch { /* storage full or blocked */ }
+    },
+    async clear(id) {
+      if (desktop) return window.atlas.recoveryClear();
+      try { await idbDo('readwrite', st => st.delete(id)); } catch { /* ignore */ }
+    },
+    async list() {
+      if (desktop) return window.atlas.recoveryList();
+      try {
+        const db = await idb();
+        return await new Promise(resolve => {
+          const out = [];
+          const req = db.transaction('drafts').objectStore('drafts').openCursor();
+          req.onsuccess = () => {
+            const c = req.result;
+            if (!c) return resolve(out.sort((a, b) => b.savedAt - a.savedAt));
+            out.push({ id: c.key, app: c.value.app, name: c.value.name, savedAt: c.value.savedAt });
+            c.continue();
+          };
+          req.onerror = () => resolve([]);
+        });
+      } catch { return []; }
+    },
+    async get(id) { try { return await idbDo('readonly', st => st.get(id)); } catch { return null; } },
+    async open(id, app) {
+      if (desktop) return window.atlas.recoveryOpen(id);
+      location.href = `${app}.html?recover=${encodeURIComponent(id)}`;
+    },
+    async discard(id) {
+      if (desktop) return window.atlas.recoveryDiscard(id);
+      try { await idbDo('readwrite', st => st.delete(id)); } catch { /* ignore */ }
+    }
+  };
+  Platform.drafts = Drafts;
+
+  /**
+   * Turns on crash-recovery drafts and the AutoSave switch for an app.
+   * opts: { app, state, snapshot() -> string, autosave() -> Promise, canAutoSave() -> bool|string }
+   * canAutoSave returns true, or a reason why AutoSave can't be used for the current file.
+   */
+  Platform.enableRecovery = function (opts) {
+    const { app, state } = opts;
+    let draftId = null;
+    try { draftId = sessionStorage.getItem('atlas-draft-id'); } catch { /* ignore */ }
+    if (!draftId) draftId = 'd' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 10);
+    try { sessionStorage.setItem('atlas-draft-id', draftId); } catch { /* ignore */ }
+    let lastSaved = 0, changedSince = 0;
+
+    async function writeDraft() {
+      if (!state.dirty || changedSince <= lastSaved) return;
+      lastSaved = Date.now();
+      try { await Drafts.save({ draftId, app, name: state.name, path: state.path, data: opts.snapshot() }); } catch { /* best effort */ }
+    }
+    setInterval(writeDraft, 30000);
+    document.addEventListener('visibilitychange', () => { if (document.hidden) writeDraft(); });
+    window.addEventListener('pagehide', writeDraft);
+
+    // AutoSave switch in the title bar.
+    const bar = document.querySelector('.titlebar');
+    const label = document.createElement('label');
+    label.className = 'autosave';
+    label.innerHTML = '<input type="checkbox" role="switch"> <span>AutoSave</span>';
+    bar.insertBefore(label, bar.querySelector('.qa'));
+    const box = label.querySelector('input');
+    const key = 'atlas-autosave-' + app;
+    let wanted = false;
+    try { wanted = localStorage.getItem(key) === '1'; } catch { /* ignore */ }
+    function refreshSwitch() {
+      const ok = opts.canAutoSave();
+      box.disabled = ok !== true;
+      box.checked = wanted && ok === true;
+      label.title = ok === true ? 'Save changes to the file automatically' : ok;
+      label.classList.toggle('off', ok !== true);
+    }
+    box.addEventListener('change', () => {
+      wanted = box.checked;
+      try { localStorage.setItem(key, wanted ? '1' : '0'); } catch { /* ignore */ }
+      if (wanted && state.dirty) scheduleAutoSave(500);
+    });
+
+    let autoTimer = null, saving = false;
+    function scheduleAutoSave(delay = 3000) {
+      clearTimeout(autoTimer);
+      autoTimer = setTimeout(async () => {
+        if (!wanted || opts.canAutoSave() !== true || !state.dirty) return;
+        if (saving) return scheduleAutoSave(1000);
+        saving = true;
+        try { await opts.autosave(); } finally { saving = false; }
+      }, delay);
+    }
+
+    // Hook the document state: changes schedule drafts/AutoSave; a clean state removes the draft.
+    const markDirty = state.markDirty.bind(state);
+    state.markDirty = () => { changedSince = Date.now(); markDirty(); scheduleAutoSave(); };
+    const set = state.set.bind(state);
+    state.set = props => {
+      set(props);
+      if (props.dirty === false) { lastSaved = changedSince = 0; Drafts.clear(draftId); }
+      if (props.dirty === true) { changedSince = Date.now(); scheduleAutoSave(); }
+      if ('path' in props || 'name' in props) refreshSwitch();
+    };
+    refreshSwitch();
+    return {
+      draftId,
+      /** Continue the draft that was restored, and write it again right away. */
+      adopt(id) {
+        draftId = id;
+        try { sessionStorage.setItem('atlas-draft-id', id); } catch { /* ignore */ }
+        lastSaved = 0; changedSince = Date.now();
+        writeDraft();
+      },
+      refresh: refreshSwitch
+    };
+  };
 
   Platform.extOf = name => (name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
   Platform.baseName = name => name.replace(/\.[^.]+$/, '');

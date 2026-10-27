@@ -33,6 +33,11 @@ button, input, select { font: inherit; color: inherit; }
 .titlebar .qa button:hover { background: rgba(255,255,255,.18); }
 .titlebar .status-saved { font-size: 12px; opacity: .85; }
 
+.titlebar .autosave { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; opacity: .95; white-space: nowrap; }
+.titlebar .autosave input { accent-color: #fff; cursor: pointer; }
+.titlebar .autosave.off { opacity: .55; cursor: default; }
+@media (max-width: 640px) { .titlebar .autosave span { display: none; } }
+
 /* Ribbon */
 .ribbon-tabs { background: var(--accent); display: flex; gap: 2px; padding: 0 8px; flex: none; }
 .ribbon-tabs button { background: transparent; border: 0; color: #fff; padding: 6px 14px; cursor: pointer; border-radius: 4px 4px 0 0; }

@@ -723,7 +723,7 @@
     applySetup();
     syncSetupControls();
     state.set({ name: f.name, path: f.path, dirty: false });
-    Platform.rememberRecent(f.name, 'write');
+    if (!f.recovered) Platform.rememberRecent(f.name, 'write');
     updateStatus();
     refreshNav();
   }
@@ -802,7 +802,7 @@ ${rules}</style></head>
     return doc.innerText;
   }
 
-  async function save(saveAs, forcedExt) {
+  async function save(saveAs, forcedExt, quiet) {
     let name = state.name;
     if (!/\.(docx|html?|md|txt)$/i.test(name)) name = Platform.baseName(name) + '.docx';
     if (forcedExt) name = Platform.baseName(name) + '.' + forcedExt;
@@ -822,7 +822,7 @@ ${rules}</style></head>
         await Platform.save({ data: await serialize(ext), name, path: state.path });
         state.set({ dirty: false });
       }
-      UI.toast('Saved');
+      if (!quiet) UI.toast('Saved');
       return true;
     } catch (err) {
       UI.toast('Save failed: ' + err.message, 4000);
@@ -863,10 +863,26 @@ ${rules}</style></head>
     applySetup();
     const f = await Platform.pending();
     if (f && f.error) UI.toast('Could not open file: ' + f.error, 4000);
+    else if (f && f.recovered) await loadRecovered(f.recovered);
     else if (f) await loadFile(f);
     updateStatus();
     doc.focus();
   })();
+
+  // ---------- Crash recovery & AutoSave ----------
+  const recovery = Platform.enableRecovery({
+    app: 'write', state,
+    snapshot: () => toHtml(),
+    autosave: () => save(false, null, true),
+    canAutoSave: () => !Platform.desktop ? 'AutoSave needs the desktop app' : !state.path ? 'Save the document first to turn on AutoSave'
+      : /\.(docx|html?)$/i.test(state.path) ? true : 'AutoSave works with .docx and .html files'
+  });
+  async function loadRecovered(d) {
+    await loadFile({ name: 'recovered.html', path: null, data: new TextEncoder().encode(d.data), recovered: true });
+    state.set({ name: d.name, path: d.path, dirty: true });
+    recovery.adopt(d.draftId);
+    UI.toast('Recovered your unsaved changes', 4000);
+  }
 
   window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize };
 })();

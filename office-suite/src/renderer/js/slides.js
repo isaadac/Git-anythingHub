@@ -1040,7 +1040,7 @@
     if (ext === 'aslides') return JSON.stringify(pres);
     return toPptx();
   }
-  async function save(saveAs) {
+  async function save(saveAs, quiet) {
     commitEditing();
     let name = state.name;
     if (!/\.(pptx|aslides)$/i.test(name)) name = Platform.baseName(name) + '.pptx';
@@ -1056,7 +1056,7 @@
         await Platform.save({ data: await serialize(ext), name, path: state.path });
         state.set({ dirty: false });
       }
-      UI.toast('Saved');
+      if (!quiet) UI.toast('Saved');
       return true;
     } catch (err) {
       UI.toast('Save failed: ' + err.message, 4000);
@@ -1102,8 +1102,34 @@
     renderAll();
     const f = await Platform.pending();
     if (f && f.error) UI.toast('Could not open file: ' + f.error, 4000);
+    else if (f && f.recovered) loadRecovered(f.recovered);
     else if (f) await loadFile(f);
   })();
+
+  // ---------- Crash recovery & AutoSave ----------
+  const recovery = Platform.enableRecovery({
+    app: 'slides', state,
+    snapshot: () => { commitEditingQuietly(); return JSON.stringify(pres); },
+    autosave: () => save(false, true),
+    canAutoSave: () => !Platform.desktop ? 'AutoSave needs the desktop app' : !state.path ? 'Save the presentation first to turn on AutoSave'
+      : /\.(pptx|aslides)$/i.test(state.path) ? true : 'AutoSave works with .pptx and .aslides files'
+  });
+  /** Copies the text being typed into the model without leaving edit mode. */
+  function commitEditingQuietly() {
+    if (!editingId) return;
+    const el = elById(editingId);
+    const c = stage.querySelector(`[data-id="${editingId}"] .content`);
+    if (el && c) el.html = c.innerHTML;
+  }
+  function loadRecovered(d) {
+    try { pres = cleanPres(JSON.parse(d.data)); } catch { return UI.toast('The recovered presentation could not be read', 4000); }
+    current = 0; selectedId = editingId = null;
+    undoStack.length = redoStack.length = 0;
+    renderAll();
+    state.set({ name: d.name, path: d.path, dirty: true });
+    recovery.adopt(d.draftId);
+    UI.toast('Recovered your unsaved changes', 4000);
+  }
 
   window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide };
 })();

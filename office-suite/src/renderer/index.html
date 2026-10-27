@@ -33,6 +33,10 @@
   .linkbtn { background: none; border: 0; color: #2b579a; cursor: pointer; font-size: 12px; font-weight: 400; }
   .open-btn { margin-top: 16px; padding: 8px 16px; border: 1px solid #c8c6c4; border-radius: 4px; background: #fff; cursor: pointer; }
   .open-btn:hover { background: #f3f2f1; }
+  .hint { color: #605e5c; margin: -6px 0 10px; font-size: 13px; }
+  .row .acts { display: flex; gap: 6px; }
+  .row .acts button { border: 1px solid #c8c6c4; background: #fff; border-radius: 4px; padding: 4px 10px; cursor: pointer; }
+  .row .acts button.primary { background: #2b579a; border-color: #2b579a; color: #fff; }
 </style>
 </head>
 <body>
@@ -46,6 +50,11 @@
     <button class="app-card" data-app="slides"><div class="tile t-slides">P</div><div><strong>Atlas Slides</strong><span>Blank presentation · .pptx</span></div></button>
   </div>
   <button class="open-btn" id="open">Open a file…</button>
+  <section id="recoveredBox" hidden>
+    <h2>Recovered documents</h2>
+    <p class="hint">These had unsaved changes when Atlas Office last closed unexpectedly.</p>
+    <div class="recent" id="recovered"></div>
+  </section>
   <h2>Recent <button class="linkbtn" id="clear">Clear list</button></h2>
   <div class="recent" id="recent"><div class="empty">Files you open will show up here.</div></div>
 </main>

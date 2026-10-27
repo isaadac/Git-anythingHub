@@ -18,5 +18,10 @@ contextBridge.exposeInMainWorld('atlas', {
   setTitle: t => ipcRenderer.invoke('app:set-title', t),
   closeNow: () => ipcRenderer.invoke('app:close-now'),
   fullscreen: on => ipcRenderer.invoke('app:fullscreen', on),
+  recoverySave: d => ipcRenderer.invoke('recovery:save', d),
+  recoveryClear: () => ipcRenderer.invoke('recovery:clear'),
+  recoveryList: () => ipcRenderer.invoke('recovery:list'),
+  recoveryOpen: id => ipcRenderer.invoke('recovery:open', id),
+  recoveryDiscard: id => ipcRenderer.invoke('recovery:discard', id),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });
