@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'">
+<title>Atlas Sheets</title>
+<link rel="stylesheet" href="css/office.css">
+<link rel="stylesheet" href="css/sheets.css">
+</head>
+<body class="app-sheets">
+<div class="titlebar">
+  <div class="brand"><div class="logo">S</div><span>Sheets</span></div>
+  <div class="qa">
+    <button data-cmd="save" title="Save (Ctrl+S)">💾</button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)">↷</button>
+  </div>
+  <div class="docname"><input value="Book1" aria-label="Workbook name" spellcheck="false"></div>
+  <span class="status-saved"></span>
+</div>
+
+<div class="ribbon-tabs">
+  <button class="file-tab">File</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="insert">Insert</button>
+  <button data-tab="formulas">Formulas</button>
+  <button data-tab="data">Data</button>
+  <button data-tab="view">View</button>
+</div>
+
+<div class="ribbon">
+  <div class="ribbon-panel active" data-panel="home">
+    <div class="group"><div class="controls">
+      <button class="btn big" data-cmd="paste-btn" title="Paste (Ctrl+V)"><span class="ico">📋</span>Paste</button>
+      <div class="controls col">
+        <button class="btn" data-cmd="cut-btn">✂ Cut</button>
+        <button class="btn" data-cmd="copy-btn">⧉ Copy</button>
+      </div>
+    </div><div class="label">Clipboard</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <select class="ctl" id="fontName" style="width:130px">
+          <option>Calibri</option><option>Arial</option><option>Cambria</option><option>Georgia</option><option>Times New Roman</option>
+          <option>Verdana</option><option>Tahoma</option><option>Courier New</option><option>Consolas</option>
+        </select>
+        <select class="ctl" id="fontSize" style="width:52px">
+          <option>8</option><option>9</option><option>10</option><option selected>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>36</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" data-style="b" title="Bold (Ctrl+B)"><b>B</b></button>
+        <button class="btn" data-style="i" title="Italic (Ctrl+I)"><i>I</i></button>
+        <button class="btn" data-style="u" title="Underline (Ctrl+U)"><u>U</u></button>
+        <select class="ctl" id="borders" title="Borders"><option value="">Borders</option><option value="all">All borders</option><option value="outer">Outside borders</option><option value="bottom">Bottom border</option><option value="none">No border</option></select>
+        <span class="btn color-btn" title="Fill colour">🪣<span class="bar" style="background:#ffff00"></span><input type="color" id="fillColor" value="#ffff00"></span>
+        <span class="btn color-btn" title="Font colour"><b>A</b><span class="bar" style="background:#c00000"></span><input type="color" id="textColor" value="#c00000"></span>
+      </div>
+    </div><div class="label">Font</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <button class="btn" data-align="left" title="Align left">⫷</button>
+        <button class="btn" data-align="center" title="Center">≡</button>
+        <button class="btn" data-align="right" title="Align right">⫸</button>
+      </div>
+      <div class="row">
+        <button class="btn" data-style="wrap" title="Wrap text">↵ Wrap</button>
+        <button class="btn" id="merge" title="Merge &amp; Center">⇔ Merge</button>
+      </div>
+    </div><div class="label">Alignment</div></div>
+    <div class="group"><div class="controls col">
+      <select class="ctl" id="numFmt" style="width:130px">
+        <option value="General">General</option>
+        <option value="0.00">Number</option>
+        <option value="$#,##0.00">Currency</option>
+        <option value="#,##0.00">Accounting</option>
+        <option value="m/d/yyyy">Short Date</option>
+        <option value="dddd, mmmm d, yyyy">Long Date</option>
+        <option value="h:mm:ss AM/PM">Time</option>
+        <option value="0.00%">Percentage</option>
+        <option value="0.00E+00">Scientific</option>
+        <option value="@">Text</option>
+      </select>
+      <div class="row">
+        <button class="btn" data-fmt="$#,##0.00" title="Currency">$</button>
+        <button class="btn" data-fmt="0%" title="Percent">%</button>
+        <button class="btn" data-fmt="#,##0" title="Comma style">,</button>
+        <button class="btn" id="incDec" title="Increase decimal">.0→</button>
+        <button class="btn" id="decDec" title="Decrease decimal">←.0</button>
+      </div>
+    </div><div class="label">Number</div></div>
+    <div class="group"><div class="controls col">
+      <button class="btn" id="insRow">⊞ Insert row</button>
+      <button class="btn" id="insCol">⊞ Insert column</button>
+      <button class="btn" id="delRow">⊟ Delete row</button>
+      <button class="btn" id="delCol">⊟ Delete column</button>
+    </div><div class="label">Cells</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="autoSum" title="AutoSum (Alt+=)"><span class="ico">Σ</span>AutoSum</button>
+      <div class="controls col">
+        <button class="btn" id="fillDown" title="Fill down (Ctrl+D)">⬇ Fill down</button>
+        <button class="btn" id="fillRight" title="Fill right (Ctrl+R)">➡ Fill right</button>
+        <select class="ctl" id="clear"><option value="">Clear…</option><option value="all">Clear all</option><option value="formats">Clear formats</option><option value="contents">Clear contents</option></select>
+      </div>
+      <div class="controls col">
+        <button class="btn" id="sortAsc">A→Z Sort</button>
+        <button class="btn" id="sortDesc">Z→A Sort</button>
+        <button class="btn" data-cmd="find">🔍 Find</button>
+      </div>
+    </div><div class="label">Editing</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="insert">
+    <div class="group"><div class="controls">
+      <button class="btn big" data-chart="bar"><span class="ico">📊</span>Column</button>
+      <button class="btn big" data-chart="line"><span class="ico">📈</span>Line</button>
+      <button class="btn big" data-chart="pie"><span class="ico">◔</span>Pie</button>
+      <button class="btn big" data-chart="hbar"><span class="ico">☰</span>Bar</button>
+    </div><div class="label">Charts</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insFunction"><span class="ico">ƒx</span>Function</button>
+      <button class="btn big" id="insSheet"><span class="ico">＋</span>Sheet</button>
+    </div><div class="label">Other</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="formulas">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insFunction2"><span class="ico">ƒx</span>Insert<br>Function</button>
+      <button class="btn big" id="autoSum2"><span class="ico">Σ</span>AutoSum</button>
+    </div><div class="label">Function Library</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="showFormulas"><span class="ico">⨍</span>Show<br>Formulas</button>
+      <button class="btn big" id="recalc"><span class="ico">⟳</span>Calculate<br>Now</button>
+    </div><div class="label">Calculation</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="data">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="sortAsc2"><span class="ico">A↓</span>Sort<br>A to Z</button>
+      <button class="btn big" id="sortDesc2"><span class="ico">Z↓</span>Sort<br>Z to A</button>
+      <button class="btn big" id="filter"><span class="ico">⏷</span>Filter</button>
+      <button class="btn big" id="clearFilter"><span class="ico">⊘</span>Clear<br>Filter</button>
+    </div><div class="label">Sort &amp; Filter</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="dedupe"><span class="ico">⧉</span>Remove<br>Duplicates</button>
+      <button class="btn big" id="textToCols"><span class="ico">⇹</span>Text to<br>Columns</button>
+    </div><div class="label">Data Tools</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="view">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="freezeRow"><span class="ico">⎺</span>Freeze<br>Top Row</button>
+      <button class="btn big" id="freezeCol"><span class="ico">⎸</span>Freeze First<br>Column</button>
+      <button class="btn big" id="gridlines"><span class="ico">▦</span>Gridlines</button>
+    </div><div class="label">Show</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="zoom100"><span class="ico">🔎</span>100%</button>
+    </div><div class="label">Zoom</div></div>
+  </div>
+</div>
+
+<div class="formula-bar">
+  <input id="nameBox" class="namebox" value="A1" aria-label="Name box" spellcheck="false">
+  <span class="fx">ƒx</span>
+  <input id="fx" class="fx-input" aria-label="Formula bar" spellcheck="false" autocomplete="off">
+</div>
+
+<div class="workspace">
+  <div class="grid-wrap" id="gridWrap" tabindex="0">
+    <table class="grid" id="grid"><thead></thead><tbody></tbody></table>
+    <div class="sel-box" id="selBox"></div>
+    <textarea class="cell-editor" id="cellEditor" spellcheck="false" hidden></textarea>
+    <div class="charts-layer" id="chartsLayer"></div>
+  </div>
+  <div class="findbar" id="findbar">
+    <input id="findText" placeholder="Find">
+    <input id="replaceText" placeholder="Replace with">
+    <button class="btn" id="findNext">Find next</button>
+    <button class="btn" id="replaceAll">Replace all</button>
+    <button class="btn" id="findClose">✕</button>
+  </div>
+  <div class="fn-hint" id="fnHint" hidden></div>
+</div>
+
+<div class="sheet-tabs">
+  <button class="btn" id="addSheet" title="New sheet">＋</button>
+  <div class="tabs" id="sheetTabs"></div>
+</div>
+
+<div class="statusbar">
+  <span id="stMode">Ready</span>
+  <span class="spacer"></span>
+  <span id="stAgg"></span>
+  <button class="btn" id="zoomOut" style="color:#fff">−</button>
+  <input type="range" id="zoom" min="50" max="200" value="100">
+  <button class="btn" id="zoomIn" style="color:#fff">+</button>
+  <span id="zoomLabel">100%</span>
+</div>
+
+<div class="backstage">
+  <nav>
+    <button class="back" title="Back">←</button>
+    <button data-cmd="new">New</button>
+    <button data-cmd="open">Open</button>
+    <button data-cmd="save">Save</button>
+    <button data-cmd="save-as">Save As</button>
+    <hr>
+    <button data-cmd="export-csv">Export sheet to CSV</button>
+    <button data-cmd="export-pdf">Export to PDF</button>
+    <button data-cmd="print">Print</button>
+    <hr>
+    <button data-cmd="home">Atlas Office Home</button>
+  </nav>
+  <main><h1>Atlas Sheets</h1><p>Open and save Excel workbooks (.xlsx, .xls), OpenDocument spreadsheets (.ods) and CSV/TSV files.</p></main>
+</div>
+
+<div class="print-area" id="printArea"></div>
+
+<script src="../../node_modules/xlsx/dist/xlsx.full.min.js"></script>
+<script src="js/platform.js"></script>
+<script src="js/formula.js"></script>
+<script src="js/sheets.js"></script>
+</body>
+</html>

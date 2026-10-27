@@ -1,0 +1,110 @@
+/* Atlas Office — shared look & feel (ribbon UI) */
+:root {
+  --accent: #2b579a;
+  --accent-dark: #1e3f73;
+  --accent-light: #dbe5f3;
+  --bg: #f3f2f1;
+  --surface: #ffffff;
+  --border: #d2d0ce;
+  --text: #252423;
+  --muted: #605e5c;
+  --hover: #e1dfdd;
+  --pressed: #c8c6c4;
+  --font: "Segoe UI", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Roboto, Ubuntu, Arial, sans-serif;
+}
+body.app-write { --accent: #2b579a; --accent-dark: #1e3f73; --accent-light: #dbe5f3; }
+body.app-sheets { --accent: #217346; --accent-dark: #185c37; --accent-light: #d6ebdf; }
+body.app-slides { --accent: #b7472a; --accent-dark: #8f3720; --accent-light: #f5dcd5; }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { font: 13px/1.4 var(--font); color: var(--text); background: var(--bg); display: flex; flex-direction: column; overflow: hidden; }
+button, input, select { font: inherit; color: inherit; }
+
+/* Title bar */
+.titlebar { background: var(--accent); color: #fff; display: flex; align-items: center; gap: 12px; padding: 0 12px; height: 40px; flex: none; }
+.titlebar .brand { font-weight: 600; display: flex; align-items: center; gap: 8px; }
+.titlebar .logo { width: 22px; height: 22px; border-radius: 4px; background: #fff; color: var(--accent); display: grid; place-items: center; font-weight: 800; font-size: 13px; }
+.titlebar .docname { flex: 1; text-align: center; opacity: .95; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.titlebar .docname input { background: transparent; border: 1px solid transparent; color: #fff; text-align: center; padding: 2px 6px; border-radius: 3px; width: min(360px, 100%); }
+.titlebar .docname input:hover, .titlebar .docname input:focus { border-color: rgba(255,255,255,.5); outline: none; background: rgba(255,255,255,.12); }
+.titlebar .qa { display: flex; gap: 2px; }
+.titlebar .qa button { background: transparent; border: 0; color: #fff; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
+.titlebar .qa button:hover { background: rgba(255,255,255,.18); }
+.titlebar .status-saved { font-size: 12px; opacity: .85; }
+
+/* Ribbon */
+.ribbon-tabs { background: var(--accent); display: flex; gap: 2px; padding: 0 8px; flex: none; }
+.ribbon-tabs button { background: transparent; border: 0; color: #fff; padding: 6px 14px; cursor: pointer; border-radius: 4px 4px 0 0; }
+.ribbon-tabs button:hover { background: rgba(255,255,255,.15); }
+.ribbon-tabs button.active { background: var(--bg); color: var(--accent); font-weight: 600; }
+.ribbon-tabs button.file-tab { background: var(--accent-dark); }
+.ribbon { background: var(--bg); border-bottom: 1px solid var(--border); flex: none; min-height: 96px; overflow-x: auto; overflow-y: hidden; }
+.ribbon-panel { display: none; padding: 4px 6px; gap: 0; align-items: stretch; }
+.ribbon-panel.active { display: flex; }
+.group { display: flex; flex-direction: column; padding: 2px 8px; border-right: 1px solid var(--border); flex: none; }
+.group:last-child { border-right: 0; }
+.group .controls { flex: 1; display: flex; flex-wrap: wrap; gap: 2px; align-content: flex-start; max-width: 360px; }
+.group .controls.col { flex-direction: column; flex-wrap: nowrap; }
+.group .controls .row { display: flex; gap: 2px; align-items: center; }
+.group .label { text-align: center; color: var(--muted); font-size: 11px; margin-top: 2px; white-space: nowrap; }
+.btn { background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 3px 6px; cursor: pointer; min-width: 26px; height: 26px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; white-space: nowrap; }
+.btn:hover { background: var(--hover); }
+.btn:active, .btn.on { background: var(--pressed); border-color: #a19f9d; }
+.btn.big { flex-direction: column; height: 66px; min-width: 52px; padding: 4px 6px; font-size: 12px; }
+.btn.big .ico { font-size: 22px; line-height: 1; color: var(--accent); }
+.btn .ico { font-size: 15px; }
+.btn:disabled { opacity: .4; cursor: default; }
+select.ctl, input.ctl { height: 26px; border: 1px solid var(--border); border-radius: 2px; background: #fff; padding: 0 4px; }
+input.ctl[type=color] { width: 30px; padding: 1px; }
+.color-btn { position: relative; }
+.color-btn input[type=color] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+.color-btn .bar { position: absolute; left: 4px; right: 4px; bottom: 2px; height: 4px; }
+
+/* Status bar */
+.statusbar { height: 26px; flex: none; background: var(--accent); color: #fff; display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: 12px; }
+.statusbar .spacer { flex: 1; }
+.statusbar input[type=range] { width: 120px; accent-color: #fff; }
+
+/* Backstage (File tab) */
+.backstage { position: fixed; inset: 0; display: none; z-index: 50; background: var(--surface); }
+.backstage.open { display: flex; }
+.backstage nav { width: 220px; background: var(--accent); color: #fff; padding: 12px 0; display: flex; flex-direction: column; }
+.backstage nav button { background: transparent; border: 0; color: #fff; text-align: left; padding: 10px 24px; cursor: pointer; font-size: 14px; }
+.backstage nav button:hover { background: rgba(255,255,255,.15); }
+.backstage nav .back { font-size: 20px; padding: 4px 18px 16px; }
+.backstage nav hr { border: 0; border-top: 1px solid rgba(255,255,255,.3); margin: 8px 16px; width: auto; }
+.backstage main { flex: 1; padding: 32px 48px; overflow: auto; }
+.backstage h1 { font-weight: 300; font-size: 32px; margin: 0 0 24px; }
+
+/* Modal dialog */
+.modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; z-index: 100; }
+.modal { background: #fff; border-radius: 6px; box-shadow: 0 12px 40px rgba(0,0,0,.3); min-width: 340px; max-width: 92vw; padding: 20px 22px 16px; }
+.modal h2 { margin: 0 0 12px; font-size: 18px; font-weight: 600; }
+.modal .fields { display: grid; gap: 10px; margin-bottom: 16px; }
+.modal label { display: grid; gap: 4px; color: var(--muted); font-size: 12px; }
+.modal input, .modal select, .modal textarea { border: 1px solid var(--border); border-radius: 3px; padding: 6px 8px; font-size: 13px; color: var(--text); }
+.modal .actions { display: flex; justify-content: flex-end; gap: 8px; }
+.modal .actions button { padding: 6px 16px; border-radius: 3px; border: 1px solid var(--border); background: #fff; cursor: pointer; }
+.modal .actions button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* Toast */
+.toast { position: fixed; bottom: 40px; left: 50%; transform: translateX(-50%); background: #323130; color: #fff; padding: 8px 16px; border-radius: 4px; z-index: 200; opacity: 0; transition: opacity .2s; pointer-events: none; }
+.toast.show { opacity: 1; }
+
+/* Find bar */
+.findbar { position: absolute; top: 8px; right: 24px; background: #fff; border: 1px solid var(--border); box-shadow: 0 4px 16px rgba(0,0,0,.15); padding: 8px; display: none; gap: 6px; align-items: center; z-index: 20; border-radius: 4px; }
+.findbar.open { display: flex; }
+.findbar input { height: 26px; border: 1px solid var(--border); padding: 0 6px; width: 150px; }
+
+.workspace { flex: 1; display: flex; min-height: 0; position: relative; }
+
+@media print {
+  .titlebar, .ribbon-tabs, .ribbon, .statusbar, .backstage, .findbar, .no-print { display: none !important; }
+  body { background: #fff; overflow: visible; height: auto; display: block; }
+}
+@media (max-width: 640px) {
+  .titlebar .status-saved { display: none; }
+  .backstage nav { width: 150px; }
+  .backstage main { padding: 20px; }
+}

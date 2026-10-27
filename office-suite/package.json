@@ -1,0 +1,167 @@
+{
+  "name": "atlas-office",
+  "productName": "Atlas Office",
+  "version": "1.0.0",
+  "description": "A free, cross-platform office suite: Atlas Write (documents), Atlas Sheets (spreadsheets) and Atlas Slides (presentations).",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "isaadac",
+    "email": "isaac.a.adekanmi@gmail.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "dependencies": {
+    "docx": "9.15.0",
+    "mammoth": "1.13.0",
+    "pptxgenjs": "4.0.1",
+    "jszip": "3.10.2",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0"
+  },
+  "homepage": "https://github.com/isaadac/Git-anythingHub",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isaadac/Git-anythingHub.git"
+  },
+  "build": {
+    "appId": "io.github.isaadac.atlasoffice",
+    "productName": "Atlas Office",
+    "copyright": "Copyright \u00a9 2026 isaadac",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "build/icon.png",
+      "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "docx",
+        "name": "Word Document",
+        "description": "Word Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "md",
+        "name": "Markdown Document",
+        "role": "Editor"
+      },
+      {
+        "ext": "xlsx",
+        "name": "Excel Workbook",
+        "description": "Excel Workbook",
+        "role": "Editor"
+      },
+      {
+        "ext": "xls",
+        "name": "Excel 97-2003 Workbook",
+        "role": "Editor"
+      },
+      {
+        "ext": "ods",
+        "name": "OpenDocument Spreadsheet",
+        "role": "Editor"
+      },
+      {
+        "ext": "csv",
+        "name": "CSV File",
+        "role": "Editor"
+      },
+      {
+        "ext": "pptx",
+        "name": "PowerPoint Presentation",
+        "description": "PowerPoint Presentation",
+        "role": "Editor"
+      },
+      {
+        "ext": "aslides",
+        "name": "Atlas Presentation",
+        "role": "Editor"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Atlas Office"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png"
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "maintainer": "isaadac <isaac.a.adekanmi@gmail.com>",
+      "synopsis": "Documents, spreadsheets and presentations",
+      "syncDesktopName": true
+    },
+    "publish": null
+  },
+  "desktopName": "atlas-office.desktop"
+}

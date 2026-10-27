@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'">
+<title>Atlas Slides</title>
+<link rel="stylesheet" href="css/office.css">
+<link rel="stylesheet" href="css/slides.css">
+</head>
+<body class="app-slides">
+<div class="titlebar">
+  <div class="brand"><div class="logo">P</div><span>Slides</span></div>
+  <div class="qa">
+    <button data-cmd="save" title="Save (Ctrl+S)">💾</button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)">↷</button>
+    <button data-cmd="present" title="Start slide show (F5)">▶</button>
+  </div>
+  <div class="docname"><input value="Presentation1" aria-label="Presentation name" spellcheck="false"></div>
+  <span class="status-saved"></span>
+</div>
+
+<div class="ribbon-tabs">
+  <button class="file-tab">File</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="insert">Insert</button>
+  <button data-tab="design">Design</button>
+  <button data-tab="transitions">Transitions</button>
+  <button data-tab="arrange">Arrange</button>
+  <button data-tab="show">Slide Show</button>
+</div>
+
+<div class="ribbon">
+  <div class="ribbon-panel active" data-panel="home">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="newSlide"><span class="ico">▭＋</span>New<br>Slide</button>
+      <div class="controls col">
+        <select class="ctl" id="layout" title="Layout">
+          <option value="title">Title Slide</option><option value="content" selected>Title and Content</option>
+          <option value="section">Section Header</option><option value="two">Two Content</option><option value="titleonly">Title Only</option><option value="blank">Blank</option>
+        </select>
+        <button class="btn" id="dupSlide">⧉ Duplicate</button>
+        <button class="btn" id="delSlide">🗑 Delete</button>
+      </div>
+    </div><div class="label">Slides</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <select class="ctl" id="fontName" style="width:130px">
+          <option>Calibri</option><option>Calibri Light</option><option>Arial</option><option>Georgia</option><option>Segoe UI</option><option>Verdana</option><option>Trebuchet MS</option><option>Times New Roman</option><option>Courier New</option><option>Impact</option>
+        </select>
+        <select class="ctl" id="fontSize" style="width:56px">
+          <option>10</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>32</option><option>36</option><option>40</option><option>44</option><option>54</option><option>60</option><option>72</option><option>96</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" data-exec="bold"><b>B</b></button>
+        <button class="btn" data-exec="italic"><i>I</i></button>
+        <button class="btn" data-exec="underline"><u>U</u></button>
+        <button class="btn" data-exec="strikeThrough"><s>ab</s></button>
+        <span class="btn color-btn" title="Font colour"><b>A</b><span class="bar" style="background:#c00000"></span><input type="color" id="textColor" value="#c00000"></span>
+      </div>
+    </div><div class="label">Font</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <button class="btn" data-exec="insertUnorderedList">• ≡</button>
+        <button class="btn" data-exec="insertOrderedList">1. ≡</button>
+      </div>
+      <div class="row">
+        <button class="btn" data-align="left">⫷</button>
+        <button class="btn" data-align="center">≡</button>
+        <button class="btn" data-align="right">⫸</button>
+        <button class="btn" data-valign="top" title="Align top">⤒</button>
+        <button class="btn" data-valign="middle" title="Align middle">↕</button>
+        <button class="btn" data-valign="bottom" title="Align bottom">⤓</button>
+      </div>
+    </div><div class="label">Paragraph</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Fill <input type="color" class="ctl" id="shapeFill" value="#4472c4"> <button class="btn" id="noFill" title="No fill">∅</button></label>
+      <label class="row">Outline <input type="color" class="ctl" id="shapeLine" value="#2f528f"> <button class="btn" id="noLine" title="No outline">∅</button></label>
+    </div><div class="label">Drawing</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="insert">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="newSlide2"><span class="ico">▭＋</span>New<br>Slide</button>
+    </div><div class="label">Slides</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insText"><span class="ico">A</span>Text Box</button>
+      <button class="btn big" id="insImage"><span class="ico">🖼</span>Picture</button>
+      <button class="btn big" id="insTable"><span class="ico">▦</span>Table</button>
+    </div><div class="label">Content</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn" data-shape="rect" title="Rectangle">▭</button>
+      <button class="btn" data-shape="roundRect" title="Rounded rectangle">▢</button>
+      <button class="btn" data-shape="ellipse" title="Oval">◯</button>
+      <button class="btn" data-shape="triangle" title="Triangle">△</button>
+      <button class="btn" data-shape="rightArrow" title="Arrow">➔</button>
+      <button class="btn" data-shape="line" title="Line">╱</button>
+      <button class="btn" data-shape="star5" title="Star">☆</button>
+      <button class="btn" data-shape="diamond" title="Diamond">◇</button>
+    </div><div class="label">Shapes</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="design">
+    <div class="group"><div class="controls themes" id="themes"></div><div class="label">Themes</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Background <input type="color" class="ctl" id="slideBg" value="#ffffff"></label>
+      <button class="btn" id="bgAll">Apply to all slides</button>
+      <button class="btn" id="bgImage">🖼 Background picture</button>
+    </div><div class="label">Customize</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="transitions">
+    <div class="group"><div class="controls">
+      <button class="btn big" data-trans="none"><span class="ico">▭</span>None</button>
+      <button class="btn big" data-trans="fade"><span class="ico">◐</span>Fade</button>
+      <button class="btn big" data-trans="push"><span class="ico">⇠</span>Push</button>
+      <button class="btn big" data-trans="zoom"><span class="ico">⤢</span>Zoom</button>
+    </div><div class="label">Transition to This Slide</div></div>
+    <div class="group"><div class="controls col">
+      <button class="btn" id="transAll">Apply to all</button>
+    </div><div class="label">Timing</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="arrange">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="toFront"><span class="ico">⬒</span>Bring to<br>Front</button>
+      <button class="btn big" id="toBack"><span class="ico">⬓</span>Send to<br>Back</button>
+    </div><div class="label">Order</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="alignCenterH"><span class="ico">⇹</span>Center<br>Horizontally</button>
+      <button class="btn big" id="alignCenterV"><span class="ico">⇵</span>Center<br>Vertically</button>
+      <button class="btn big" id="dupEl"><span class="ico">⧉</span>Duplicate</button>
+      <button class="btn big" id="delEl"><span class="ico">🗑</span>Delete</button>
+    </div><div class="label">Arrange</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="show">
+    <div class="group"><div class="controls">
+      <button class="btn big" data-cmd="present"><span class="ico">▶</span>From<br>Beginning</button>
+      <button class="btn big" data-cmd="present-current"><span class="ico">▷</span>From Current<br>Slide</button>
+    </div><div class="label">Start Slide Show</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="toggleNotes"><span class="ico">🗒</span>Notes</button>
+    </div><div class="label">View</div></div>
+  </div>
+</div>
+
+<div class="workspace">
+  <aside class="thumbs" id="thumbs"></aside>
+  <div class="editor-col">
+    <div class="stage-wrap" id="stageWrap">
+      <div class="slide" id="stage"></div>
+    </div>
+    <div class="notes" id="notesPane">
+      <textarea id="notes" placeholder="Click to add notes"></textarea>
+    </div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="stSlide">Slide 1 of 1</span>
+  <span class="spacer"></span>
+  <span>Double-click a box to edit text · Delete removes it · F5 presents</span>
+</div>
+
+<div class="presenter" id="presenter" hidden><div class="slide" id="presentSlide"></div><div class="present-hint" id="presentHint"></div></div>
+<div class="print-slides" id="printSlides"></div>
+
+<div class="backstage">
+  <nav>
+    <button class="back" title="Back">←</button>
+    <button data-cmd="new">New</button>
+    <button data-cmd="open">Open</button>
+    <button data-cmd="save">Save</button>
+    <button data-cmd="save-as">Save As</button>
+    <hr>
+    <button data-cmd="export-pdf">Export to PDF</button>
+    <button data-cmd="print">Print</button>
+    <hr>
+    <button data-cmd="home">Atlas Office Home</button>
+  </nav>
+  <main><h1>Atlas Slides</h1><p>Open and save PowerPoint presentations (.pptx) and Atlas presentations (.aslides, keeps everything exactly).</p></main>
+</div>
+
+<script src="../../node_modules/jszip/dist/jszip.min.js"></script>
+<script src="../../node_modules/pptxgenjs/dist/pptxgen.min.js"></script>
+<script src="js/platform.js"></script>
+<script src="js/slides.js"></script>
+</body>
+</html>

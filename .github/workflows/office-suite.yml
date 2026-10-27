@@ -1,0 +1,83 @@
+# Builds Atlas Office installers for Windows, macOS and Linux.
+# - Every push/PR touching office-suite/: runs tests and uploads installers as workflow artifacts.
+# - Pushing a tag like "office-v1.0.0": also attaches the installers to a GitHub Release.
+name: Atlas Office
+
+on:
+  push:
+    paths: ['office-suite/**', '.github/workflows/office-suite.yml']
+    tags: ['office-v*']
+  pull_request:
+    paths: ['office-suite/**', '.github/workflows/office-suite.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: office-suite
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: office-suite/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: office-suite/package-lock.json
+      - run: npm ci
+      - name: Build installers
+        run: npx electron-builder ${{ matrix.target }} --publish never
+        env:
+          # Unsigned builds. Add CSC_LINK / CSC_KEY_PASSWORD (and Apple notarization secrets) to sign.
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+      - uses: actions/upload-artifact@v4
+        with:
+          name: atlas-office-${{ runner.os }}
+          path: |
+            office-suite/dist/*.exe
+            office-suite/dist/*.dmg
+            office-suite/dist/*.zip
+            office-suite/dist/*.AppImage
+            office-suite/dist/*.deb
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/office-v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          generate_release_notes: true

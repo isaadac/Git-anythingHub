@@ -1,0 +1,80 @@
+/* Atlas Slides */
+.thumbs { width: 190px; flex: none; overflow-y: auto; background: #f3f2f1; border-right: 1px solid var(--border); padding: 10px 10px 40px 4px; }
+.thumb { display: flex; gap: 6px; margin-bottom: 12px; cursor: pointer; align-items: flex-start; }
+.thumb .num { width: 18px; text-align: right; color: var(--muted); font-size: 12px; padding-top: 2px; }
+.thumb .frame { width: 160px; height: 90px; overflow: hidden; border: 2px solid transparent; border-radius: 2px; box-shadow: 0 0 0 1px #c8c6c4; position: relative; background: #fff; }
+.thumb.active .frame { border-color: var(--accent); box-shadow: none; }
+.thumb:hover .frame { box-shadow: 0 0 0 1px var(--accent); }
+.thumb .frame .slide { transform: scale(calc(160 / 960)); transform-origin: 0 0; pointer-events: none; position: absolute; left: 0; top: 0; }
+.thumb.drag-over .frame { border-top: 3px solid var(--accent); }
+
+.editor-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.stage-wrap { flex: 1; display: grid; place-items: center; overflow: hidden; background: #e9e8e7; position: relative; }
+.notes { height: 90px; flex: none; border-top: 1px solid var(--border); background: #fff; }
+.notes textarea { width: 100%; height: 100%; border: 0; resize: none; padding: 8px 14px; font: 13px var(--font); outline: none; }
+body.hide-notes .notes { display: none; }
+
+/* A slide is always 960 x 540 logical px; it is scaled to fit. */
+.slide { width: 960px; height: 540px; position: relative; overflow: hidden; background: #fff; flex: none; background-size: cover; background-position: center; font-family: Calibri, Carlito, Arial, sans-serif; }
+#stage { box-shadow: 0 2px 10px rgba(0,0,0,.2); transform-origin: center center; }
+.el { position: absolute; box-sizing: border-box; }
+.el .content { width: 100%; height: 100%; display: flex; flex-direction: column; overflow: hidden; outline: none; padding: 6px 10px; word-wrap: break-word; line-height: 1.15; }
+.el .content.v-top { justify-content: flex-start; }
+.el .content.v-middle { justify-content: center; }
+.el .content.v-bottom { justify-content: flex-end; }
+.el .content > * { margin: 0; }
+.el .content ul, .el .content ol { padding-left: 1.2em; margin: 0; }
+.el .content li { margin: .15em 0; }
+.el.text .content:empty::before { content: attr(data-placeholder); color: #888; }
+.el svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.el.shape .content { position: relative; z-index: 1; }
+.el img { width: 100%; height: 100%; object-fit: contain; display: block; pointer-events: none; }
+.el table { width: 100%; height: 100%; border-collapse: collapse; }
+.el td { border: 1px solid #fff; padding: 4px 8px; background: #dae3f3; }
+.el tr:first-child td { background: var(--tbl-accent, #4472c4); color: #fff; font-weight: 700; }
+
+#stage .el { cursor: move; }
+#stage .el.text:not(.selected), #stage .el.table:not(.selected) { outline: 1px dashed transparent; }
+#stage .el.text:hover { outline: 1px dashed #a19f9d; }
+#stage .el.selected { outline: 1px solid #5b9bd5; }
+#stage .el.editing { cursor: text; }
+#stage .el.editing .content { cursor: text; user-select: text; }
+.handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1px solid #5b9bd5; border-radius: 50%; z-index: 5; }
+.handle.nw { left: -5px; top: -5px; cursor: nwse-resize; } .handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }
+.handle.sw { left: -5px; bottom: -5px; cursor: nesw-resize; } .handle.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
+.handle.n { left: calc(50% - 5px); top: -5px; cursor: ns-resize; } .handle.s { left: calc(50% - 5px); bottom: -5px; cursor: ns-resize; }
+.handle.w { top: calc(50% - 5px); left: -5px; cursor: ew-resize; } .handle.e { top: calc(50% - 5px); right: -5px; cursor: ew-resize; }
+.guide { position: absolute; background: #e3008c; z-index: 6; pointer-events: none; }
+
+.themes { max-width: 560px !important; }
+.theme-swatch { width: 84px; height: 48px; border: 1px solid var(--border); cursor: pointer; border-radius: 2px; display: flex; flex-direction: column; justify-content: center; padding: 4px 6px; font-size: 11px; overflow: hidden; }
+.theme-swatch:hover { outline: 2px solid var(--accent); }
+.theme-swatch .t { font-size: 15px; font-weight: 600; }
+
+.presenter { position: fixed; inset: 0; background: #000; z-index: 300; display: grid; place-items: center; cursor: none; }
+.presenter[hidden] { display: none; }
+.presenter.show-cursor { cursor: default; }
+.presenter .slide { transform-origin: center center; }
+.presenter .el.text .content:empty::before { content: none; }
+.present-hint { position: fixed; bottom: 12px; left: 16px; color: rgba(255,255,255,.55); font: 12px var(--font); }
+.presenter.black .slide { visibility: hidden; }
+@keyframes t-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes t-push { from { transform: var(--scale) translateX(100%); } to { transform: var(--scale) translateX(0); } }
+@keyframes t-zoom { from { transform: var(--scale) scale(.6); opacity: 0; } to { transform: var(--scale) scale(1); opacity: 1; } }
+.presenter .slide.t-fade { animation: t-fade .6s ease; }
+.presenter .slide.t-push { animation: t-push .5s ease; }
+.presenter .slide.t-zoom { animation: t-zoom .5s ease; }
+
+.print-slides { display: none; }
+@media print {
+  @page { size: 10in 5.625in; margin: 0; }
+  .workspace, .thumbs, .presenter { display: none !important; }
+  .print-slides { display: block; }
+  .print-slides .slide { page-break-after: always; break-after: page; zoom: 1; width: 960px; height: 540px; }
+}
+@media (max-width: 760px) {
+  .thumbs { width: 110px; }
+  .thumb .frame { width: 90px; height: 50.6px; }
+  .thumb .frame .slide { transform: scale(calc(90 / 960)); }
+  .notes { height: 60px; }
+}

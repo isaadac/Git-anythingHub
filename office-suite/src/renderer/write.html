@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:">
+<title>Atlas Write</title>
+<link rel="stylesheet" href="css/office.css">
+<link rel="stylesheet" href="css/write.css">
+</head>
+<body class="app-write">
+<div class="titlebar">
+  <div class="brand"><div class="logo">W</div><span>Write</span></div>
+  <div class="qa">
+    <button data-cmd="save" title="Save (Ctrl+S)">💾</button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)">↷</button>
+  </div>
+  <div class="docname"><input value="Document1" aria-label="Document name" spellcheck="false"></div>
+  <span class="status-saved"></span>
+</div>
+
+<div class="ribbon-tabs">
+  <button class="file-tab">File</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="insert">Insert</button>
+  <button data-tab="layout">Layout</button>
+  <button data-tab="review">Review</button>
+  <button data-tab="view">View</button>
+</div>
+
+<div class="ribbon">
+  <!-- HOME -->
+  <div class="ribbon-panel active" data-panel="home">
+    <div class="group">
+      <div class="controls">
+        <button class="btn big" data-exec="paste" title="Paste (Ctrl+V)"><span class="ico">📋</span>Paste</button>
+        <div class="controls col">
+          <button class="btn" data-exec="cut" title="Cut (Ctrl+X)">✂ Cut</button>
+          <button class="btn" data-exec="copy" title="Copy (Ctrl+C)">⧉ Copy</button>
+          <button class="btn" id="formatPainter" title="Format Painter">🖌 Format</button>
+        </div>
+      </div>
+      <div class="label">Clipboard</div>
+    </div>
+    <div class="group">
+      <div class="controls col">
+        <div class="row">
+          <select class="ctl" id="fontName" title="Font" style="width:140px">
+            <option>Calibri</option><option>Arial</option><option>Cambria</option><option>Georgia</option><option>Times New Roman</option>
+            <option>Helvetica</option><option>Verdana</option><option>Tahoma</option><option>Trebuchet MS</option><option>Garamond</option>
+            <option>Courier New</option><option>Consolas</option><option>Comic Sans MS</option><option>Impact</option>
+          </select>
+          <select class="ctl" id="fontSize" title="Font size" style="width:56px">
+            <option>8</option><option>9</option><option>10</option><option selected>11</option><option>12</option><option>14</option><option>16</option>
+            <option>18</option><option>20</option><option>24</option><option>28</option><option>36</option><option>48</option><option>72</option>
+          </select>
+          <button class="btn" id="growFont" title="Increase font size">A⁺</button>
+          <button class="btn" id="shrinkFont" title="Decrease font size">A⁻</button>
+          <button class="btn" data-exec="removeFormat" title="Clear formatting">⌫A</button>
+        </div>
+        <div class="row">
+          <button class="btn" data-exec="bold" data-state="bold" title="Bold (Ctrl+B)"><b>B</b></button>
+          <button class="btn" data-exec="italic" data-state="italic" title="Italic (Ctrl+I)"><i>I</i></button>
+          <button class="btn" data-exec="underline" data-state="underline" title="Underline (Ctrl+U)"><u>U</u></button>
+          <button class="btn" data-exec="strikeThrough" data-state="strikeThrough" title="Strikethrough"><s>ab</s></button>
+          <button class="btn" data-exec="subscript" data-state="subscript" title="Subscript">x₂</button>
+          <button class="btn" data-exec="superscript" data-state="superscript" title="Superscript">x²</button>
+          <span class="btn color-btn" title="Text highlight colour">🖍<span class="bar" style="background:#ffff00"></span><input type="color" id="hiliteColor" value="#ffff00"></span>
+          <span class="btn color-btn" title="Font colour"><b>A</b><span class="bar" style="background:#c00000"></span><input type="color" id="foreColor" value="#c00000"></span>
+          <button class="btn" id="changeCase" title="Change case">Aa</button>
+        </div>
+      </div>
+      <div class="label">Font</div>
+    </div>
+    <div class="group">
+      <div class="controls col">
+        <div class="row">
+          <button class="btn" data-exec="insertUnorderedList" data-state="insertUnorderedList" title="Bullets">• ≡</button>
+          <button class="btn" data-exec="insertOrderedList" data-state="insertOrderedList" title="Numbering">1. ≡</button>
+          <button class="btn" data-exec="outdent" title="Decrease indent">⇤</button>
+          <button class="btn" data-exec="indent" title="Increase indent">⇥</button>
+          <select class="ctl" id="lineSpacing" title="Line spacing">
+            <option value="1">1.0</option><option value="1.15" selected>1.15</option><option value="1.5">1.5</option><option value="2">2.0</option><option value="2.5">2.5</option><option value="3">3.0</option>
+          </select>
+          <button class="btn" id="showMarks" title="Show paragraph marks">¶</button>
+        </div>
+        <div class="row">
+          <button class="btn" data-exec="justifyLeft" data-state="justifyLeft" title="Align left">⫷</button>
+          <button class="btn" data-exec="justifyCenter" data-state="justifyCenter" title="Center">≡</button>
+          <button class="btn" data-exec="justifyRight" data-state="justifyRight" title="Align right">⫸</button>
+          <button class="btn" data-exec="justifyFull" data-state="justifyFull" title="Justify">☰</button>
+          <span class="btn color-btn" title="Shading">▧<span class="bar" style="background:#dbe5f3"></span><input type="color" id="shading" value="#dbe5f3"></span>
+        </div>
+      </div>
+      <div class="label">Paragraph</div>
+    </div>
+    <div class="group">
+      <div class="controls styles-gallery">
+        <button class="btn style-btn" data-block="P">Normal</button>
+        <button class="btn style-btn s-title" data-block="H1" data-cls="title">Title</button>
+        <button class="btn style-btn s-h1" data-block="H1">Heading 1</button>
+        <button class="btn style-btn s-h2" data-block="H2">Heading 2</button>
+        <button class="btn style-btn s-h3" data-block="H3">Heading 3</button>
+        <button class="btn style-btn s-quote" data-block="BLOCKQUOTE">Quote</button>
+        <button class="btn style-btn s-code" data-block="PRE">Code</button>
+      </div>
+      <div class="label">Styles</div>
+    </div>
+    <div class="group">
+      <div class="controls col">
+        <button class="btn" data-cmd="find">🔍 Find</button>
+        <button class="btn" data-cmd="replace">⇄ Replace</button>
+        <button class="btn" data-exec="selectAll">▣ Select all</button>
+      </div>
+      <div class="label">Editing</div>
+    </div>
+  </div>
+
+  <!-- INSERT -->
+  <div class="ribbon-panel" data-panel="insert">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insPageBreak"><span class="ico">⤓</span>Page<br>Break</button>
+    </div><div class="label">Pages</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insTable"><span class="ico">▦</span>Table</button>
+      <div class="controls col">
+        <button class="btn" id="rowAbove" title="Insert row above">⊤ Row above</button>
+        <button class="btn" id="rowBelow" title="Insert row below">⊥ Row below</button>
+        <button class="btn" id="delRow">✕ Delete row</button>
+      </div>
+      <div class="controls col">
+        <button class="btn" id="colLeft">⊣ Column left</button>
+        <button class="btn" id="colRight">⊢ Column right</button>
+        <button class="btn" id="delCol">✕ Delete column</button>
+      </div>
+    </div><div class="label">Tables</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insImage"><span class="ico">🖼</span>Pictures</button>
+      <button class="btn big" id="insShape"><span class="ico">⬭</span>Text<br>Box</button>
+    </div><div class="label">Illustrations</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insLink"><span class="ico">🔗</span>Link</button>
+    </div><div class="label">Links</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insHr"><span class="ico">―</span>Line</button>
+      <button class="btn big" id="insDate"><span class="ico">📅</span>Date &amp;<br>Time</button>
+      <button class="btn big" id="insSymbol"><span class="ico">Ω</span>Symbol</button>
+      <button class="btn big" id="insToc"><span class="ico">☷</span>Contents</button>
+    </div><div class="label">Text</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="editHeader"><span class="ico">▔</span>Header</button>
+      <button class="btn big" id="editFooter"><span class="ico">▁</span>Footer</button>
+    </div><div class="label">Header &amp; Footer</div></div>
+  </div>
+
+  <!-- LAYOUT -->
+  <div class="ribbon-panel" data-panel="layout">
+    <div class="group"><div class="controls col">
+      <label class="row">Margins <select class="ctl" id="margins"><option value="1in">Normal (1")</option><option value="0.5in">Narrow (0.5")</option><option value="0.75in">Moderate (0.75")</option><option value="1.5in">Wide (1.5")</option></select></label>
+      <label class="row">Orientation <select class="ctl" id="orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
+      <label class="row">Size <select class="ctl" id="pageSize"><option value="letter">Letter (8.5" × 11")</option><option value="a4">A4 (210 × 297 mm)</option><option value="legal">Legal (8.5" × 14")</option></select></label>
+    </div><div class="label">Page Setup</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Columns <select class="ctl" id="columns"><option value="1">One</option><option value="2">Two</option><option value="3">Three</option></select></label>
+      <label class="row">Page colour <input type="color" class="ctl" id="pageColor" value="#ffffff"></label>
+    </div><div class="label">Arrange</div></div>
+  </div>
+
+  <!-- REVIEW -->
+  <div class="ribbon-panel" data-panel="review">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="spellToggle"><span class="ico">✓</span>Spelling</button>
+      <button class="btn big" id="wordCount"><span class="ico">#</span>Word<br>Count</button>
+    </div><div class="label">Proofing</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="readAloud"><span class="ico">🔊</span>Read<br>Aloud</button>
+    </div><div class="label">Speech</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="addComment"><span class="ico">💬</span>New<br>Comment</button>
+      <button class="btn big" id="delComment"><span class="ico">🗑</span>Delete<br>Comment</button>
+    </div><div class="label">Comments</div></div>
+  </div>
+
+  <!-- VIEW -->
+  <div class="ribbon-panel" data-panel="view">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="viewPrint"><span class="ico">📄</span>Print<br>Layout</button>
+      <button class="btn big" id="viewWeb"><span class="ico">🌐</span>Web<br>Layout</button>
+      <button class="btn big" id="viewFocus"><span class="ico">◎</span>Focus</button>
+      <button class="btn big" id="viewDark"><span class="ico">☾</span>Dark<br>Mode</button>
+    </div><div class="label">Views</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="zoom100"><span class="ico">🔎</span>100%</button>
+      <button class="btn big" id="zoomWidth"><span class="ico">↔</span>Page<br>Width</button>
+    </div><div class="label">Zoom</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="toggleNav"><span class="ico">☰</span>Navigation<br>Pane</button>
+    </div><div class="label">Show</div></div>
+  </div>
+</div>
+
+<div class="workspace">
+  <aside class="navpane no-print" id="navpane" hidden><h3>Navigation</h3><div id="navlist"></div></aside>
+  <div class="canvas" id="canvas">
+    <div class="page" id="page">
+      <div class="page-header" id="pageHeader" contenteditable="true" data-placeholder="Header" hidden></div>
+      <div class="doc" id="doc" contenteditable="true" spellcheck="true"><p><br></p></div>
+      <div class="page-footer" id="pageFooter" contenteditable="true" data-placeholder="Footer" hidden></div>
+    </div>
+  </div>
+  <div class="findbar" id="findbar">
+    <input id="findText" placeholder="Find">
+    <input id="replaceText" placeholder="Replace with">
+    <button class="btn" id="findPrev" title="Previous">▲</button>
+    <button class="btn" id="findNext" title="Next">▼</button>
+    <button class="btn" id="replaceOne">Replace</button>
+    <button class="btn" id="replaceAll">All</button>
+    <button class="btn" id="findClose">✕</button>
+  </div>
+  <div class="img-tools no-print" id="imgTools" hidden>
+    <button class="btn" data-w="25">25%</button><button class="btn" data-w="50">50%</button>
+    <button class="btn" data-w="75">75%</button><button class="btn" data-w="100">100%</button>
+    <button class="btn" data-a="left">⫷</button><button class="btn" data-a="center">≡</button><button class="btn" data-a="right">⫸</button>
+    <button class="btn" data-del="1">🗑</button>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="stPages">Page 1 of 1</span>
+  <span id="stWords">0 words</span>
+  <span id="stLang">English</span>
+  <span class="spacer"></span>
+  <button class="btn" id="zoomOut" style="color:#fff">−</button>
+  <input type="range" id="zoom" min="50" max="200" value="100">
+  <button class="btn" id="zoomIn" style="color:#fff">+</button>
+  <span id="zoomLabel">100%</span>
+</div>
+
+<div class="backstage">
+  <nav>
+    <button class="back" title="Back">←</button>
+    <button data-cmd="new">New</button>
+    <button data-cmd="open">Open</button>
+    <button data-cmd="save">Save</button>
+    <button data-cmd="save-as">Save As</button>
+    <hr>
+    <button data-cmd="export-pdf">Export to PDF</button>
+    <button data-cmd="export-html">Export to HTML</button>
+    <button data-cmd="export-txt">Export to Plain Text</button>
+    <button data-cmd="print">Print</button>
+    <hr>
+    <button data-cmd="home">Atlas Office Home</button>
+  </nav>
+  <main><h1>Atlas Write</h1><p>Open and save Word documents (.docx), web pages (.html), Markdown (.md) and plain text (.txt).</p></main>
+</div>
+
+<script src="../../node_modules/mammoth/mammoth.browser.min.js"></script>
+<script src="../../node_modules/docx/dist/index.iife.js"></script>
+<script src="../../node_modules/docx/dist/math.iife.js"></script>
+<script src="../../node_modules/docx/dist/html.iife.js"></script>
+<script src="js/platform.js"></script>
+<script src="js/write.js"></script>
+</body>
+</html>
