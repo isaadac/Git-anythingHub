@@ -34,7 +34,7 @@
   UI.initRibbon();
 
   // ---------- Model ----------
-  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [] });
+  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [] });
   let book = { sheets: [newSheet('Sheet1')], active: 0 };
   const sheet = () => book.sheets[book.active];
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
@@ -66,6 +66,7 @@
     }
   });
   const valueAt = (r, c) => engine.value(sheet().name, r, c);
+  const cf = SheetsCF({ engine, sheet: () => sheet() });
 
   function setCell(r, c, props, s = sheet()) {
     const key = addr(r, c);
@@ -341,11 +342,13 @@
     const cell = cellAt(r, c);
     const st = (cell && cell.s) || {};
     const { text, cls } = cellDisplay(r, c);
+    const fmt = cf.format(r, c, valueAt(r, c));
     t.textContent = '';
     if (text !== '') {
       const d = document.createElement('div');
       d.className = 'cv';
       d.textContent = text;
+      if (fmt && fmt.icon) { const ic = document.createElement('span'); ic.className = 'cf-icon'; ic.textContent = fmt.icon[0]; ic.style.color = fmt.icon[1]; d.prepend(ic); }
       // Rows never grow past their height, so the computed geometry stays exact.
       let h = 0;
       if (m) { for (let rr = m.r1; rr <= m.r2; rr++) h += rowH(rr); } else h = rowH(r);
@@ -367,13 +370,23 @@
     style.borderLeft = bd.l ? '1px solid #000' : '';
     style.borderRight = bd.r ? '1px solid #000' : '';
     style.borderBottom = bd.b ? '1px solid #000' : '';
+    if (fmt) applyCf(style, fmt);
     const s = sheet();
     if (s.hiddenRows.length && r === 0 && s.filterCol === c) t.firstChild ? (t.firstChild.textContent += ' ⏷') : (t.textContent = '⏷');
     paintedCells.push(t);
   }
+  /** Conditional formatting drawn over the cell's own style. */
+  function applyCf(style, fmt) {
+    if (fmt.bg) style.backgroundColor = fmt.bg;
+    if (fmt.color) style.color = fmt.color;
+    if (fmt.b) style.fontWeight = '700';
+    if (fmt.i) style.fontStyle = 'italic';
+    if (fmt.bar) style.backgroundImage = `linear-gradient(90deg, ${fmt.bar.color} 0%, ${fmt.bar.color}55 ${fmt.bar.pct}%, transparent ${fmt.bar.pct}%)`;
+  }
   const s_fc = c => (sheet().freezeCol && c === 0 ? 'fc' : '');
   function renderVisibleCells() {
     engine.invalidate();
+    cf.begin();
     paintedCells.forEach(t => { if (t.isConnected) { t.textContent = ''; t.removeAttribute('style'); t.className = t.classList.contains('hidden-merged') ? 'hidden-merged' : s_fc(+t.dataset.c); } });
     paintedCells = [];
     const s = sheet();
@@ -1077,6 +1090,7 @@
       if (m[k2] >= index) n[k2] = Math.max(n[k1], m[k2] + count);
       return n;
     }).filter(Boolean);
+    s.cf = SheetsCF.shift(s.cf, axis, index, count, s.name);
     buildGrid();
     state.markDirty();
   }
@@ -1084,6 +1098,151 @@
   document.getElementById('insCol').addEventListener('click', () => { const g = selRange(); shiftStructure('col', g.c1, Math.min(100, g.c2 - g.c1 + 1)); });
   document.getElementById('delRow').addEventListener('click', () => { const g = selRange(); shiftStructure('row', g.r1, -(g.r2 - g.r1 + 1)); select(g.r1, active.c); });
   document.getElementById('delCol').addEventListener('click', () => { const g = selRange(); shiftStructure('col', g.c1, -(g.c2 - g.c1 + 1)); select(active.r, g.c1); });
+
+  // ---------- Conditional formatting ----------
+  const CF_STYLE_OPTIONS = [
+    { value: 'red', label: 'Light red fill with dark red text' }, { value: 'yellow', label: 'Yellow fill with dark yellow text' },
+    { value: 'green', label: 'Green fill with dark green text' }, { value: 'redFill', label: 'Light red fill' },
+    { value: 'redText', label: 'Red text' }, { value: 'bold', label: 'Bold' }, { value: 'custom', label: 'Custom format…' }
+  ];
+  const styleField = { name: 'style', label: 'with', type: 'select', options: CF_STYLE_OPTIONS };
+  async function cfStyle(key) {
+    if (key !== 'custom') return { ...SheetsCF.PRESETS[key] };
+    const r = await UI.form('Format Cells', [
+      { name: 'bg', label: 'Fill colour', type: 'color', value: '#ffc7ce' }, { name: 'color', label: 'Font colour', type: 'color', value: '#9c0006' },
+      { name: 'b', label: 'Font style', type: 'select', options: [{ value: '', label: 'Regular' }, { value: 'b', label: 'Bold' }, { value: 'i', label: 'Italic' }, { value: 'bi', label: 'Bold italic' }] }
+    ]);
+    if (!r) return null;
+    return { bg: r.bg, color: r.color, ...(r.b.includes('b') ? { b: true } : {}), ...(r.b.includes('i') ? { i: true } : {}) };
+  }
+  function addCfRule(rule) {
+    const g = selRange();
+    const clean = SheetsCF.clean({ ...rule, ref: SheetsCF.refOf(g) });
+    if (!clean) { UI.toast('That rule could not be added'); return; }
+    snapshot();
+    const s = sheet();
+    s.cf = [clean, ...(s.cf || [])]; // a new rule takes priority, as in Excel
+    changed();
+  }
+  async function conditionalFormat(cmd) {
+    commitEdit();
+    const [kind, arg] = cmd.split(':');
+    const ops = { gt: ['Greater Than', 'greaterThan', 'Format cells that are GREATER THAN'], lt: ['Less Than', 'lessThan', 'Format cells that are LESS THAN'], eq: ['Equal To', 'equal', 'Format cells that are EQUAL TO'] };
+    if (ops[kind]) {
+      const [title, op, label] = ops[kind];
+      const r = await UI.form(title, [{ name: 'v', label, value: '' }, styleField]);
+      if (!r || r.v.trim() === '') return;
+      const style = await cfStyle(r.style); if (!style) return;
+      return addCfRule({ type: 'cellIs', op, v1: r.v.trim(), style });
+    }
+    switch (kind) {
+      case 'between': {
+        const r = await UI.form('Between', [{ name: 'a', label: 'Format cells that are BETWEEN', value: '' }, { name: 'b', label: 'and', value: '' }, styleField]);
+        if (!r || r.a.trim() === '' || r.b.trim() === '') return;
+        const style = await cfStyle(r.style); if (!style) return;
+        return addCfRule({ type: 'cellIs', op: 'between', v1: r.a.trim(), v2: r.b.trim(), style });
+      }
+      case 'text': {
+        const r = await UI.form('Text That Contains', [{ name: 'op', label: 'Format cells whose text', type: 'select', options: [{ value: 'containsText', label: 'contains' }, { value: 'notContainsText', label: 'does not contain' }, { value: 'beginsWith', label: 'begins with' }, { value: 'endsWith', label: 'ends with' }] }, { name: 't', label: 'the text', value: '' }, styleField]);
+        if (!r || !r.t) return;
+        const style = await cfStyle(r.style); if (!style) return;
+        return addCfRule({ type: r.op, text: r.t, style });
+      }
+      case 'dup': {
+        const r = await UI.form('Duplicate Values', [{ name: 'k', label: 'Format cells that contain', type: 'select', options: [{ value: 'duplicateValues', label: 'Duplicate values' }, { value: 'uniqueValues', label: 'Unique values' }] }, styleField]);
+        if (!r) return;
+        const style = await cfStyle(r.style); if (!style) return;
+        return addCfRule({ type: r.k, style });
+      }
+      case 'top': case 'toppct': case 'bottom': case 'bottompct': {
+        const pct = kind.endsWith('pct'), bottom = kind.startsWith('bottom');
+        const r = await UI.form(`${bottom ? 'Bottom' : 'Top'} ${pct ? '10%' : '10 Items'}`, [{ name: 'n', label: `Format cells that rank in the ${bottom ? 'BOTTOM' : 'TOP'}${pct ? ' (%)' : ''}`, type: 'number', min: 1, max: pct ? 100 : 1000, value: '10' }, styleField]);
+        if (!r) return;
+        const style = await cfStyle(r.style); if (!style) return;
+        return addCfRule({ type: 'top10', rank: +r.n || 10, percent: pct, bottom, style });
+      }
+      case 'above': case 'below': {
+        const r = await UI.form(kind === 'above' ? 'Above Average' : 'Below Average', [{ ...styleField, label: `Format cells that are ${kind.toUpperCase()} AVERAGE with` }]);
+        if (!r) return;
+        const style = await cfStyle(r.style); if (!style) return;
+        return addCfRule({ type: 'aboveAverage', below: kind === 'below', style });
+      }
+      case 'bar': return addCfRule({ type: 'dataBar', color: arg });
+      case 'scale': return addCfRule({ type: 'colorScale', colors: arg.split(',') });
+      case 'icons': return addCfRule({ type: 'iconSet', set: arg });
+      case 'formula': {
+        const g = selRange();
+        const r = await UI.form('New Formatting Rule', [{ name: 'f', label: `Format values where this formula is true (written for ${addr(g.r1, g.c1)}, the first selected cell)`, value: '=' }, styleField]);
+        if (!r || r.f.replace(/^=/, '').trim() === '') return;
+        try { F.parse(r.f.replace(/^=/, '')); } catch { UI.toast('That formula has an error'); return; }
+        const style = await cfStyle(r.style); if (!style) return;
+        return addCfRule({ type: 'expression', formula: r.f, style });
+      }
+      case 'clear-sel': case 'clear-sheet': {
+        const s = sheet();
+        if (!s.cf || !s.cf.length) { UI.toast('There are no rules to clear'); return; }
+        snapshot();
+        if (kind === 'clear-sheet') s.cf = [];
+        else {
+          const g = selRange();
+          s.cf = s.cf.filter(rule => { const a = SheetsCF.area(rule.ref); return a.r2 < g.r1 || a.r1 > g.r2 || a.c2 < g.c1 || a.c1 > g.c2; });
+        }
+        changed();
+        return;
+      }
+      case 'manage': return manageCfRules();
+    }
+  }
+  function manageCfRules() {
+    commitEdit();
+    const s = sheet();
+    let rules = (s.cf || []).map(r => ({ ...r }));
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = '<div class="modal cf-manage" role="dialog" aria-label="Conditional Formatting Rules Manager"><h2>Conditional Formatting Rules</h2><div class="cf-list"></div><div class="actions"><button class="cancel">Cancel</button><button class="primary ok">OK</button></div></div>';
+    const list = back.querySelector('.cf-list');
+    const draw = () => {
+      list.innerHTML = '';
+      if (!rules.length) { list.innerHTML = '<div class="cf-empty">No rules on this sheet. Use Conditional Formatting to add one.</div>'; return; }
+      rules.forEach((r, i) => {
+        const row = document.createElement('div');
+        row.className = 'cf-row';
+        row.innerHTML = '<div><span class="cf-swatch">AaBb</span><span class="cf-desc"></span></div><input aria-label="Applies to"><div><button data-a="up" title="Move up">▲</button> <button data-a="down" title="Move down">▼</button> <button data-a="del" title="Delete rule">✕</button></div>';
+        row.querySelector('.cf-desc').textContent = SheetsCF.describe(r);
+        const sw = row.querySelector('.cf-swatch');
+        if (r.style) Object.assign(sw.style, { background: r.style.bg || '', color: r.style.color || '', fontWeight: r.style.b ? '700' : '', fontStyle: r.style.i ? 'italic' : '' });
+        else if (r.type === 'colorScale') sw.style.background = `linear-gradient(90deg, ${r.colors.join(',')})`;
+        else if (r.type === 'dataBar') sw.style.background = `linear-gradient(90deg, ${r.color} 60%, transparent 60%)`;
+        else sw.textContent = SheetsCF.ICON_SETS[r.set].map(x => x[0]).join('');
+        const input = row.querySelector('input');
+        input.value = r.ref;
+        input.addEventListener('change', () => { r.ref = input.value.trim().toUpperCase().replace(/\$/g, ''); });
+        row.querySelectorAll('button').forEach(b => b.addEventListener('click', () => {
+          const a = b.dataset.a;
+          if (a === 'del') rules.splice(i, 1);
+          else { const j = a === 'up' ? i - 1 : i + 1; if (j < 0 || j >= rules.length) return; [rules[i], rules[j]] = [rules[j], rules[i]]; }
+          draw();
+        }));
+        list.appendChild(row);
+      });
+    };
+    draw();
+    const close = () => back.remove();
+    back.querySelector('.cancel').addEventListener('click', close);
+    back.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    back.querySelector('.ok').addEventListener('click', () => {
+      const cleaned = rules.map(SheetsCF.clean);
+      if (cleaned.some(x => !x)) { UI.toast('Check the “Applies to” ranges (for example B2:B20)', 3500); return; }
+      close();
+      snapshot();
+      s.cf = cleaned;
+      changed();
+    });
+    document.body.appendChild(back);
+    back.querySelector('.ok').focus();
+  }
+  document.getElementById('condFmt').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) conditionalFormat(v); });
+  document.getElementById('cfManage').addEventListener('click', manageCfRules);
 
   // ---------- Editing group ----------
   function clearRange(what) {
@@ -1636,6 +1795,12 @@
         if (ms.freezeRow === true) s.freezeRow = true;
         if (ms.freezeCol === true) s.freezeCol = true;
       }
+      // Atlas's own copy of the rules is exact; otherwise read Excel's.
+      const ex = wb.Extras && Array.isArray(wb.Extras.sheets) ? wb.Extras.sheets[si] : null;
+      if (ms && ms.name === sn && Array.isArray(ms.cf)) s.cf = ms.cf.map(SheetsCF.clean).filter(Boolean).slice(0, 500);
+      else if (ex && typeof ex.cf === 'string' && ex.cf) {
+        try { s.cf = SheetsCF.fromXlsx(ex.cf, typeof wb.Extras.dxfs === 'string' ? wb.Extras.dxfs : ''); } catch (err) { console.info('Conditional formatting skipped:', err); }
+      }
       return s;
     });
     if (!sheets.length) sheets.push(newSheet('Sheet1'));
@@ -1678,14 +1843,14 @@
       if (rows.length) ws['!rows'] = rows;
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
-      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol });
+      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [] });
     });
     // Cell styling and charts live in a custom document property so Atlas can restore them;
     // other apps ignore it and still get values, formulas, number formats, widths and merges.
     wb.Custprops = { AtlasMeta: JSON.stringify(meta) };
     return wb;
   }
-  function serialize(ext) {
+  async function serialize(ext) {
     if (ext === 'csv') {
       const u = usedBounds();
       const lines = [];
@@ -1703,7 +1868,12 @@
       return lines.join('\r\n') + '\r\n';
     }
     const bookType = { xlsx: 'xlsx', ods: 'ods', xls: 'biff8' }[ext] || 'xlsx';
-    return new Uint8Array(XLSX.write(toWorkbook(), { type: 'array', bookType, compression: true }));
+    const bytes = new Uint8Array(XLSX.write(toWorkbook(), { type: 'array', bookType, compression: true }));
+    if (bookType !== 'xlsx') return bytes;
+    // What SheetJS can't write goes into the XML afterwards.
+    const dxfs = [];
+    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs) }));
+    return XlsxPatch.patch(bytes, { sheets, dxfs });
   }
 
   async function loadFile(f) {
@@ -1752,10 +1922,10 @@
         if (!target) return false;
         const text = Platform.extOf(target.name);
         if (text === 'csv' && book.sheets.length > 1 && !forcedExt) UI.toast('CSV keeps only the current sheet', 3500);
-        await Platform.save({ data: serialize(text || 'xlsx'), name: target.name, path: target.path });
+        await Platform.save({ data: await serialize(text || 'xlsx'), name: target.name, path: target.path });
         if (!forcedExt) state.set({ name: target.name, path: target.path, dirty: false });
       } else {
-        await Platform.save({ data: serialize(ext), name, path: state.path });
+        await Platform.save({ data: await serialize(ext), name, path: state.path });
         state.set({ dirty: false });
       }
       if (!quiet) UI.toast('Saved');
@@ -1769,6 +1939,8 @@
     const s = sheet();
     const u = usedBounds();
     const t = document.createElement('table');
+    engine.invalidate();
+    cf.begin();
     const cap = Math.min(u.r, 20000); // printing is for reports, not whole databases
     for (let r = 0; r <= cap; r++) {
       if (hiddenSet.has(r)) continue;
@@ -1779,12 +1951,14 @@
         if (!cell) continue;
         const st = cell.s || {};
         const { text, cls } = cellDisplay(r, c);
-        td.textContent = text;
+        const fmt = cf.format(r, c, valueAt(r, c));
+        td.textContent = (fmt && fmt.icon ? fmt.icon[0] + ' ' : '') + text;
         Object.assign(td.style, {
           fontWeight: st.b ? '700' : '', fontStyle: st.i ? 'italic' : '', textDecoration: st.u ? 'underline' : '',
           color: st.color || '', backgroundColor: st.bg || '', fontFamily: st.font || '', fontSize: st.size ? st.size + 'pt' : '',
           textAlign: st.align || (cls === 'num' ? 'right' : cls ? 'center' : ''), whiteSpace: st.wrap ? 'pre-wrap' : 'nowrap'
         });
+        if (fmt) applyCf(td.style, fmt);
       }
     }
     const area = document.getElementById('printArea');
@@ -1845,6 +2019,7 @@
     try { next = JSON.parse(d.data); } catch { return UI.toast('The recovered workbook could not be read', 4000); }
     if (!next || !Array.isArray(next.sheets) || !next.sheets.length) return;
     book = next;
+    book.sheets.forEach(s => { s.cf = (Array.isArray(s.cf) ? s.cf : []).map(SheetsCF.clean).filter(Boolean); });
     book.active = Math.max(0, Math.min(book.active | 0, book.sheets.length - 1));
     undoStack.length = redoStack.length = 0;
     undoBytes = 0;

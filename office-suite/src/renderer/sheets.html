@@ -90,6 +90,37 @@
       </div>
     </div><div class="label">Number</div></div>
     <div class="group"><div class="controls col">
+      <select class="ctl" id="condFmt" title="Conditional Formatting" style="width:170px">
+        <option value="">Conditional Formatting…</option>
+        <optgroup label="Highlight Cells Rules">
+          <option value="gt">Greater Than…</option><option value="lt">Less Than…</option><option value="between">Between…</option>
+          <option value="eq">Equal To…</option><option value="text">Text that Contains…</option><option value="dup">Duplicate Values…</option>
+        </optgroup>
+        <optgroup label="Top/Bottom Rules">
+          <option value="top">Top 10 Items…</option><option value="toppct">Top 10%…</option><option value="bottom">Bottom 10 Items…</option>
+          <option value="bottompct">Bottom 10%…</option><option value="above">Above Average…</option><option value="below">Below Average…</option>
+        </optgroup>
+        <optgroup label="Data Bars">
+          <option value="bar:#638ec6">Blue Data Bar</option><option value="bar:#63c384">Green Data Bar</option>
+          <option value="bar:#ff555a">Red Data Bar</option><option value="bar:#ffb628">Orange Data Bar</option>
+        </optgroup>
+        <optgroup label="Color Scales">
+          <option value="scale:#63be7b,#ffeb84,#f8696b">Green - Yellow - Red</option><option value="scale:#f8696b,#ffeb84,#63be7b">Red - Yellow - Green</option>
+          <option value="scale:#63be7b,#ffffff">Green - White</option><option value="scale:#ffffff,#f8696b">White - Red</option>
+          <option value="scale:#5a8ac6,#ffffff,#f8696b">Blue - White - Red</option>
+        </optgroup>
+        <optgroup label="Icon Sets">
+          <option value="icons:3Arrows">3 Arrows ▲ ► ▼</option><option value="icons:3TrafficLights1">3 Traffic Lights ●</option>
+          <option value="icons:3Symbols">3 Symbols ✔ ! ✖</option><option value="icons:3Flags">3 Flags ⚑</option>
+        </optgroup>
+        <optgroup label="Rules">
+          <option value="formula">New Rule (formula)…</option><option value="manage">Manage Rules…</option>
+          <option value="clear-sel">Clear Rules from Selected Cells</option><option value="clear-sheet">Clear Rules from Entire Sheet</option>
+        </optgroup>
+      </select>
+      <button class="btn" id="cfManage">▤ Manage Rules</button>
+    </div><div class="label">Styles</div></div>
+    <div class="group"><div class="controls col">
       <button class="btn" id="insRow">⊞ Insert row</button>
       <button class="btn" id="insCol">⊞ Insert column</button>
       <button class="btn" id="delRow">⊟ Delete row</button>
@@ -220,7 +251,10 @@
 
 <script src="../../node_modules/xlsx/dist/xlsx.full.min.js"></script>
 <script src="js/platform.js"></script>
+<script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="js/formula.js"></script>
+<script src="js/xlsx-patch.js"></script>
+<script src="js/sheets-cf.js"></script>
 <script src="js/sheets.js"></script>
 </body>
 </html>

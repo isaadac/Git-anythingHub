@@ -65,3 +65,14 @@ body.no-grid .grid td { border-color: transparent; }
   .print-area table { border-collapse: collapse; font: 10pt Calibri, Arial, sans-serif; }
   .print-area td { border: 1px solid #ccc; padding: 2px 4px; white-space: nowrap; }
 }
+
+/* Conditional formatting */
+.grid td .cf-icon { float: left; margin-right: 4px; font-size: 10pt; line-height: inherit; }
+.cf-manage { width: min(640px, 92vw) !important; }
+.cf-manage .cf-list { max-height: 50vh; overflow: auto; border: 1px solid var(--border); margin: 8px 0; }
+.cf-manage .cf-row { display: grid; grid-template-columns: 1fr 120px auto; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.cf-manage .cf-row:last-child { border-bottom: 0; }
+.cf-manage .cf-swatch { display: inline-block; min-width: 44px; padding: 1px 6px; margin-right: 6px; border: 1px solid #c8c6c4; font-size: 12px; text-align: center; }
+.cf-manage .cf-row input { width: 100%; height: 26px; border: 1px solid var(--border); padding: 0 6px; }
+.cf-manage .cf-row button { min-width: 28px; height: 26px; }
+.cf-manage .cf-empty { padding: 16px; color: var(--muted); text-align: center; }
