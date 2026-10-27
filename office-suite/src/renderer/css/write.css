@@ -32,6 +32,25 @@ body.paged .doc .page-break::after { display: none; }
 .doc td, .doc th { border: 1px solid #8e8e8e; padding: 3pt 6pt; vertical-align: top; min-width: 30px; }
 .doc th { background: #f2f2f2; }
 .doc img { max-width: 100%; height: auto; }
+/* Review: tracked changes and comments */
+.doc ins.tc { color: #1565c0; text-decoration: underline; text-decoration-color: #1565c0; }
+.doc del.tc { color: #c62828; text-decoration: line-through; }
+body.markup-final .doc del.tc, body.markup-original .doc ins.tc { display: none; }
+body.markup-final .doc ins.tc, body.markup-original .doc del.tc { color: inherit; text-decoration: none; }
+.doc .comment { background: #fff3c4; border-bottom: 2px solid #f2c94c; cursor: pointer; }
+.comments-pane { width: 260px; flex: none; background: #faf9f8; border-left: 1px solid var(--border); overflow: auto; padding: 10px; }
+.comments-pane[hidden] { display: none; }
+.comments-pane .head { display: flex; justify-content: space-between; align-items: center; }
+.comments-pane h3 { margin: 0 0 8px; font-size: 14px; }
+.comments-pane .card { background: #fff; border: 1px solid var(--border); border-radius: 4px; padding: 8px 10px; margin-bottom: 8px; cursor: pointer; }
+.comments-pane .card:hover { border-color: var(--accent); }
+.comments-pane .who { font-size: 12px; }
+.comments-pane .when { color: var(--muted); font-size: 11px; }
+.comments-pane .quote { color: var(--muted); font-size: 12px; font-style: italic; margin: 4px 0; }
+.comments-pane .text { white-space: pre-wrap; }
+.comments-pane .acts { display: flex; gap: 6px; margin-top: 6px; }
+.comments-pane .acts button { border: 1px solid var(--border); background: #fff; border-radius: 3px; font-size: 12px; cursor: pointer; padding: 2px 8px; }
+.comments-pane .empty { color: var(--muted); }
 ::highlight(find-match) { background-color: #ffd54f; color: #000; }
 .doc img.selected { outline: 2px solid var(--accent); }
 .doc a { color: #0563c1; }
@@ -39,7 +58,6 @@ body.paged .doc .page-break::after { display: none; }
 .doc .page-break { break-after: page; page-break-after: always; border: 0; border-top: 1px dashed #a19f9d; margin: 16pt -1in; height: 0; position: relative; }
 .doc .page-break::after { content: "Page Break"; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: #8a8886; background: #fff; padding: 0 6px; }
 .doc .textbox { border: 1px solid #555; padding: 6pt 8pt; margin: 6pt 0; display: inline-block; min-width: 120px; }
-.doc .comment { background: #fff3c4; border-bottom: 2px solid #f2c94c; cursor: help; }
 .doc .toc { border: 1px solid #e1dfdd; padding: 8pt 12pt; margin-bottom: 10pt; }
 .doc .toc p { margin: 0 0 2pt; }
 body.show-marks .doc p::after, body.show-marks .doc h1::after, body.show-marks .doc h2::after, body.show-marks .doc h3::after { content: "¶"; color: #6c8ebf; }

@@ -17,7 +17,7 @@
   ];
   const OPEN_FILTERS = [{ name: 'Documents', extensions: ['docx', 'html', 'htm', 'md', 'txt'] }, ...FILTERS];
   const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14] }; // inches
-  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false };
+  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false };
   const setup = { ...DEFAULT_SETUP };
   /** Page setup read from a file is untrusted: keep only values the ribbon itself can produce. */
   function validSetup(v) {
@@ -29,6 +29,7 @@
     if ([1, 2, 3].includes(+v.columns)) out.columns = +v.columns;
     if (Platform.isColor(v.color)) out.color = v.color;
     out.differentFirst = v.differentFirst === true;
+    out.trackChanges = v.trackChanges === true;
     return out;
   }
 
@@ -398,6 +399,7 @@
     // Margins are part of the laid-out sheets, so the printer page has none of its own.
     style.textContent = `@page { size: ${land ? h : w}in ${land ? w : h}in; margin: 0; }`;
     document.getElementById('differentFirst').checked = !!setup.differentFirst;
+    if (review.tracking !== !!setup.trackChanges) setTracking(setup.trackChanges);
     layout.run();
     updateStatus();
   }
@@ -436,25 +438,54 @@
     speaking = true;
     e.currentTarget.classList.add('on');
   });
+  // ---------- Review: comments and tracked changes ----------
+  const commentsPane = document.getElementById('commentsPane');
+  function getAuthor() {
+    try { return localStorage.getItem('atlas-author') || 'Author'; } catch { return 'Author'; }
+  }
+  async function setAuthor() {
+    const name = await UI.prompt('Your name', 'Shown on your comments and tracked changes', getAuthor() === 'Author' ? '' : getAuthor());
+    if (name === null) return;
+    try { localStorage.setItem('atlas-author', name.replace(/[^\w .@'-]/g, '').slice(0, 64) || 'Author'); } catch { /* ignore */ }
+  }
+  const review = WriteReview({ doc, author: getAuthor, changed: () => { changed(); if (!commentsPane.hidden) review.renderPane(); }, pane: commentsPane });
+  document.getElementById('setAuthor').addEventListener('click', setAuthor);
   document.getElementById('addComment').addEventListener('click', async () => {
     restoreSelection();
-    const sel = getSelection();
-    if (sel.isCollapsed) return UI.toast('Select some text to comment on');
-    const range = sel.getRangeAt(0).cloneRange();
-    const c = await UI.prompt('New Comment', 'Comment');
-    if (!c) return;
-    const span = document.createElement('span');
-    span.className = 'comment';
-    span.title = c;
-    try { range.surroundContents(span); } catch { span.appendChild(range.extractContents()); range.insertNode(span); }
-    changed();
+    if (getAuthor() === 'Author') await setAuthor();
+    restoreSelection();
+    review.addComment();
   });
+  document.getElementById('showComments').addEventListener('click', () => review.showPane(commentsPane.hidden));
+  document.getElementById('closeComments').addEventListener('click', () => review.showPane(false));
+  function setTracking(on) {
+    review.setTracking(on);
+    setup.trackChanges = !!on;
+    const b = document.getElementById('trackChanges');
+    b.classList.toggle('on', !!on);
+    b.setAttribute('aria-pressed', String(!!on));
+  }
+  document.getElementById('trackChanges').addEventListener('click', async () => {
+    if (!review.tracking && getAuthor() === 'Author') await setAuthor();
+    setTracking(!review.tracking);
+    UI.toast(review.tracking ? 'Track Changes is on: edits are marked for review' : 'Track Changes is off');
+    changed();
+    doc.focus();
+  });
+  document.getElementById('markupMode').addEventListener('change', e => {
+    document.body.classList.toggle('markup-final', e.target.value === 'final');
+    document.body.classList.toggle('markup-original', e.target.value === 'original');
+    layout.schedule();
+  });
+  [['acceptChange', 'acceptAtCursor'], ['rejectChange', 'rejectAtCursor'], ['acceptAll', 'acceptAll'], ['rejectAll', 'rejectAll'], ['nextChange', 'next'], ['prevChange', 'previous']]
+    .forEach(([id, fn]) => document.getElementById(id).addEventListener('click', () => { restoreSelection(); review[fn](); }));
   document.getElementById('delComment').addEventListener('click', () => {
     restoreSelection();
     const c = closest('.comment');
     if (!c) return UI.toast('Place the cursor in a comment');
     c.replaceWith(...c.childNodes);
     changed();
+    if (!commentsPane.hidden) review.renderPane();
   });
 
   // ---------- Ribbon: View ----------
@@ -680,6 +711,12 @@
 
   // Paste: keep formatting but strip anything unsafe (header and footer too).
   [doc, ...HF].forEach(el => el.addEventListener('paste', e => {
+    if (review.tracking && el === doc) {
+      // Tracked pastes are recorded as plain-text insertions.
+      e.preventDefault();
+      review.insertText(e.clipboardData.getData('text/plain'));
+      return;
+    }
     const html = e.clipboardData.getData('text/html');
     if (!html) return;
     e.preventDefault();
@@ -766,10 +803,14 @@
           nextSetup = validSetup({ ...nextSetup, ...sec.setup });
           hfHtml = { ...hfHtml, ...sec.hf };
         } catch (err) { console.info('Could not read page setup:', err); }
-        const res = await mammoth.convertToHtml({ arrayBuffer: f.data.buffer.slice(f.data.byteOffset, f.data.byteOffset + f.data.byteLength) }, {
+        // Keep tracked changes and comments, which the HTML converter would otherwise drop.
+        let pre = { bytes: f.data, meta: null };
+        try { pre = await review.preprocessDocx(f.data); } catch (err) { console.info('Could not read revisions:', err); }
+        const src = pre.bytes;
+        const res = await mammoth.convertToHtml({ arrayBuffer: src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength) }, {
           styleMap: ['p[style-name=\'Title\'] => h1.title:fresh', 'p[style-name=\'Quote\'] => blockquote:fresh', 'p[style-name=\'Intense Quote\'] => blockquote:fresh']
         });
-        html = res.value;
+        html = review.postprocessHtml(res.value, pre.meta);
         if (res.messages.some(m => m.type === 'warning')) console.info('Import notes:', res.messages);
       } else if (ext === 'html' || ext === 'htm') {
         const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
@@ -818,7 +859,6 @@
     h3 { font-size: 12pt; color: #1f3763; font-weight: normal; }
     blockquote { font-style: italic; color: #404040; }
     pre { font-family: Consolas; font-size: 10pt; }
-    .comment { background: #fff3c4; }
     .textbox { border: 1px solid #555555; }
     td, th { border: 1px solid #8e8e8e; }
   `;
@@ -855,6 +895,9 @@
     if (cols && +attr(cols, 'num') > 1) setup.columns = Math.min(3, +attr(cols, 'num'));
     const titlePg = sect.getElementsByTagNameNS(W, 'titlePg')[0];
     setup.differentFirst = !!titlePg && !['0', 'false'].includes(attr(titlePg, 'val'));
+    const settings = await xml('word/settings.xml');
+    const tr = settings && settings.getElementsByTagNameNS(W, 'trackRevisions')[0];
+    setup.trackChanges = !!tr && !['0', 'false'].includes(attr(tr, 'val'));
     const partToHtml = async target => {
       const part = await xml('word/' + target.replace(/^\/?word\//, ''));
       if (!part) return '';
@@ -931,8 +974,15 @@
         },
         column: setup.columns > 1 ? { count: setup.columns, space: 720 } : undefined
       },
-      children: [...docxHtml.htmlToContent(cleanHtmlFor(doc), opts)]
+      children: []
     };
+    const body = document.createElement('div');
+    body.innerHTML = cleanHtmlFor(doc);
+    // Editors store a space typed at the edge of a text run as a no-break space; Word wants a normal one.
+    const tw = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
+    while (tw.nextNode()) tw.currentNode.nodeValue = tw.currentNode.nodeValue.replace(/(^|[^\u00a0 ])\u00a0(?=[^\u00a0 ]|$)/g, '$1 ');
+    const cmts = review.markCommentsForDocx(body);
+    section.children = [...docxHtml.htmlToContent(body.innerHTML, { ...opts, trackChanges: { author: getAuthor() } })];
     const has = el => el.textContent.trim() !== '' || !!el.querySelector('img');
     const headers = {}, footers = {};
     if (has(header)) headers.default = new D.Header({ children: hfToDocx(header, opts) });
@@ -950,10 +1000,12 @@
       title: Platform.baseName(state.name),
       styles: { default: { document: { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { after: 160, line: 276 } } } } },
       background: setup.color !== '#ffffff' ? { color: setup.color.slice(1) } : undefined,
+      features: setup.trackChanges ? { trackRevisions: true } : undefined,
+      comments: cmts.length ? { children: cmts.map(c => ({ id: c.id, author: c.author, initials: c.author.split(/\s+/).map(w => w[0]).join('').slice(0, 3), date: new Date(c.date), children: c.text.split('\n').map(t => new D.Paragraph(t)) })) } : undefined,
       sections: [section]
     });
     const blob = await D.Packer.toBlob(document_);
-    return new Uint8Array(await blob.arrayBuffer());
+    return review.patchDocx(new Uint8Array(await blob.arrayBuffer()));
   }
   /** Header/footer content as Word paragraphs, with page-number fields as real Word fields. */
   function hfToDocx(el, opts) {
