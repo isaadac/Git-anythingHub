@@ -34,7 +34,7 @@
   UI.initRibbon();
 
   // ---------- Model ----------
-  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [] });
+  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [], pivots: [] });
   let book = { sheets: [newSheet('Sheet1')], active: 0 };
   const sheet = () => book.sheets[book.active];
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
@@ -207,6 +207,7 @@
     if (document.activeElement !== fx) fx.value = rawAt(active.r, active.c);
     syncToolbar();
     updateAggregate();
+    updatePivotPane();
   }
   function scrollIntoView(r, c) {
     const z = zoomLevel();
@@ -505,6 +506,7 @@
     book.sheets.forEach(s => Object.values(s.cells).forEach(cell => {
       if (typeof cell.v === 'string' && cell.v[0] === '=') cell.v = cell.v.replace(re, (m, p) => p + quote(name) + '!');
     }));
+    book.sheets.forEach(s => (s.pivots || []).forEach(p => { if (p.src.sheet === old) p.src.sheet = name; }));
     renderTabs();
     changed();
   }
@@ -772,16 +774,19 @@
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
   }
+  const measureCtx = document.createElement('canvas').getContext('2d');
+  /** Width a cell's text needs, in px. */
+  function textWidth(text, st = {}) {
+    measureCtx.font = `${st.b ? 'bold ' : ''}${st.size || 11}pt ${st.font || 'Calibri, Carlito, Arial'}`;
+    return measureCtx.measureText(text).width + 14;
+  }
   function autoFitColumn(c) {
-    const ctx = document.createElement('canvas').getContext('2d');
     let w = 40;
     for (const k of Object.keys(sheet().cells)) {
       const p = parseRef(k);
       if (p.col !== c || mergeAt(p.row, p.col)) continue;
-      const st = sheet().cells[k].s || {};
-      ctx.font = `${st.b ? 'bold ' : ''}${st.size || 11}pt ${st.font || 'Calibri, Carlito, Arial'}`;
       const text = cellDisplay(p.row, c).text;
-      if (text) w = Math.max(w, ctx.measureText(text).width + 14);
+      if (text) w = Math.max(w, textWidth(text, sheet().cells[k].s));
     }
     snapshot();
     sheet().colWidths[c] = Math.min(500, Math.ceil(w));
@@ -1091,6 +1096,7 @@
       return n;
     }).filter(Boolean);
     s.cf = SheetsCF.shift(s.cf, axis, index, count, s.name);
+    shiftPivots(s, axis, index, count);
     buildGrid();
     state.markDirty();
   }
@@ -1243,6 +1249,214 @@
   }
   document.getElementById('condFmt').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) conditionalFormat(v); });
   document.getElementById('cfManage').addEventListener('click', manageCfRules);
+
+  // ---------- PivotTables ----------
+  const pivotPane = document.getElementById('pivotPane');
+  const PIVOT_STYLE = {
+    hdr: { b: true, bg: '#ddebf7', border: { b: 1 } }, total: { b: true, bg: '#ddebf7', border: { t: 1 } }, sub: { b: true }, label: {}, val: {}
+  };
+  const sheetByName = name => book.sheets.find(x => x.name.toLowerCase() === String(name).toLowerCase());
+  /** The source range as a table of computed values; the first row holds the field names. */
+  function pivotTable(p) {
+    const src = sheetByName(p.src.sheet);
+    if (!src) return null;
+    const g = SheetsCF.area(p.src.ref);
+    const u = usedBounds(src);
+    const r2 = Math.min(g.r2, u.r), c2 = Math.min(g.c2, u.c);
+    const at = (r, c) => { const v = engine.value(src.name, r, c); return v instanceof F.FormulaError ? v.error : v; };
+    const headers = [];
+    for (let c = g.c1; c <= c2; c++) { const h = at(g.r1, c); headers.push(h === '' ? 'Column' + (c - g.c1 + 1) : String(h)); }
+    const rows = [];
+    for (let r = g.r1 + 1; r <= r2; r++) { const row = []; for (let c = g.c1; c <= c2; c++) row.push(at(r, c)); rows.push(row); }
+    return { headers, rows };
+  }
+  const rawFor = v => (typeof v === 'number' ? String(v) : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : (v && (v[0] === '=' || typeof F.parseLiteral(v) !== 'string') ? "'" + v : String(v)));
+  /** Recomputes a pivot and rewrites the cells it occupies. */
+  function renderPivot(p, host) {
+    engine.invalidate();
+    const table = pivotTable(p);
+    const res = table ? SheetsPivot.compute(table, p) : { cells: [], error: `The source sheet "${p.src.sheet}" no longer exists.` };
+    if (p.extent) for (let r = p.r; r <= p.extent.r2; r++) for (let c = p.c; c <= p.extent.c2; c++) delete host.cells[addr(r, c)];
+    let cells = res.cells;
+    const empty = !p.rows.length && !p.cols.length && !p.vals.length;
+    if (empty || res.error) cells = [[{ v: res.error || `${p.name}: choose fields in the PivotTable Fields pane`, k: 'note' }]];
+    cells.forEach((row, i) => row.forEach((cell, j) => {
+      const st = cell.k === 'note' ? { i: true, color: '#605e5c' } : { ...PIVOT_STYLE[cell.k] };
+      if (typeof cell.v === 'number' && !Number.isInteger(cell.v)) st.fmt = '#,##0.00';
+      if (cell.v === '' && !Object.keys(st).length) return;
+      setCell(p.r + i, p.c + j, { v: cell.v === '' ? '' : rawFor(cell.v), s: st }, host);
+    }));
+    // Widen (never narrow) the columns so labels and totals show in full.
+    if (!empty && !res.error) {
+      const need = {};
+      cells.forEach(row => row.forEach((cell, j) => {
+        if (cell.v === '') return;
+        const text = typeof cell.v === 'number' ? F.formatValue(cell.v, Number.isInteger(cell.v) ? 'General' : '#,##0.00') : String(cell.v);
+        need[j] = Math.max(need[j] || 0, textWidth(text, PIVOT_STYLE[cell.k]));
+      }));
+      Object.entries(need).forEach(([j, w]) => { const c = p.c + +j; host.colWidths[c] = Math.max(host.colWidths[c] || DEFAULT_COL_W, Math.min(400, Math.ceil(w))); });
+    }
+    p.extent = { r2: p.r + Math.max(0, cells.length - 1), c2: p.c + Math.max(0, ...cells.map(r => r.length - 1)) };
+    return res;
+  }
+  function refreshPivots(quiet) {
+    let n = 0;
+    snapshot();
+    book.sheets.forEach(s => (s.pivots || []).forEach(p => { const r = renderPivot(p, s); n++; if (r.error && !quiet) UI.toast(r.error, 4000); }));
+    buildGrid(); // column widths may have changed
+    state.markDirty();
+    if (!quiet) UI.toast(n ? `Refreshed ${n} PivotTable${n === 1 ? '' : 's'}` : 'There are no PivotTables in this workbook');
+  }
+  const pivotAt = (r, c, s = sheet()) => (s.pivots || []).find(p => r >= p.r && c >= p.c && p.extent && r <= p.extent.r2 && c <= p.extent.c2);
+  async function insertPivot() {
+    commitEdit();
+    const g = dataRegion();
+    if (g.r2 <= g.r1) { UI.toast('Select a range with a header row and at least one row of data'); return; }
+    const srcRef = `${sheet().name}!${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`;
+    const r = await UI.form('Create PivotTable', [
+      { name: 'src', label: 'Table/Range', value: srcRef },
+      { name: 'where', label: 'Place the PivotTable on', type: 'select', options: [{ value: 'new', label: 'New worksheet' }, { value: 'here', label: 'Existing worksheet (at the cell below)' }] },
+      { name: 'at', label: 'Location (existing worksheet)', value: addr(0, Math.min(MAX_COLS - 1, g.c2 + 2)) }
+    ], 'Create');
+    if (!r) return;
+    const m = /^(?:(.+)!)?\$?([A-Z]{1,3})\$?(\d+):\$?([A-Z]{1,3})\$?(\d+)$/i.exec(r.src.trim());
+    const srcSheet = m && (m[1] ? sheetByName(m[1].replace(/^'|'$/g, '').replace(/''/g, "'")) : sheet());
+    if (!m || !srcSheet) { UI.toast('Enter the source as Sheet1!A1:D20'); return; }
+    const ref = (m[2] + m[3] + ':' + m[4] + m[5]).toUpperCase();
+    const ga = SheetsCF.area(ref);
+    if (ga.r2 <= ga.r1) { UI.toast('The source needs a header row and at least one row of data'); return; }
+    snapshot();
+    let host, at;
+    if (r.where === 'new') {
+      host = newSheet(uniqueName('PivotTable'));
+      book.sheets.splice(book.active + 1, 0, host);
+      at = { r: 2, c: 0 };
+    } else {
+      host = sheet();
+      const p = parseRef(r.at.trim().toUpperCase().replace(/\$/g, ''));
+      if (!p) { UI.toast('Enter a cell such as H1 for the location'); return; }
+      at = { r: p.row, c: p.col };
+    }
+    host.pivots = host.pivots || [];
+    let n = 1;
+    while (book.sheets.some(s => (s.pivots || []).some(x => x.name === 'PivotTable' + n))) n++;
+    const p = SheetsPivot.clean({ name: 'PivotTable' + n, src: { sheet: srcSheet.name, ref: ref.includes(':') ? ref : ref + ':' + ref }, r: at.r, c: at.c, rows: [], cols: [], vals: [], filters: [] });
+    host.pivots.push(p);
+    renderPivot(p, host);
+    book.active = book.sheets.indexOf(host);
+    active = anchor = { r: at.r, c: at.c };
+    buildGrid();
+    changed();
+  }
+  let paneFor = null;
+  function updatePivotPane(force) {
+    const p = pivotAt(active.r, active.c);
+    if (!p) { if (!pivotPane.hidden) { pivotPane.hidden = true; paneFor = null; } return; }
+    if (!force && paneFor === p.id && !pivotPane.hidden) return;
+    paneFor = p.id;
+    pivotPane.hidden = false;
+    drawPivotPane(p);
+  }
+  function drawPivotPane(p) {
+    const table = pivotTable(p);
+    const fields = table ? table.headers : [];
+    pivotPane.textContent = '';
+    const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+    const head = el('div', 'pv-head');
+    head.append(el('b', '', 'PivotTable Fields'), el('span', 'pv-name', p.name));
+    const close = el('button', 'btn pv-close', '✕'); close.title = 'Close'; close.onclick = () => { pivotPane.hidden = true; };
+    head.appendChild(close);
+    pivotPane.appendChild(head);
+    pivotPane.appendChild(el('div', 'pv-src', `Source: ${p.src.sheet}!${p.src.ref}`));
+    const used = new Set([...p.rows, ...p.cols, ...p.vals.map(v => v.field), ...p.filters.map(f => f.field)]);
+    const isNumeric = i => { let n = 0, t = 0; for (const r of table.rows) { const v = r[i]; if (v === '' || v === null) continue; t++; if (typeof v === 'number') n++; } return t > 0 && n / t >= 0.6; };
+    const apply = fn => { snapshot(); fn(); renderPivot(p, sheet()); buildGrid(); state.markDirty(); updatePivotPane(true); };
+    const list = el('div', 'pv-fields');
+    fields.forEach((f, i) => {
+      const lab = el('label', 'pv-field');
+      const cb = el('input'); cb.type = 'checkbox'; cb.checked = used.has(f);
+      cb.addEventListener('change', () => apply(() => {
+        if (cb.checked) { if (isNumeric(i)) p.vals.push({ field: f, agg: 'sum' }); else p.rows.push(f); }
+        else { p.rows = p.rows.filter(x => x !== f); p.cols = p.cols.filter(x => x !== f); p.vals = p.vals.filter(x => x.field !== f); p.filters = p.filters.filter(x => x.field !== f); }
+      }));
+      lab.append(cb, el('span', '', f));
+      list.appendChild(lab);
+    });
+    pivotPane.appendChild(list);
+    const AREAS = [['filters', 'Filters'], ['cols', 'Columns'], ['rows', 'Rows'], ['vals', 'Values']];
+    const nameOf = (area, item) => (area === 'vals' || area === 'filters' ? item.field : item);
+    const moveTo = (area, i, dest) => apply(() => {
+      const item = p[area].splice(i, 1)[0];
+      const f = nameOf(area, item);
+      if (dest === 'remove') return;
+      if (dest === 'up' || dest === 'down') { p[area].splice(Math.max(0, Math.min(p[area].length, i + (dest === 'up' ? -1 : 1))), 0, item); return; }
+      p[dest].push(dest === 'vals' ? { field: f, agg: 'count' } : dest === 'filters' ? { field: f, value: null } : f);
+    });
+    const areas = el('div', 'pv-areas');
+    AREAS.forEach(([area, title]) => {
+      const box = el('div', 'pv-area');
+      box.appendChild(el('div', 'pv-area-title', title));
+      if (!p[area].length) box.appendChild(el('div', 'pv-empty', 'Tick a field or move one here'));
+      p[area].forEach((item, i) => {
+        const row = el('div', 'pv-item');
+        row.appendChild(el('span', 'pv-item-name', area === 'vals' ? SheetsPivot.valName(item) : nameOf(area, item)));
+        if (area === 'vals') {
+          const agg = el('select', 'ctl'); agg.title = 'Summarize values by';
+          SheetsPivot.AGGS.forEach(a => { const o = el('option', '', SheetsPivot.AGG_LABEL[a]); o.value = a; agg.appendChild(o); });
+          agg.value = item.agg;
+          agg.addEventListener('change', () => apply(() => { item.agg = agg.value; }));
+          row.appendChild(agg);
+        }
+        if (area === 'filters') {
+          const i2 = fields.indexOf(item.field);
+          const valuesSel = el('select', 'ctl'); valuesSel.title = 'Show';
+          const all = el('option', '', '(All)'); all.value = '\u0000all'; valuesSel.appendChild(all);
+          const seen = new Map();
+          if (table && i2 >= 0) table.rows.forEach(r => { const v = SheetsPivot.label(r[i2]); if (!seen.has(String(v)) && seen.size < 500) seen.set(String(v), v); });
+          [...seen.keys()].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })).forEach(k => { const o = el('option', '', k); o.value = k; valuesSel.appendChild(o); });
+          valuesSel.value = item.value === null || item.value === undefined ? '\u0000all' : String(item.value);
+          valuesSel.addEventListener('change', () => apply(() => { item.value = valuesSel.value === '\u0000all' ? null : (typeof seen.get(valuesSel.value) === 'number' ? seen.get(valuesSel.value) : valuesSel.value); }));
+          row.appendChild(valuesSel);
+        }
+        const mv = el('select', 'ctl pv-move'); mv.title = 'Move';
+        [['', '⋯'], ['up', 'Move up'], ['down', 'Move down'], ...AREAS.filter(a => a[0] !== area).map(a => [a[0], 'Move to ' + a[1]]), ['remove', 'Remove field']]
+          .forEach(([v, t]) => { const o = el('option', '', t); o.value = v; mv.appendChild(o); });
+        mv.addEventListener('change', () => { if (mv.value) moveTo(area, i, mv.value); });
+        row.appendChild(mv);
+        box.appendChild(row);
+      });
+      areas.appendChild(box);
+    });
+    pivotPane.appendChild(areas);
+    const actions = el('div', 'pv-actions');
+    const refresh = el('button', 'btn', '⟳ Refresh'); refresh.onclick = () => apply(() => {});
+    const del = el('button', 'btn', '🗑 Delete PivotTable');
+    del.onclick = () => {
+      snapshot();
+      const s = sheet();
+      if (p.extent) for (let r = p.r; r <= p.extent.r2; r++) for (let c = p.c; c <= p.extent.c2; c++) delete s.cells[addr(r, c)];
+      s.pivots = s.pivots.filter(x => x !== p);
+      pivotPane.hidden = true; paneFor = null;
+      changed();
+    };
+    actions.append(refresh, del);
+    pivotPane.appendChild(actions);
+  }
+  /** Keeps pivots and their sources in place when rows/columns move. */
+  function shiftPivots(s, axis, index, count) {
+    const k = axis === 'row' ? 'r' : 'c', k2 = axis === 'row' ? 'r2' : 'c2';
+    (s.pivots || []).forEach(p => {
+      if (p[k] >= index) { p[k] = Math.max(index, p[k] + count); if (p.extent) p.extent[k2] = Math.max(p[k], p.extent[k2] + count); }
+    });
+    book.sheets.forEach(h => (h.pivots || []).forEach(p => {
+      if (p.src.sheet.toLowerCase() !== s.name.toLowerCase()) return;
+      const moved = SheetsCF.shift([{ ref: p.src.ref }], axis, index, count, s.name)[0];
+      if (moved) p.src.ref = moved.ref.includes(':') ? moved.ref : moved.ref + ':' + moved.ref;
+    }));
+  }
+  document.getElementById('insPivot').addEventListener('click', insertPivot);
+  document.getElementById('insPivot2').addEventListener('click', insertPivot);
+  document.getElementById('refreshAll').addEventListener('click', () => { commitEdit(); refreshPivots(false); });
 
   // ---------- Editing group ----------
   function clearRange(what) {
@@ -1795,6 +2009,7 @@
         if (ms.freezeRow === true) s.freezeRow = true;
         if (ms.freezeCol === true) s.freezeCol = true;
       }
+      if (ms && ms.name === sn && Array.isArray(ms.pivots)) s.pivots = ms.pivots.map(SheetsPivot.clean).filter(Boolean).slice(0, 50);
       // Atlas's own copy of the rules is exact; otherwise read Excel's.
       const ex = wb.Extras && Array.isArray(wb.Extras.sheets) ? wb.Extras.sheets[si] : null;
       if (ms && ms.name === sn && Array.isArray(ms.cf)) s.cf = ms.cf.map(SheetsCF.clean).filter(Boolean).slice(0, 500);
@@ -1843,7 +2058,7 @@
       if (rows.length) ws['!rows'] = rows;
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
-      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [] });
+      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [] });
     });
     // Cell styling and charts live in a custom document property so Atlas can restore them;
     // other apps ignore it and still get values, formulas, number formats, widths and merges.
@@ -2019,7 +2234,10 @@
     try { next = JSON.parse(d.data); } catch { return UI.toast('The recovered workbook could not be read', 4000); }
     if (!next || !Array.isArray(next.sheets) || !next.sheets.length) return;
     book = next;
-    book.sheets.forEach(s => { s.cf = (Array.isArray(s.cf) ? s.cf : []).map(SheetsCF.clean).filter(Boolean); });
+    book.sheets.forEach(s => {
+      s.cf = (Array.isArray(s.cf) ? s.cf : []).map(SheetsCF.clean).filter(Boolean);
+      s.pivots = (Array.isArray(s.pivots) ? s.pivots : []).map(SheetsPivot.clean).filter(Boolean);
+    });
     book.active = Math.max(0, Math.min(book.active | 0, book.sheets.length - 1));
     undoStack.length = redoStack.length = 0;
     undoBytes = 0;
@@ -2032,7 +2250,7 @@
   }
 
   window.AtlasSheets = {
-    loadFile, serialize, select,
+    loadFile, serialize, select, refreshPivots,
     get book() { return book; },
     setCell: (ref, v) => { const p = parseRef(ref); setCell(p.row, p.col, { v }); ensureSize(p.row, p.col); changed(); },
     valueOf: ref => { const p = parseRef(ref); return valueAt(p.row, p.col); },

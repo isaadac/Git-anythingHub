@@ -143,6 +143,9 @@
 
   <div class="ribbon-panel" data-panel="insert">
     <div class="group"><div class="controls">
+      <button class="btn big" id="insPivot" title="Summarize data with a PivotTable"><span class="ico">⊞</span>PivotTable</button>
+    </div><div class="label">Tables</div></div>
+    <div class="group"><div class="controls">
       <button class="btn big" data-chart="bar"><span class="ico">📊</span>Column</button>
       <button class="btn big" data-chart="line"><span class="ico">📈</span>Line</button>
       <button class="btn big" data-chart="pie"><span class="ico">◔</span>Pie</button>
@@ -166,6 +169,10 @@
   </div>
 
   <div class="ribbon-panel" data-panel="data">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insPivot2" title="Summarize data with a PivotTable"><span class="ico">⊞</span>PivotTable</button>
+      <button class="btn big" id="refreshAll" title="Refresh every PivotTable from its source data"><span class="ico">⟳</span>Refresh<br>All</button>
+    </div><div class="label">Data</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="sortAsc2"><span class="ico">A↓</span>Sort<br>A to Z</button>
       <button class="btn big" id="sortDesc2"><span class="ico">Z↓</span>Sort<br>Z to A</button>
@@ -213,6 +220,7 @@
     <button class="btn" id="findClose">✕</button>
   </div>
   <div class="fn-hint" id="fnHint" hidden></div>
+  <aside class="pivot-pane" id="pivotPane" aria-label="PivotTable Fields" hidden></aside>
 </div>
 
 <div class="sheet-tabs">
@@ -255,6 +263,7 @@
 <script src="js/formula.js"></script>
 <script src="js/xlsx-patch.js"></script>
 <script src="js/sheets-cf.js"></script>
+<script src="js/sheets-pivot.js"></script>
 <script src="js/sheets.js"></script>
 </body>
 </html>

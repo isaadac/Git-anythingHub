@@ -76,3 +76,24 @@ body.no-grid .grid td { border-color: transparent; }
 .cf-manage .cf-row input { width: 100%; height: 26px; border: 1px solid var(--border); padding: 0 6px; }
 .cf-manage .cf-row button { min-width: 28px; height: 26px; }
 .cf-manage .cf-empty { padding: 16px; color: var(--muted); text-align: center; }
+
+/* PivotTable Fields pane */
+.pivot-pane { width: 270px; flex: none; border-left: 1px solid var(--border); background: #faf9f8; overflow-y: auto; padding: 10px 12px 20px; font-size: 13px; }
+.pivot-pane[hidden] { display: none; }
+.pivot-pane .pv-head { display: flex; align-items: center; gap: 8px; }
+.pivot-pane .pv-head b { font-size: 15px; }
+.pivot-pane .pv-name { color: var(--muted); flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pivot-pane .pv-src { color: var(--muted); font-size: 12px; margin: 4px 0 8px; word-break: break-all; }
+.pivot-pane .pv-fields { border: 1px solid var(--border); background: #fff; max-height: 200px; overflow-y: auto; padding: 4px 0; }
+.pivot-pane .pv-field { display: flex; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; }
+.pivot-pane .pv-field:hover { background: #f3f2f1; }
+.pivot-pane .pv-areas { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+.pivot-pane .pv-area { border: 1px solid var(--border); background: #fff; min-height: 52px; padding: 4px 6px; }
+.pivot-pane .pv-area-title { font-weight: 600; font-size: 12px; margin-bottom: 4px; }
+.pivot-pane .pv-empty { color: var(--muted); font-size: 12px; }
+.pivot-pane .pv-item { display: flex; align-items: center; gap: 4px; padding: 3px 4px; background: #f3f2f1; border-radius: 3px; margin-bottom: 3px; }
+.pivot-pane .pv-item-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pivot-pane .pv-item select { max-width: 92px; height: 22px; }
+.pivot-pane .pv-item .pv-move { width: 40px; max-width: 40px; }
+.pivot-pane .pv-actions { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+@media screen and (max-width: 760px) { .pivot-pane { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: -4px 0 12px rgba(0,0,0,.15); } }
