@@ -104,9 +104,7 @@
         el.dataset.pg = '1';
         el.style.marginTop = mt + 'px';
       }
-      // Printed sheets are exactly one paper page each; stop 1px short so rounding in the
-      // paper size never spills a sliver onto an extra blank page.
-      page.style.height = (pages * pitch - g.gap - (g.gap ? 0 : 1)) + 'px';
+      page.style.height = (pages * pitch - g.gap) + 'px';
       drawPages(g, pitch);
       o.onLayout && o.onLayout(pages);
       return pages;

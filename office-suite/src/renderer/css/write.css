@@ -74,7 +74,7 @@ body.dark .doc .page-break::after { background: #262626; }
 @media print {
   /* Printing uses the same pages as the screen (laid out without gaps), headers and footers included. */
   .canvas { padding: 0; background: #fff; overflow: visible; }
-  .page { zoom: 1 !important; overflow: hidden; }
+  .page { zoom: 1 !important; }
   .page-bg { box-shadow: none; }
   .hf:empty, .hf[hidden] { display: none; }
   .hf { border: 0; background: none; }
