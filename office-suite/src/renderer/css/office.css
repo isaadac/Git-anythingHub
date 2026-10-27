@@ -36,7 +36,7 @@ button, input, select { font: inherit; color: inherit; }
 .titlebar .autosave { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; opacity: .95; white-space: nowrap; }
 .titlebar .autosave input { accent-color: #fff; cursor: pointer; }
 .titlebar .autosave.off { opacity: .55; cursor: default; }
-@media (max-width: 640px) { .titlebar .autosave span { display: none; } }
+@media screen and (max-width: 640px) { .titlebar .autosave span { display: none; } }
 
 /* Ribbon */
 .ribbon-tabs { background: var(--accent); display: flex; gap: 2px; padding: 0 8px; flex: none; }
@@ -108,7 +108,7 @@ input.ctl[type=color] { width: 30px; padding: 1px; }
   .titlebar, .ribbon-tabs, .ribbon, .statusbar, .backstage, .findbar, .no-print { display: none !important; }
   body { background: #fff; overflow: visible; height: auto; display: block; }
 }
-@media (max-width: 640px) {
+@media screen and (max-width: 640px) {
   .titlebar .status-saved { display: none; }
   .backstage nav { width: 150px; }
   .backstage main { padding: 20px; }

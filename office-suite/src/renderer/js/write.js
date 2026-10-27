@@ -5,6 +5,9 @@
   const page = document.getElementById('page');
   const header = document.getElementById('pageHeader');
   const footer = document.getElementById('pageFooter');
+  const firstHeader = document.getElementById('firstHeader');
+  const firstFooter = document.getElementById('firstFooter');
+  const HF = [header, footer, firstHeader, firstFooter];
   const state = UI.docState('Atlas Write', 'Document1');
   const FILTERS = [
     { name: 'Word Document', extensions: ['docx'] },
@@ -14,7 +17,7 @@
   ];
   const OPEN_FILTERS = [{ name: 'Documents', extensions: ['docx', 'html', 'htm', 'md', 'txt'] }, ...FILTERS];
   const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14] }; // inches
-  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff' };
+  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false };
   const setup = { ...DEFAULT_SETUP };
   /** Page setup read from a file is untrusted: keep only values the ribbon itself can produce. */
   function validSetup(v) {
@@ -25,6 +28,7 @@
     if (Object.prototype.hasOwnProperty.call(PAGE_SIZES, v.size)) out.size = v.size;
     if ([1, 2, 3].includes(+v.columns)) out.columns = +v.columns;
     if (Platform.isColor(v.color)) out.color = v.color;
+    out.differentFirst = v.differentFirst === true;
     return out;
   }
 
@@ -34,12 +38,13 @@
 
   // ---------- Selection helpers ----------
   let savedRange = null;
-  const editable = () => (document.activeElement === header || document.activeElement === footer) ? document.activeElement : doc;
+  const editable = () => (HF.includes(document.activeElement) ? document.activeElement : doc);
   document.addEventListener('selectionchange', () => {
     const sel = getSelection();
-    if (sel.rangeCount && (doc.contains(sel.anchorNode) || header.contains(sel.anchorNode) || footer.contains(sel.anchorNode))) {
+    if (sel.rangeCount && (doc.contains(sel.anchorNode) || HF.some(h => h.contains(sel.anchorNode)))) {
       savedRange = sel.getRangeAt(0).cloneRange();
       updateToolbarState();
+      updateCaretPage();
     }
   });
   function restoreSelection() {
@@ -300,8 +305,49 @@
     doc.insertAdjacentHTML('afterbegin', `<div class="toc" contenteditable="false"><p><b>Contents</b></p>${items}</div>`);
     changed();
   });
-  document.getElementById('editHeader').addEventListener('click', () => { header.hidden = false; header.focus(); });
-  document.getElementById('editFooter').addEventListener('click', () => { footer.hidden = false; footer.focus(); });
+  function editHF(kind) {
+    layout.showHeaderFooter(kind);
+    const el = setup.differentFirst ? (kind === 'header' ? firstHeader : firstFooter) : (kind === 'header' ? header : footer);
+    el.hidden = false;
+    el.focus();
+    el.scrollIntoView({ block: 'nearest' });
+    if (setup.differentFirst && layout.pages < 2) UI.toast('The header and footer for the other pages appear from page 2', 3500);
+  }
+  document.getElementById('editHeader').addEventListener('click', () => editHF('header'));
+  document.getElementById('editFooter').addEventListener('click', () => editHF('footer'));
+  HF.forEach(el => el.addEventListener('blur', () => setTimeout(() => { if (!HF.includes(document.activeElement)) layout.hideEmptyHeaderFooter(); }, 150)));
+  // Page numbers: a field that shows the page it is on (or the page count).
+  const fieldHtml = kind => `<span class="fld" data-fld="${kind}" contenteditable="false">${kind === 'page' ? '1' : layout.pages}</span>`;
+  function fixFields(root) { root.querySelectorAll('.fld').forEach(f => { f.contentEditable = 'false'; if (!['page', 'numpages'].includes(f.dataset.fld)) f.dataset.fld = 'page'; }); }
+  document.getElementById('insPageNum').addEventListener('change', e => {
+    const v = e.target.value;
+    e.target.value = '';
+    if (!v) return;
+    if (v === 'remove') {
+      HF.forEach(el => el.querySelectorAll('.fld').forEach(f => { const p = f.closest('p'); f.remove(); if (p && !p.textContent.replace(/(Page|of)/g, '').trim()) p.remove(); }));
+      layout.run(); changed(); return;
+    }
+    const [where, align, kind] = v.split(':');
+    if (where === 'here') { exec('insertHTML', fieldHtml(kind) + '\u200b'); fixFields(editable()); layout.run(); return; }
+    const targets = setup.differentFirst ? [where === 'header' ? firstHeader : firstFooter, where === 'header' ? header : footer] : [where === 'header' ? header : footer];
+    const html = kind === 'nofm' ? `Page ${fieldHtml('page')} of ${fieldHtml('numpages')}` : fieldHtml('page');
+    targets.forEach(el => {
+      el.querySelectorAll('p.pgnum').forEach(p => p.remove());
+      el.insertAdjacentHTML(where === 'header' ? 'afterbegin' : 'beforeend', `<p class="pgnum" style="text-align:${align}">${html}</p>`);
+      fixFields(el);
+    });
+    layout.run();
+    changed();
+  });
+  document.getElementById('differentFirst').addEventListener('change', e => {
+    setup.differentFirst = e.target.checked;
+    // Start the first-page header/footer from the current ones, as Word does.
+    if (setup.differentFirst && !firstHeader.textContent.trim() && !firstFooter.textContent.trim()) {
+      firstHeader.innerHTML = ''; firstFooter.innerHTML = '';
+    }
+    layout.run();
+    changed();
+  });
 
   // Image selection tools
   const imgTools = document.getElementById('imgTools');
@@ -344,12 +390,15 @@
     page.style.setProperty('--page-w', (land ? h : w) + 'in');
     page.style.setProperty('--page-h', (land ? w : h) + 'in');
     page.style.setProperty('--margin', setup.margin);
-    page.style.background = setup.color;
+    page.style.setProperty('--paper', setup.color);
     doc.style.columnCount = setup.columns;
     doc.style.columnGap = '0.5in';
     let style = document.getElementById('print-page-style');
     if (!style) { style = document.createElement('style'); style.id = 'print-page-style'; document.head.appendChild(style); }
-    style.textContent = `@page { size: ${land ? h : w}in ${land ? w : h}in; margin: ${setup.margin}; }`;
+    // Margins are part of the laid-out sheets, so the printer page has none of its own.
+    style.textContent = `@page { size: ${land ? h : w}in ${land ? w : h}in; margin: 0; }`;
+    document.getElementById('differentFirst').checked = !!setup.differentFirst;
+    layout.run();
     updateStatus();
   }
   [['margins', 'margin'], ['orientation', 'orientation'], ['pageSize', 'size'], ['columns', 'columns'], ['pageColor', 'color']].forEach(([id, key]) => {
@@ -409,8 +458,8 @@
   });
 
   // ---------- Ribbon: View ----------
-  document.getElementById('viewPrint').addEventListener('click', () => document.body.classList.remove('view-web'));
-  document.getElementById('viewWeb').addEventListener('click', () => document.body.classList.add('view-web'));
+  document.getElementById('viewPrint').addEventListener('click', () => { document.body.classList.remove('view-web'); layout.run(); });
+  document.getElementById('viewWeb').addEventListener('click', () => { document.body.classList.add('view-web'); layout.run(); });
   document.getElementById('viewFocus').addEventListener('click', () => {
     document.body.classList.add('view-focus');
     UI.toast('Press Esc to leave Focus mode');
@@ -562,27 +611,46 @@
   });
 
   // ---------- Status & change tracking ----------
-  function pageCount() {
-    const [w, h] = PAGE_SIZES[setup.size];
-    const pageH = (setup.orientation === 'landscape' ? w : h) * 96;
-    const margin = parseFloat(setup.margin) * 96;
-    const breaks = doc.querySelectorAll('.page-break').length;
-    return Math.max(1 + breaks, Math.ceil(doc.scrollHeight / (pageH - 2 * margin)));
+  // ---------- Pages ----------
+  const layout = WriteLayout({
+    page, doc, bgs: document.getElementById('pageBgs'),
+    hf: { header, footer, firstHeader, firstFooter },
+    setup: () => {
+      const [w, h] = PAGE_SIZES[setup.size];
+      const land = setup.orientation === 'landscape';
+      return { width: land ? h : w, height: land ? w : h, margin: parseFloat(setup.margin), differentFirst: setup.differentFirst, columns: setup.columns };
+    },
+    // Narrow windows (phones) and Web Layout show one continuous page.
+    isPaged: () => !document.body.classList.contains('view-web') && window.innerWidth >= 900,
+    onLayout: () => updateCaretPage()
+  });
+  window.addEventListener('resize', () => layout.schedule());
+  const pageCount = () => layout.pages;
+  let caretPage = 1;
+  function updateCaretPage() {
+    const sel = getSelection();
+    if (sel.rangeCount && doc.contains(sel.anchorNode)) {
+      const r = sel.getRangeAt(0).getClientRects()[0] || (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement).getBoundingClientRect();
+      const z = parseFloat(page.style.zoom) || 1;
+      caretPage = layout.pageAt((r.top - doc.getBoundingClientRect().top) / z);
+    }
+    const n = layout.pages;
+    document.getElementById('stPages').textContent = `Page ${Math.min(caretPage, n)} of ${n}`;
   }
   function updateStatus() {
     const words = (doc.innerText.match(/\S+/g) || []).length;
     document.getElementById('stWords').textContent = `${words.toLocaleString()} word${words === 1 ? '' : 's'}`;
-    const pages = pageCount();
-    document.getElementById('stPages').textContent = `${pages} page${pages === 1 ? '' : 's'}`;
+    updateCaretPage();
   }
   let navTimer;
   function changed() {
     state.markDirty();
+    layout.schedule();
     updateStatus();
     clearTimeout(navTimer);
     navTimer = setTimeout(refreshNav, 400);
   }
-  [doc, header, footer].forEach(el => el.addEventListener('input', changed));
+  [doc, ...HF].forEach(el => el.addEventListener('input', changed));
 
   // Keyboard shortcuts the browser doesn't give contenteditable for free
   doc.addEventListener('keydown', e => {
@@ -611,11 +679,12 @@
   doc.addEventListener('keyup', () => { if (!doc.firstElementChild) doc.innerHTML = '<p><br></p>'; });
 
   // Paste: keep formatting but strip anything unsafe (header and footer too).
-  [doc, header, footer].forEach(el => el.addEventListener('paste', e => {
+  [doc, ...HF].forEach(el => el.addEventListener('paste', e => {
     const html = e.clipboardData.getData('text/html');
     if (!html) return;
     e.preventDefault();
     document.execCommand('insertHTML', false, sanitize(html));
+    fixFields(el);
     changed();
   }));
 
@@ -688,9 +757,15 @@
     const ext = Platform.extOf(f.name);
     let html;
     let nextSetup = { ...DEFAULT_SETUP };
-    let headerHtml = '', footerHtml = '';
+    let hfHtml = { header: '', footer: '', firstHeader: '', firstFooter: '' };
     try {
       if (ext === 'docx') {
+        // Page setup, headers, footers and page numbers come from the section properties (mammoth skips them).
+        try {
+          const sec = await readDocxSection(f.data);
+          nextSetup = validSetup({ ...nextSetup, ...sec.setup });
+          hfHtml = { ...hfHtml, ...sec.hf };
+        } catch (err) { console.info('Could not read page setup:', err); }
         const res = await mammoth.convertToHtml({ arrayBuffer: f.data.buffer.slice(f.data.byteOffset, f.data.byteOffset + f.data.byteLength) }, {
           styleMap: ['p[style-name=\'Title\'] => h1.title:fresh', 'p[style-name=\'Quote\'] => blockquote:fresh', 'p[style-name=\'Intense Quote\'] => blockquote:fresh']
         });
@@ -700,10 +775,10 @@
         const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
         const saved = d.querySelector('meta[name=atlas-setup]');
         if (saved) { try { nextSetup = validSetup(JSON.parse(saved.content)); } catch { /* ignore */ } }
-        const h = d.querySelector('header.atlas-header'), ft = d.querySelector('footer.atlas-footer');
-        headerHtml = h ? h.innerHTML : '';
-        footerHtml = ft ? ft.innerHTML : '';
-        h?.remove(); ft?.remove();
+        for (const [key, sel] of [['header', 'header.atlas-header'], ['footer', 'footer.atlas-footer'], ['firstHeader', 'header.atlas-first-header'], ['firstFooter', 'footer.atlas-first-footer']]) {
+          const el = d.querySelector(sel);
+          if (el) { hfHtml[key] = el.innerHTML; el.remove(); }
+        }
         html = d.querySelector('main.atlas-doc')?.innerHTML ?? d.body.innerHTML;
       } else if (ext === 'md') {
         html = markdownToHtml(Platform.bytesToText(f.data));
@@ -716,9 +791,9 @@
     }
     // Nothing from the previous document (page setup, header, footer) carries over.
     Object.assign(setup, nextSetup);
-    header.innerHTML = sanitize(headerHtml); header.hidden = !header.textContent.trim();
-    footer.innerHTML = sanitize(footerHtml); footer.hidden = !footer.textContent.trim();
+    for (const [key, el] of Object.entries({ header, footer, firstHeader, firstFooter })) { el.innerHTML = sanitize(hfHtml[key]); fixFields(el); }
     doc.innerHTML = sanitize(html) || '<p><br></p>';
+    fixFields(doc);
     savedRange = null;
     applySetup();
     syncSetupControls();
@@ -747,8 +822,95 @@
     .textbox { border: 1px solid #555555; }
     td, th { border: 1px solid #8e8e8e; }
   `;
+  /** Reads page size, margins, columns, headers/footers and page-number fields from a .docx. */
+  async function readDocxSection(bytes) {
+    const zip = await JSZip.loadAsync(bytes);
+    const W = 'http://schemas.openxmlformats.org/wordprocessingml/2006/main';
+    const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships';
+    const xml = async name => { const f = zip.file(name); return f ? new DOMParser().parseFromString(await f.async('string'), 'application/xml') : null; };
+    const docXml = await xml('word/document.xml');
+    const relsXml = await xml('word/_rels/document.xml.rels');
+    if (!docXml) return { setup: {}, hf: {} };
+    const rels = {};
+    if (relsXml) [...relsXml.getElementsByTagName('Relationship')].forEach(r => { rels[r.getAttribute('Id')] = r.getAttribute('Target'); });
+    const sects = docXml.getElementsByTagNameNS(W, 'sectPr');
+    const sect = sects[sects.length - 1];
+    const setup = {};
+    const hf = {};
+    if (!sect) return { setup, hf };
+    const attr = (el, name) => el && (el.getAttributeNS(W, name) || el.getAttribute('w:' + name));
+    const pgSz = sect.getElementsByTagNameNS(W, 'pgSz')[0];
+    if (pgSz) {
+      let w = +attr(pgSz, 'w'), h = +attr(pgSz, 'h');
+      if (w > h) { [w, h] = [h, w]; setup.orientation = 'landscape'; } else setup.orientation = attr(pgSz, 'orient') === 'landscape' ? 'landscape' : 'portrait';
+      const sizes = { letter: [12240, 15840], a4: [11906, 16838], legal: [12240, 20160] };
+      setup.size = Object.entries(sizes).sort((a, b) => Math.hypot(a[1][0] - w, a[1][1] - h) - Math.hypot(b[1][0] - w, b[1][1] - h))[0][0];
+    }
+    const pgMar = sect.getElementsByTagNameNS(W, 'pgMar')[0];
+    if (pgMar) {
+      const avg = ['top', 'bottom', 'left', 'right'].map(k => +attr(pgMar, k) || 1440).reduce((a, b) => a + b, 0) / 4 / 1440;
+      setup.margin = [0.5, 0.75, 1, 1.5].reduce((best, m) => (Math.abs(m - avg) < Math.abs(best - avg) ? m : best), 1) + 'in';
+    }
+    const cols = sect.getElementsByTagNameNS(W, 'cols')[0];
+    if (cols && +attr(cols, 'num') > 1) setup.columns = Math.min(3, +attr(cols, 'num'));
+    const titlePg = sect.getElementsByTagNameNS(W, 'titlePg')[0];
+    setup.differentFirst = !!titlePg && !['0', 'false'].includes(attr(titlePg, 'val'));
+    const partToHtml = async target => {
+      const part = await xml('word/' + target.replace(/^\/?word\//, ''));
+      if (!part) return '';
+      return [...part.getElementsByTagNameNS(W, 'p')].map(p => {
+        const jc = attr(p.getElementsByTagNameNS(W, 'jc')[0], 'val');
+        const align = { center: 'center', right: 'right', end: 'right', both: 'justify' }[jc] || '';
+        let out = '', inField = false, fieldDone = false, instr = '';
+        const field = kind => `<span class="fld" data-fld="${kind}">1</span>`;
+        const walk = node => {
+          for (const n of node.childNodes) {
+            if (n.nodeType !== 1) continue;
+            const ln = n.localName;
+            if (ln === 'fldSimple') {
+              const ins = (attr(n, 'instr') || '').trim().toUpperCase();
+              out += /^NUMPAGES/.test(ins) ? field('numpages') : /^PAGE/.test(ins) ? field('page') : escapeHtml(n.textContent);
+            } else if (ln === 'fldChar') {
+              const t = attr(n, 'fldCharType');
+              if (t === 'begin') { inField = true; fieldDone = false; instr = ''; }
+              else if (t === 'separate' && inField) { const ins = instr.trim().toUpperCase(); if (/^(PAGE|NUMPAGES)/.test(ins)) { out += field(/^NUMPAGES/.test(ins) ? 'numpages' : 'page'); fieldDone = true; } }
+              else if (t === 'end') { inField = false; }
+            } else if (ln === 'instrText') {
+              instr += n.textContent;
+            } else if (ln === 't') {
+              if (!(inField && fieldDone)) {
+                const r = n.parentNode;
+                const rPr = r && r.getElementsByTagNameNS(W, 'rPr')[0];
+                let t = escapeHtml(n.textContent);
+                if (rPr && rPr.getElementsByTagNameNS(W, 'b')[0]) t = `<b>${t}</b>`;
+                if (rPr && rPr.getElementsByTagNameNS(W, 'i')[0]) t = `<i>${t}</i>`;
+                out += t;
+              }
+            } else if (ln === 'tab') out += '\u00a0\u00a0\u00a0\u00a0';
+            else if (ln === 'br') out += '<br>';
+            else if (ln !== 'pPr' && ln !== 'rPr') walk(n);
+          }
+        };
+        walk(p);
+        return out ? `<p${align ? ` style="text-align:${align}"` : ''}>${out}</p>` : '';
+      }).join('');
+    };
+    for (const kind of ['header', 'footer']) {
+      for (const ref of sect.getElementsByTagNameNS(W, kind + 'Reference')) {
+        const type = attr(ref, 'type') || 'default';
+        const target = rels[ref.getAttributeNS(R, 'id') || ref.getAttribute('r:id')];
+        if (!target) continue;
+        const html = await partToHtml(target);
+        if (type === 'default') hf[kind] = html;
+        if (type === 'first') hf['first' + kind[0].toUpperCase() + kind.slice(1)] = html;
+      }
+    }
+    return { setup, hf };
+  }
+
   function cleanHtmlFor(el) {
     const clone = el.cloneNode(true);
+    layout.clearPushes(clone);
     clone.querySelectorAll('.selected').forEach(n => n.classList.remove('selected'));
     clone.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     clone.querySelectorAll('hr.page-break').forEach(n => { const d = document.createElement('div'); d.style.pageBreakAfter = 'always'; n.replaceWith(d); });
@@ -771,8 +933,18 @@
       },
       children: [...docxHtml.htmlToContent(cleanHtmlFor(doc), opts)]
     };
-    if (header.innerText.trim()) section.headers = { default: new D.Header({ children: [...docxHtml.htmlToContent(header.innerHTML, opts)] }) };
-    if (footer.innerText.trim()) section.footers = { default: new D.Footer({ children: [...docxHtml.htmlToContent(footer.innerHTML, opts)] }) };
+    const has = el => el.textContent.trim() !== '' || !!el.querySelector('img');
+    const headers = {}, footers = {};
+    if (has(header)) headers.default = new D.Header({ children: hfToDocx(header, opts) });
+    if (has(footer)) footers.default = new D.Footer({ children: hfToDocx(footer, opts) });
+    if (setup.differentFirst) {
+      section.properties.titlePage = true;
+      // An empty first-page header must still exist, or Word repeats the default one.
+      headers.first = new D.Header({ children: has(firstHeader) ? hfToDocx(firstHeader, opts) : [new D.Paragraph('')] });
+      footers.first = new D.Footer({ children: has(firstFooter) ? hfToDocx(firstFooter, opts) : [new D.Paragraph('')] });
+    }
+    if (Object.keys(headers).length) section.headers = headers;
+    if (Object.keys(footers).length) section.footers = footers;
     const document_ = new D.Document({
       creator: 'Atlas Write',
       title: Platform.baseName(state.name),
@@ -782,6 +954,29 @@
     });
     const blob = await D.Packer.toBlob(document_);
     return new Uint8Array(await blob.arrayBuffer());
+  }
+  /** Header/footer content as Word paragraphs, with page-number fields as real Word fields. */
+  function hfToDocx(el, opts) {
+    const D = window.docx;
+    const blockTags = /^(P|DIV|H[1-6]|UL|OL|TABLE|BLOCKQUOTE|PRE)$/;
+    const blocks = [...el.children].some(n => blockTags.test(n.tagName)) ? [...el.children] : [el];
+    const out = [];
+    for (const b of blocks) {
+      if (!b.querySelector('.fld')) { out.push(...docxHtml.htmlToContent(b === el ? `<p>${el.innerHTML}</p>` : b.outerHTML, opts)); continue; }
+      const children = [];
+      let buf = '';
+      const flush = () => { if (buf) { children.push(...docxHtml.htmlToRuns(buf, opts)); buf = ''; } };
+      b.childNodes.forEach(n => {
+        if (n.nodeType === 1 && n.classList.contains('fld')) { flush(); children.push(new D.TextRun({ children: [n.dataset.fld === 'numpages' ? D.PageNumber.TOTAL_PAGES : D.PageNumber.CURRENT] })); }
+        // Plain text becomes a run as-is: converting it as HTML would trim the spaces next to fields.
+        else if (n.nodeType === 3) { flush(); if (n.nodeValue) children.push(new D.TextRun(n.nodeValue.replace(/\u00a0/g, ' '))); }
+        else if (n.nodeType === 1) buf += n.outerHTML;
+      });
+      flush();
+      const align = { center: D.AlignmentType.CENTER, right: D.AlignmentType.RIGHT, justify: D.AlignmentType.JUSTIFIED }[b.style && b.style.textAlign];
+      out.push(new D.Paragraph({ children, alignment: align }));
+    }
+    return out;
   }
   function toHtml() {
     const css = [...document.styleSheets].find(s => s.href && s.href.endsWith('write.css'));
@@ -793,7 +988,10 @@
 <meta name="atlas-setup" content="${escapeHtml(JSON.stringify(setup))}">
 <style>body{max-width:8.5in;margin:auto;padding:1in;font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.15;background:${setup.color}}
 ${rules}</style></head>
-<body>${header.innerText.trim() ? `<header class="atlas-header">${header.innerHTML}</header>` : ''}<main class="atlas-doc">${cleanHtmlFor(doc)}</main>${footer.innerText.trim() ? `<footer class="atlas-footer">${footer.innerHTML}</footer>` : ''}</body></html>`;
+<body>${hfOut(firstHeader, 'header', 'atlas-first-header')}${hfOut(header, 'header', 'atlas-header')}<main class="atlas-doc">${cleanHtmlFor(doc)}</main>${hfOut(footer, 'footer', 'atlas-footer')}${hfOut(firstFooter, 'footer', 'atlas-first-footer')}</body></html>`;
+  }
+  function hfOut(el, tag, cls) {
+    return el.textContent.trim() || el.querySelector('img') ? `<${tag} class="${cls}">${cleanHtmlFor(el)}</${tag}>` : '';
   }
   async function serialize(ext) {
     if (ext === 'docx') return toDocx();
@@ -846,10 +1044,10 @@ ${rules}</style></head>
       case 'save': save(false); break;
       case 'save-as': save(true); break;
       case 'save-and-close': if (await save(false)) Platform.closeNow(); break;
-      case 'export-pdf': Platform.exportPdf(Platform.baseName(state.name) + '.pdf', setup.orientation === 'landscape'); break;
+      case 'export-pdf': { const restore = layout.forPrint(); try { await Platform.exportPdf(Platform.baseName(state.name) + '.pdf', setup.orientation === 'landscape'); } finally { restore(); } break; }
       case 'export-html': save(true, 'html'); break;
       case 'export-txt': save(true, 'txt'); break;
-      case 'print': Platform.print(); break;
+      case 'print': { const restore = layout.forPrint(); try { await Platform.print(); } finally { restore(); } break; }
       case 'undo': exec('undo'); break;
       case 'redo': exec('redo'); break;
       case 'find': openFind(false); break;
@@ -868,6 +1066,11 @@ ${rules}</style></head>
     updateStatus();
     doc.focus();
   })();
+
+  // Printing from the browser's own menu also uses gap-free pages.
+  let restorePrint = null;
+  window.addEventListener('beforeprint', () => { if (!restorePrint) restorePrint = layout.forPrint(); });
+  window.addEventListener('afterprint', () => { if (restorePrint) { const r = restorePrint; restorePrint = null; r(); } });
 
   // ---------- Crash recovery & AutoSave ----------
   const recovery = Platform.enableRecovery({

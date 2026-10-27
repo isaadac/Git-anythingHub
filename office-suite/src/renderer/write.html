@@ -151,6 +151,20 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="editHeader"><span class="ico">▔</span>Header</button>
       <button class="btn big" id="editFooter"><span class="ico">▁</span>Footer</button>
+      <div class="controls col">
+        <select class="ctl" id="insPageNum" title="Page number">
+          <option value="">Page Number…</option>
+          <option value="footer:center:n">Bottom, centre (1)</option>
+          <option value="footer:right:n">Bottom, right (1)</option>
+          <option value="footer:center:nofm">Bottom, centre (Page 1 of 3)</option>
+          <option value="header:right:n">Top, right (1)</option>
+          <option value="header:center:nofm">Top, centre (Page 1 of 3)</option>
+          <option value="here:page">Current page number at cursor</option>
+          <option value="here:numpages">Total pages at cursor</option>
+          <option value="remove">Remove page numbers</option>
+        </select>
+        <label class="row"><input type="checkbox" id="differentFirst"> Different first page</label>
+      </div>
     </div><div class="label">Header &amp; Footer</div></div>
   </div>
 
@@ -204,9 +218,12 @@
   <aside class="navpane no-print" id="navpane" hidden><h3>Navigation</h3><div id="navlist"></div></aside>
   <div class="canvas" id="canvas">
     <div class="page" id="page">
-      <div class="page-header" id="pageHeader" contenteditable="true" data-placeholder="Header" hidden></div>
-      <div class="doc" id="doc" contenteditable="true" spellcheck="true"><p><br></p></div>
-      <div class="page-footer" id="pageFooter" contenteditable="true" data-placeholder="Footer" hidden></div>
+      <div class="page-bgs" id="pageBgs" aria-hidden="true"></div>
+      <div class="hf hf-header" id="pageHeader" contenteditable="true" data-placeholder="Header" aria-label="Header" hidden></div>
+      <div class="hf hf-footer" id="pageFooter" contenteditable="true" data-placeholder="Footer" aria-label="Footer" hidden></div>
+      <div class="hf hf-header" id="firstHeader" contenteditable="true" data-placeholder="First page header" aria-label="First page header" hidden></div>
+      <div class="hf hf-footer" id="firstFooter" contenteditable="true" data-placeholder="First page footer" aria-label="First page footer" hidden></div>
+      <div class="doc" id="doc" contenteditable="true" spellcheck="true" aria-label="Document body"><p><br></p></div>
     </div>
   </div>
   <div class="findbar" id="findbar">
@@ -256,10 +273,12 @@
 </div>
 
 <script src="../../node_modules/mammoth/mammoth.browser.min.js"></script>
+<script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="../../node_modules/docx/dist/index.iife.js"></script>
 <script src="../../node_modules/docx/dist/math.iife.js"></script>
 <script src="../../node_modules/docx/dist/html.iife.js"></script>
 <script src="js/platform.js"></script>
+<script src="js/write-layout.js"></script>
 <script src="js/write.js"></script>
 </body>
 </html>

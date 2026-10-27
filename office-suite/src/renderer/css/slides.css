@@ -72,7 +72,7 @@ body.hide-notes .notes { display: none; }
   .print-slides { display: block; }
   .print-slides .slide { page-break-after: always; break-after: page; zoom: 1; width: 960px; height: 540px; }
 }
-@media (max-width: 760px) {
+@media screen and (max-width: 760px) {
   .thumbs { width: 110px; }
   .thumb .frame { width: 90px; height: 50.6px; }
   .thumb .frame .slide { transform: scale(calc(90 / 960)); }
