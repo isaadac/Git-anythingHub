@@ -6,8 +6,8 @@
 // data-author data-date>. Edits go through execCommand where possible so Ctrl+Z still works.
 (function () {
   const MARK = {
-    insS: '', insE: '', delS: '', delE: '',
-    cmtS: '', cmtE: '', sep: ''
+    insS: '\uE010', insE: '\uE011', delS: '\uE012', delE: '\uE013',
+    cmtS: '\uE020', cmtE: '\uE021', sep: '\uE0FF'
   };
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const xmlEsc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -227,14 +227,31 @@
       const zip = await JSZip.loadAsync(bytes);
       const f = zip.file('word/document.xml');
       let xml = await f.async('string');
-      if (!/[]/.test(xml)) return bytes;
+      if (!/[\uE020\uE021\uE030]/.test(xml)) return bytes;
+      // Citations: a marked run becomes a CITATION field showing the same text.
       xml = xml.replace(/<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, run => {
-        if (!/[]/.test(run)) return run;
+        if (!/\uE030/.test(run)) return run;
+        const rPr = (run.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
+        const t = run.match(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/);
+        if (!t) return run;
+        const re = /\uE030(s[a-z0-9]{4,24})\|([\w.,–-]*)\uE0FF([\s\S]*?)\uE031\uE0FF/g;
+        let out = '', last = 0, m;
+        const piece = s => (s ? `<w:r>${rPr}<w:t xml:space="preserve">${s}</w:t></w:r>` : '');
+        while ((m = re.exec(t[1]))) {
+          out += piece(t[1].slice(last, m.index));
+          out += `<w:fldSimple w:instr=" CITATION ${m[1]}${m[2] ? ' \\p ' + m[2] : ''} ">${piece(m[3])}</w:fldSimple>`;
+          last = re.lastIndex;
+        }
+        out += piece(t[1].slice(last).replace(/[\uE030\uE031][^\uE0FF]*\uE0FF/g, ''));
+        return out;
+      });
+      xml = xml.replace(/<w:r(?:\s[^>]*)?>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, run => {
+        if (!/[\uE020\uE021]/.test(run)) return run;
         const rPr = (run.match(/<w:rPr>[\s\S]*?<\/w:rPr>/) || [''])[0];
         const tMatch = run.match(/<w:t(?:\s[^>]*)?>([\s\S]*?)<\/w:t>/);
         if (!tMatch) return run;
         const out = [];
-        const re = /([])(\d+)/g;
+        const re = /([\uE020\uE021])(\d+)\uE0FF/g;
         let last = 0, m;
         const text = tMatch[1];
         const piece = s => { if (s) out.push(`<w:r>${rPr}<w:t xml:space="preserve">${s}</w:t></w:r>`); };
@@ -284,6 +301,13 @@
           .replace(/<w:commentRangeEnd\b[^>]*w:id="(\d+)"[^>]*\/>/g, (all, id) => mk(MARK.cmtE, id))
           .replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:commentReference\b[^>]*\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, '');
       }
+      // Citation fields written by Atlas (CITATION <source> \p <pages>).
+      meta.cites = {};
+      xml = xml.replace(/<w:fldSimple\b[^>]*w:instr="\s*CITATION\s+(\S+)(?:\s+\\p\s+(\S+))?[^"]*"[^>]*>([\s\S]*?)<\/w:fldSimple>/g, (all, src, pages, inner) => {
+        const id = ++n;
+        meta.cites[id] = { src, pages: pages || '' };
+        return mk('\uE030', id) + inner + mk('\uE031', id);
+      });
       if (!n && !Object.keys(meta.comments).length) return { bytes, meta: null };
       zip.file('word/document.xml', xml);
       return { bytes: new Uint8Array(await zip.generateAsync({ type: 'uint8array' })), meta };
@@ -295,19 +319,19 @@
       // 1. Replace each marker text with an empty boundary element.
       const walker = d.createTreeWalker(d.body, NodeFilter.SHOW_TEXT);
       const texts = [];
-      while (walker.nextNode()) if (/[-]/.test(walker.currentNode.nodeValue)) texts.push(walker.currentNode);
+      while (walker.nextNode()) if (/[\uE010-\uE031]/.test(walker.currentNode.nodeValue)) texts.push(walker.currentNode);
       texts.forEach(t => {
-        const parts = t.nodeValue.split(/([]\d+)/);
+        const parts = t.nodeValue.split(/([\uE010\uE011\uE012\uE013\uE020\uE021\uE030\uE031]\d+\uE0FF)/);
         const frag = d.createDocumentFragment();
         parts.forEach(p => {
-          const m = /^([-])(\d+)$/.exec(p);
+          const m = /^([\uE010-\uE031])(\d+)\uE0FF$/.exec(p);
           if (m) { const b = d.createElement('x-mark'); b.setAttribute('k', m[1]); b.setAttribute('i', m[2]); frag.appendChild(b); }
           else if (p) frag.appendChild(d.createTextNode(p));
         });
         t.replaceWith(frag);
       });
       // 2. Wrap the text between each start/end pair.
-      const pairs = [[MARK.insS, MARK.insE], [MARK.delS, MARK.delE], [MARK.cmtS, MARK.cmtE]];
+      const pairs = [[MARK.insS, MARK.insE], [MARK.delS, MARK.delE], [MARK.cmtS, MARK.cmtE], ['\uE030', '\uE031']];
       for (const [s, e] of pairs) {
         d.querySelectorAll(`x-mark[k="${s}"]`).forEach(start => {
           const id = start.getAttribute('i');
@@ -321,7 +345,13 @@
           while (w.nextNode()) if (range.intersectsNode(w.currentNode) && w.currentNode.nodeValue) nodes.push(w.currentNode);
           nodes.forEach(n => {
             let el;
-            if (s === MARK.cmtS) {
+            if (s === '\uE030') {
+              const c = (meta.cites || {})[id] || {};
+              el = d.createElement('cite');
+              el.className = 'citation';
+              if (/^s[a-z0-9]{4,24}$/.test(c.src || '')) el.dataset.src = c.src;
+              if (c.pages && /^[\w.,–-]{1,40}$/.test(c.pages)) el.dataset.pages = c.pages;
+            } else if (s === MARK.cmtS) {
               const c = meta.comments[id] || {};
               el = d.createElement('span');
               el.className = 'comment';

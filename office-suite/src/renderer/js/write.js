@@ -17,7 +17,7 @@
   ];
   const OPEN_FILTERS = [{ name: 'Documents', extensions: ['docx', 'html', 'htm', 'md', 'txt'] }, ...FILTERS];
   const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14] }; // inches
-  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false };
+  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false, citeStyle: 'apa' };
   const setup = { ...DEFAULT_SETUP };
   /** Page setup read from a file is untrusted: keep only values the ribbon itself can produce. */
   function validSetup(v) {
@@ -30,6 +30,7 @@
     if (Platform.isColor(v.color)) out.color = v.color;
     out.differentFirst = v.differentFirst === true;
     out.trackChanges = v.trackChanges === true;
+    if (['apa', 'mla', 'chicago'].includes(v.citeStyle)) out.citeStyle = v.citeStyle;
     return out;
   }
 
@@ -400,6 +401,7 @@
     style.textContent = `@page { size: ${land ? h : w}in ${land ? w : h}in; margin: 0; }`;
     document.getElementById('differentFirst').checked = !!setup.differentFirst;
     if (review.tracking !== !!setup.trackChanges) setTracking(setup.trackChanges);
+    document.getElementById('citeStyle').value = setup.citeStyle;
     layout.run();
     updateStatus();
   }
@@ -653,8 +655,17 @@
     },
     // Narrow windows (phones) and Web Layout show one continuous page.
     isPaged: () => !document.body.classList.contains('view-web') && window.innerWidth >= 900,
-    onLayout: () => updateCaretPage()
+    onLayout: () => updateCaretPage(),
+    footnotes: () => notes.footnotes()
   });
+  // ---------- References: notes, citations, bibliography ----------
+  const notes = WriteNotes({ doc, setup: () => setup, restoreSelection, changed: () => changed() });
+  document.getElementById('insFootnote').addEventListener('click', () => notes.insertNote('foot'));
+  document.getElementById('insEndnote').addEventListener('click', () => notes.insertNote('end'));
+  document.getElementById('insCitation').addEventListener('click', () => notes.insertCitation());
+  document.getElementById('insBibliography').addEventListener('click', () => notes.insertBibliography());
+  document.getElementById('manageSources').addEventListener('click', () => notes.manageSources());
+  document.getElementById('citeStyle').addEventListener('change', e => { setup.citeStyle = e.target.value; notes.refreshCitations(); changed(); });
   window.addEventListener('resize', () => layout.schedule());
   const pageCount = () => layout.pages;
   let caretPage = 1;
@@ -676,6 +687,7 @@
   let navTimer;
   function changed() {
     state.markDirty();
+    notes.renumber();
     layout.schedule();
     updateStatus();
     clearTimeout(navTimer);
@@ -795,6 +807,7 @@
     let html;
     let nextSetup = { ...DEFAULT_SETUP };
     let hfHtml = { header: '', footer: '', firstHeader: '', firstFooter: '' };
+    let nextSources = [];
     try {
       if (ext === 'docx') {
         // Page setup, headers, footers and page numbers come from the section properties (mammoth skips them).
@@ -802,6 +815,7 @@
           const sec = await readDocxSection(f.data);
           nextSetup = validSetup({ ...nextSetup, ...sec.setup });
           hfHtml = { ...hfHtml, ...sec.hf };
+          nextSources = sec.sources || [];
         } catch (err) { console.info('Could not read page setup:', err); }
         // Keep tracked changes and comments, which the HTML converter would otherwise drop.
         let pre = { bytes: f.data, meta: null };
@@ -810,10 +824,12 @@
         const res = await mammoth.convertToHtml({ arrayBuffer: src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength) }, {
           styleMap: ['p[style-name=\'Title\'] => h1.title:fresh', 'p[style-name=\'Quote\'] => blockquote:fresh', 'p[style-name=\'Intense Quote\'] => blockquote:fresh']
         });
-        html = review.postprocessHtml(res.value, pre.meta);
+        html = notes.importMammothNotes(review.postprocessHtml(res.value, pre.meta));
         if (res.messages.some(m => m.type === 'warning')) console.info('Import notes:', res.messages);
       } else if (ext === 'html' || ext === 'htm') {
         const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
+        const src = d.querySelector('meta[name=atlas-sources]');
+        if (src) { try { nextSources = JSON.parse(src.content); } catch { /* ignore */ } }
         const saved = d.querySelector('meta[name=atlas-setup]');
         if (saved) { try { nextSetup = validSetup(JSON.parse(saved.content)); } catch { /* ignore */ } }
         for (const [key, sel] of [['header', 'header.atlas-header'], ['footer', 'footer.atlas-footer'], ['firstHeader', 'header.atlas-first-header'], ['firstFooter', 'footer.atlas-first-footer']]) {
@@ -835,6 +851,9 @@
     for (const [key, el] of Object.entries({ header, footer, firstHeader, firstFooter })) { el.innerHTML = sanitize(hfHtml[key]); fixFields(el); }
     doc.innerHTML = sanitize(html) || '<p><br></p>';
     fixFields(doc);
+    notes.loadSources(nextSources);
+    notes.renumber();
+    notes.refreshCitations();
     savedRange = null;
     applySetup();
     syncSetupControls();
@@ -948,12 +967,20 @@
         if (type === 'first') hf['first' + kind[0].toUpperCase() + kind.slice(1)] = html;
       }
     }
-    return { setup, hf };
+    const custom = await xml('docProps/custom.xml');
+    let sources = [];
+    if (custom) {
+      const prop = name => [...custom.getElementsByTagName('property')].find(p => p.getAttribute('name') === name);
+      if (prop('AtlasSources')) { try { sources = JSON.parse(prop('AtlasSources').textContent); } catch { /* ignore */ } }
+      if (prop('AtlasCiteStyle')) setup.citeStyle = prop('AtlasCiteStyle').textContent.trim();
+    }
+    return { setup, hf, sources };
   }
 
   function cleanHtmlFor(el) {
     const clone = el.cloneNode(true);
     layout.clearPushes(clone);
+    notes.clean(clone);
     clone.querySelectorAll('.selected').forEach(n => n.classList.remove('selected'));
     clone.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     clone.querySelectorAll('hr.page-break').forEach(n => { const d = document.createElement('div'); d.style.pageBreakAfter = 'always'; n.replaceWith(d); });
@@ -982,6 +1009,7 @@
     const tw = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
     while (tw.nextNode()) tw.currentNode.nodeValue = tw.currentNode.nodeValue.replace(/(^|[^\u00a0 ])\u00a0(?=[^\u00a0 ]|$)/g, '$1 ');
     const cmts = review.markCommentsForDocx(body);
+    notes.prepareForDocx(body);
     section.children = [...docxHtml.htmlToContent(body.innerHTML, { ...opts, trackChanges: { author: getAuthor() } })];
     const has = el => el.textContent.trim() !== '' || !!el.querySelector('img');
     const headers = {}, footers = {};
@@ -1001,6 +1029,7 @@
       styles: { default: { document: { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { after: 160, line: 276 } } } } },
       background: setup.color !== '#ffffff' ? { color: setup.color.slice(1) } : undefined,
       features: setup.trackChanges ? { trackRevisions: true } : undefined,
+      customProperties: [{ name: 'AtlasCiteStyle', value: setup.citeStyle }, ...(notes.sources.length ? [{ name: 'AtlasSources', value: JSON.stringify(notes.sources) }] : [])],
       comments: cmts.length ? { children: cmts.map(c => ({ id: c.id, author: c.author, initials: c.author.split(/\s+/).map(w => w[0]).join('').slice(0, 3), date: new Date(c.date), children: c.text.split('\n').map(t => new D.Paragraph(t)) })) } : undefined,
       sections: [section]
     });
@@ -1038,6 +1067,7 @@
 <html><head><meta charset="utf-8"><title>${escapeHtml(Platform.baseName(state.name))}</title>
 <meta name="generator" content="Atlas Write">
 <meta name="atlas-setup" content="${escapeHtml(JSON.stringify(setup))}">
+${notes.sources.length ? `<meta name="atlas-sources" content="${escapeHtml(JSON.stringify(notes.sources))}">` : ''}
 <style>body{max-width:8.5in;margin:auto;padding:1in;font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.15;background:${setup.color}}
 ${rules}</style></head>
 <body>${hfOut(firstHeader, 'header', 'atlas-first-header')}${hfOut(header, 'header', 'atlas-header')}<main class="atlas-doc">${cleanHtmlFor(doc)}</main>${hfOut(footer, 'footer', 'atlas-footer')}${hfOut(firstFooter, 'footer', 'atlas-first-footer')}</body></html>`;
@@ -1048,7 +1078,11 @@ ${rules}</style></head>
   async function serialize(ext) {
     if (ext === 'docx') return toDocx();
     if (ext === 'html' || ext === 'htm') return toHtml();
-    if (ext === 'md') return htmlToMarkdown(doc);
+    if (ext === 'md') {
+      const clone = doc.cloneNode(true);
+      const defs = notes.toMarkdownNotes(clone);
+      return htmlToMarkdown(clone) + (defs.length ? '\n' + defs.join('\n') + '\n' : '');
+    }
     return doc.innerText;
   }
 

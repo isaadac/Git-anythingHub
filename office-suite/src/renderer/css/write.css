@@ -14,6 +14,16 @@
 .hf:focus { border-color: #a19f9d; background: rgba(255,255,255,.6); }
 .hf:empty::before { content: attr(data-placeholder); color: #bbb; }
 .hf p, .hf-clone p { margin: 0; }
+.fn-area { position: absolute; left: var(--margin); right: var(--margin); padding-top: 7px; }
+.fn-area::before { content: ""; display: block; width: 33%; border-top: 1px solid #888; margin-bottom: 6px; }
+.fn-note { font: 9pt/1.2 Calibri, Carlito, Arial, sans-serif; color: #000; margin: 0 0 2px; white-space: pre-wrap; }
+.doc sup.note { color: var(--accent); cursor: pointer; font-weight: 600; padding: 0 1px; }
+.doc cite.citation { font-style: normal; cursor: pointer; border-bottom: 1px dotted #a19f9d; }
+.doc .endnotes-gen { border-top: 1px solid #999; margin-top: 18pt; padding-top: 6pt; font-size: 10pt; cursor: default; }
+.doc .endnotes-gen h3 { font-size: 11pt; margin: 0 0 6pt; color: #000; }
+.doc .endnotes-gen p { margin: 0 0 4pt; cursor: pointer; }
+.doc section.bibliography { cursor: default; }
+.doc section.bibliography .bib-entry { padding-left: 0.5in; text-indent: -0.5in; line-height: 2; margin: 0; }
 .fld { background: #e8e8e8; border-radius: 2px; padding: 0 1px; }
 .hf-clone .fld { background: none; padding: 0; }
 .doc { position: relative; z-index: 1; display: flow-root; }

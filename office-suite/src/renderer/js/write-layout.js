@@ -47,7 +47,7 @@
           if (CONTAINERS.has(el.tagName) && el.children.length > 1 && b.h > bodyH * 0.4 && !el.classList.contains('textbox') && !el.classList.contains('toc')) {
             // Keep the container's first item with the container, then treat each item separately.
             const first = box(el.children[0]);
-            units.push({ el, top: b.top, bottom: first.bottom, prevBottom, pushable });
+            units.push({ el, top: b.top, bottom: first.bottom, prevBottom, pushable, isContainer: true });
             walk(el, true);
           } else {
             units.push({ el, top: b.top, bottom: b.bottom, prevBottom, pushable });
@@ -77,22 +77,37 @@
       const pitch = g.H + g.gap;
       const pushes = [];
       let shift = 0, breakAt = null, lastBottom = 0;
+      // Footnotes take space at the bottom of the page their reference is on.
+      const notes = (o.footnotes ? o.footnotes() : []).map(f => ({ ...f, h: measureNote(f, g) }));
+      const reserve = new Map();   // page -> height used by footnotes (incl. separator)
+      const notesOn = new Map();   // page -> footnotes
+      const NOTE_SEP = 14;
       // Multi-column text flows across the whole document; it isn't split per page.
       const units = g.columns > 1 ? [] : collectUnits(bodyH);
       for (const u of units) {
         const top = u.top + shift, bottom = u.isBreak ? top : u.bottom + shift;
         if (u.isBreak) { breakAt = top; continue; }
+        const own = notes.filter(n => u.el.contains(n.el) && !(u.isContainer && !u.el.children[0].contains(n.el)));
+        const ownH = own.reduce((a, n) => a + n.h, 0);
         const pageIdx = Math.floor((top + 0.5) / pitch);
-        const pageBottom = pageIdx * pitch + bodyH;
+        const res = p => (reserve.get(p) || 0);
+        const needOn = p => res(p) + ownH + (ownH && !res(p) ? NOTE_SEP : 0);
+        const pageBottom = pageIdx * pitch + bodyH - needOn(pageIdx);
         let target = null;
         if (breakAt !== null) { target = (Math.floor((breakAt + 0.5) / pitch) + 1) * pitch; breakAt = null; }
-        else if (top > pageBottom - 0.5) target = (pageIdx + 1) * pitch;                          // starts below the text area
-        else if (bottom > pageBottom + 0.5 && bottom - top <= bodyH) target = (pageIdx + 1) * pitch; // would cross the page edge
+        else if (top > pageBottom - 0.5) target = (pageIdx + 1) * pitch;                                   // starts below the text area
+        else if (bottom > pageBottom + 0.5 && bottom - top <= bodyH - ownH - (ownH ? NOTE_SEP : 0)) target = (pageIdx + 1) * pitch; // would cross the page edge
+        let landed = pageIdx;
         if (target !== null && target > top + 0.5 && u.pushable) {
           const delta = target - top;
           // New margin = current gap above the block (margins collapse) + the distance to move.
           pushes.push([u.el, Math.round((u.top - u.prevBottom + delta) * 100) / 100]);
           shift += delta;
+          landed = Math.floor((target + 0.5) / pitch);
+        }
+        if (own.length) {
+          reserve.set(landed, needOn(landed));
+          notesOn.set(landed, [...(notesOn.get(landed) || []), ...own]);
         }
         lastBottom = Math.max(lastBottom, u.bottom + shift);
       }
@@ -105,7 +120,7 @@
         el.style.marginTop = mt + 'px';
       }
       page.style.height = (pages * pitch - g.gap) + 'px';
-      drawPages(g, pitch);
+      drawPages(g, pitch, notesOn, reserve);
       o.onLayout && o.onLayout(pages);
       return pages;
     }
@@ -116,7 +131,20 @@
     }
     const hasContent = el => el.textContent.trim() !== '' || !!el.querySelector('img');
 
-    function drawPages(g, pitch) {
+    let noteMeasurer = null;
+    function measureNote(f, g) {
+      if (!noteMeasurer) {
+        noteMeasurer = document.createElement('div');
+        noteMeasurer.className = 'fn-note';
+        Object.assign(noteMeasurer.style, { position: 'absolute', visibility: 'hidden', left: '-10000px', top: '0' });
+        page.appendChild(noteMeasurer);
+      }
+      noteMeasurer.style.width = (g.W - 2 * g.M) + 'px';
+      noteMeasurer.innerHTML = `<sup>${f.n}</sup> `;
+      noteMeasurer.appendChild(document.createTextNode(f.text));
+      return noteMeasurer.offsetHeight;
+    }
+    function drawPages(g, pitch, notesOn = new Map(), reserve = new Map()) {
       const inset = Math.max(19, g.M * 0.4);
       // Which element supplies the header/footer of each page, and which page hosts the editable one.
       const src = (kind, i) => (g.first && i === 0 ? hf['first' + kind] : hf[kind.toLowerCase()]);
@@ -136,6 +164,20 @@
           fillFields(c, i + 1);
           if (kind === 'Header') c.style.top = inset + 'px'; else c.style.bottom = inset + 'px';
           bg.appendChild(c);
+        }
+        const fn = notesOn.get(i);
+        if (fn && fn.length) {
+          const area = document.createElement('div');
+          area.className = 'fn-area';
+          area.style.top = (g.M + (g.H - 2 * g.M) - reserve.get(i)) + 'px';
+          fn.forEach(f => {
+            const p = document.createElement('div');
+            p.className = 'fn-note';
+            p.innerHTML = `<sup>${f.n}</sup> `;
+            p.appendChild(document.createTextNode(f.text));
+            area.appendChild(p);
+          });
+          bg.appendChild(area);
         }
         frag.appendChild(bg);
       }

@@ -276,7 +276,7 @@
    */
   const DROP_TAGS = 'script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,option,base,frame,frameset,noscript,template,svg,math,canvas,audio,video,source,track,portal,applet,dialog,slot,title,head';
   const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'style', 'class', 'id', 'colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'color', 'face', 'size', 'start', 'type', 'dir', 'lang', 'reversed', 'value', 'border', 'cellpadding', 'cellspacing', 'bgcolor', 'span', 'headers', 'scope']);
-  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'fld', 'pgnum', 'tc']);
+  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry']);
   Platform.sanitizeHtml = function (html) {
     const d = new DOMParser().parseFromString(String(html || ''), 'text/html');
     d.querySelectorAll(DROP_TAGS).forEach(n => n.remove());
@@ -288,6 +288,9 @@
         if (n === 'data-fld' && ['page', 'numpages'].includes(a.value)) return; // page-number fields
         if (n === 'data-author' && /^[\w .@'-]{1,64}$/.test(a.value)) return; // review: who made a change/comment
         if ((n === 'data-date' || n === 'datetime') && !isNaN(Date.parse(a.value))) return;
+        if (n === 'data-kind' && ['foot', 'end'].includes(a.value)) return;   // footnote / endnote
+        if (n === 'data-src' && /^s[a-z0-9]{4,24}$/.test(a.value)) return;    // citation source id
+        if (n === 'data-pages' && /^[\w .,–-]{1,40}$/.test(a.value)) return;
         if (!ALLOWED_ATTRS.has(n)) { el.removeAttribute(a.name); return; }
         if (n === 'href' && !/^(https?:|mailto:|#)/i.test(clean(a.value))) el.removeAttribute(a.name);
         if (n === 'src' && !/^data:image\/(png|jpe?g|gif|webp|bmp|svg\+xml)[;,]/i.test(clean(a.value))) el.removeAttribute(a.name);
