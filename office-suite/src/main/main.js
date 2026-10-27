@@ -4,6 +4,8 @@
 const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const settings = require('./settings');
+const updater = require('./updater');
 
 const APPS = {
   home: { page: 'index.html', title: 'Atlas Office', width: 1100, height: 720 },
@@ -242,6 +244,14 @@ function buildMenu() {
     {
       role: 'help',
       submenu: [{
+        label: 'Check for Updates…',
+        click: () => updater.check(true)
+      }, {
+        label: 'Update Automatically',
+        type: 'checkbox',
+        checked: !!settings.get('autoUpdate'),
+        click: item => updater.setEnabled(item.checked)
+      }, { type: 'separator' }, {
         label: 'About Atlas Office',
         click: () => dialog.showMessageBox({
           type: 'info',
@@ -286,6 +296,7 @@ if (!app.requestSingleInstanceLock()) {
     macOpenQueue = [];
     if (files.length) files.forEach(f => openPath(f));
     else createWindow('home');
+    updater.start();
     app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow('home'); });
   });
 

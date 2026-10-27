@@ -22,13 +22,19 @@ All apps have undo/redo, unsaved-changes prompts, recent files, print and PDF ex
 
 Download the installer for your system from the repository's **Releases** page (or from the latest **Actions → Atlas Office** run's artifacts):
 
-- **Windows**: `Atlas Office Setup x.y.z.exe` (installer) or `Atlas Office-x.y.z-portable.exe` (no install needed)
-- **macOS**: `Atlas Office-x.y.z-universal.dmg` (Intel and Apple Silicon)
-- **Linux**: `Atlas Office-x.y.z.AppImage` (any distro: `chmod +x` and run) or `atlas-office_x.y.z_amd64.deb` (Debian/Ubuntu)
+- **Windows**: `Atlas-Office-Setup-x.y.z-x64.exe` (installer; `-arm64` for ARM PCs) or `Atlas-Office-x.y.z-portable.exe` (no install needed)
+- **macOS**: `Atlas-Office-x.y.z-universal.dmg` (Intel and Apple Silicon)
+- **Linux**: `Atlas-Office-x.y.z-x86_64.AppImage` (any distro: `chmod +x` and run) or `atlas-office_x.y.z_amd64.deb` (Debian/Ubuntu)
 
 Builds are code-signed once signing certificates are added to the repository (see [SIGNING.md](SIGNING.md)). Until then, Windows SmartScreen may warn you ("More info → Run anyway"), and on macOS you right-click the app and choose **Open** the first time.
 
 **Phones, tablets and Chromebooks**: serve the `office-suite` folder from any static web host and open `src/renderer/index.html`. The same apps run in the browser. Saving downloads the file.
+
+### Updates
+
+Installed copies (Windows installer, macOS app, Linux AppImage and `.deb`) check the repository's latest GitHub Release every 6 hours, download new versions in the background and offer to restart. Use **Help → Check for Updates…** to check now, or untick **Help → Update Automatically** to turn this off. The portable `.exe` doesn't update itself. On macOS, updates need a signed build (see [SIGNING.md](SIGNING.md)).
+
+To ship an update, raise `version` in `package.json` and push a tag such as `office-v1.0.1`.
 
 ## Develop
 

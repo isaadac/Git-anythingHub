@@ -19,9 +19,10 @@
   },
   "dependencies": {
     "docx": "9.15.0",
+    "electron-updater": "6.6.2",
+    "jszip": "3.10.2",
     "mammoth": "1.13.0",
     "pptxgenjs": "4.0.1",
-    "jszip": "3.10.2",
     "xlsx": "0.18.5"
   },
   "devDependencies": {
@@ -126,10 +127,11 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Atlas Office"
+      "shortcutName": "Atlas Office",
+      "artifactName": "Atlas-Office-Setup-${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
+      "artifactName": "Atlas-Office-${version}-portable.${ext}"
     },
     "mac": {
       "target": [
@@ -176,7 +178,11 @@
       "synopsis": "Documents, spreadsheets and presentations",
       "syncDesktopName": true
     },
-    "publish": null
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/isaadac/Git-anythingHub/releases/latest/download"
+    },
+    "artifactName": "Atlas-Office-${version}-${arch}.${ext}"
   },
   "desktopName": "atlas-office.desktop"
 }
