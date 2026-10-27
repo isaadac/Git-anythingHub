@@ -26,7 +26,7 @@ Download the installer for your system from the repository's **Releases** page (
 - **macOS**: `Atlas Office-x.y.z-universal.dmg` (Intel and Apple Silicon)
 - **Linux**: `Atlas Office-x.y.z.AppImage` (any distro: `chmod +x` and run) or `atlas-office_x.y.z_amd64.deb` (Debian/Ubuntu)
 
-The builds are not code-signed yet. On Windows, SmartScreen may warn you ("More info → Run anyway"). On macOS, right-click the app and choose **Open** the first time.
+Builds are code-signed once signing certificates are added to the repository (see [SIGNING.md](SIGNING.md)). Until then, Windows SmartScreen may warn you ("More info → Run anyway"), and on macOS you right-click the app and choose **Open** the first time.
 
 **Phones, tablets and Chromebooks**: serve the `office-suite` folder from any static web host and open `src/renderer/index.html`. The same apps run in the browser. Saving downloads the file.
 

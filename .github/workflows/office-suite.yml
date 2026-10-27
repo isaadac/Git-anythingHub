@@ -53,10 +53,33 @@ jobs:
           cache-dependency-path: office-suite/package-lock.json
       - run: npm ci
       - name: Build installers
-        run: npx electron-builder ${{ matrix.target }} --publish never
+        shell: bash
         env:
-          # Unsigned builds. Add CSC_LINK / CSC_KEY_PASSWORD (and Apple notarization secrets) to sign.
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+          # Code signing is optional: add these repository secrets to sign (see office-suite/SIGNING.md).
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          args="${{ matrix.target }} --publish never"
+          case "${{ runner.os }}" in
+            Windows)
+              if [ -n "$WIN_CSC_LINK" ]; then export CSC_LINK="$WIN_CSC_LINK" CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; signed=yes; fi ;;
+            macOS)
+              if [ -n "$MAC_CSC_LINK" ]; then export CSC_LINK="$MAC_CSC_LINK" CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"; signed=yes; fi
+              if [ -n "$signed" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+                args="$args -c.mac.notarize=true"; echo "Notarizing with Apple"
+              fi ;;
+          esac
+          unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD MAC_CSC_LINK MAC_CSC_KEY_PASSWORD
+          if [ -z "$signed" ]; then
+            echo "::notice::Building unsigned installers (no signing secrets for ${{ runner.os }})"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          npx electron-builder $args
       - uses: actions/upload-artifact@v4
         with:
           name: atlas-office-${{ runner.os }}
@@ -66,6 +89,8 @@ jobs:
             office-suite/dist/*.zip
             office-suite/dist/*.AppImage
             office-suite/dist/*.deb
+            office-suite/dist/*.blockmap
+            office-suite/dist/latest*.yml
           if-no-files-found: error
 
   release:
