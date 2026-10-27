@@ -298,15 +298,8 @@
     const r = await UI.form('Symbol', [{ name: 's', label: 'Symbol', type: 'select', options: symbols }], 'Insert');
     if (r) exec('insertText', r.s);
   });
-  document.getElementById('insToc').addEventListener('click', () => {
-    const heads = [...doc.querySelectorAll('h1:not(.title),h2,h3')];
-    if (!heads.length) return UI.toast('Add some headings first (Home → Styles)');
-    heads.forEach((h, i) => { if (!h.id) h.id = 'h-' + Date.now().toString(36) + i; });
-    const items = heads.map(h => `<p style="margin-left:${(+h.tagName[1] - 1) * 18}pt"><a href="#${h.id}">${escapeHtml(h.textContent)}</a></p>`).join('');
-    doc.querySelector('.toc')?.remove();
-    doc.insertAdjacentHTML('afterbegin', `<div class="toc" contenteditable="false"><p><b>Contents</b></p>${items}</div>`);
-    changed();
-  });
+  document.getElementById('insToc').addEventListener('click', () => toc.insert());
+  document.getElementById('updToc').addEventListener('click', () => (doc.querySelector('.toc') ? toc.update() : UI.toast('Insert a table of contents first (Insert → Contents)')));
   function editHF(kind) {
     layout.showHeaderFooter(kind);
     const el = setup.differentFirst ? (kind === 'header' ? firstHeader : firstFooter) : (kind === 'header' ? header : footer);
@@ -645,6 +638,7 @@
 
   // ---------- Status & change tracking ----------
   // ---------- Pages ----------
+  let toc = null;
   const layout = WriteLayout({
     page, doc, bgs: document.getElementById('pageBgs'),
     hf: { header, footer, firstHeader, firstFooter },
@@ -655,8 +649,12 @@
     },
     // Narrow windows (phones) and Web Layout show one continuous page.
     isPaged: () => !document.body.classList.contains('view-web') && window.innerWidth >= 900,
-    onLayout: () => updateCaretPage(),
+    onLayout: () => { updateCaretPage(); if (toc) toc.refreshPages(); },
     footnotes: () => notes.footnotes()
+  });
+  toc = WriteToc({
+    doc, restoreSelection, changed: () => changed(), relayout: () => layout.run(),
+    zoom: () => parseFloat(page.style.zoom) || 1, pageAt: y => layout.pageAt(y)
   });
   // ---------- References: notes, citations, bibliography ----------
   const notes = WriteNotes({ doc, setup: () => setup, restoreSelection, changed: () => changed() });
@@ -814,6 +812,7 @@
     const walk = (n, ctx = {}) => {
       if (n.nodeType === 3) return n.nodeValue.replace(/\u00a0/g, ' ');
       if (n.nodeType !== 1) return '';
+      if (n.classList.contains('toc-pg')) return '';
       const kids = () => [...n.childNodes].map(c => walk(c, ctx)).join('');
       switch (n.tagName) {
         case 'H1': case 'H2': case 'H3': case 'H4': return '#'.repeat(+n.tagName[1]) + ' ' + kids().trim() + '\n\n';
@@ -863,7 +862,7 @@
         const res = await mammoth.convertToHtml({ arrayBuffer: src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength) }, {
           styleMap: ['p[style-name=\'Title\'] => h1.title:fresh', 'p[style-name=\'Quote\'] => blockquote:fresh', 'p[style-name=\'Intense Quote\'] => blockquote:fresh']
         });
-        html = notes.importMammothNotes(review.postprocessHtml(res.value, pre.meta));
+        html = WriteToc.importHtml(notes.importMammothNotes(review.postprocessHtml(res.value, pre.meta)));
         if (res.messages.some(m => m.type === 'warning')) console.info('Import notes:', res.messages);
       } else if (ext === 'html' || ext === 'htm' || /^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
         const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
@@ -1050,6 +1049,7 @@
     const tw = document.createTreeWalker(body, NodeFilter.SHOW_TEXT);
     while (tw.nextNode()) tw.currentNode.nodeValue = tw.currentNode.nodeValue.replace(/(^|[^\u00a0 ])\u00a0(?=[^\u00a0 ]|$)/g, '$1 ');
     const cmts = review.markCommentsForDocx(body);
+    toc.prepareForDocx(body);
     notes.prepareForDocx(body);
     merge.prepareForDocx(body);
     section.children = [...docxHtml.htmlToContent(body.innerHTML, { ...opts, trackChanges: { author: getAuthor() } })];
@@ -1076,7 +1076,8 @@
       sections: [section]
     });
     const blob = await D.Packer.toBlob(document_);
-    return review.patchDocx(new Uint8Array(await blob.arrayBuffer()));
+    const tabPos = Math.round(textWidth / setup.columns * 1440) - (setup.columns > 1 ? 360 : 0);
+    return WriteToc.patchDocx(await review.patchDocx(new Uint8Array(await blob.arrayBuffer())), { tabPos });
   }
   /** Header/footer content as Word paragraphs, with page-number fields as real Word fields. */
   function hfToDocx(el, opts) {

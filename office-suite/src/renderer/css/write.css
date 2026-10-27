@@ -73,7 +73,13 @@ body.markup-final .doc ins.tc, body.markup-original .doc del.tc { color: inherit
 .doc .page-break::after { content: "Page Break"; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: #8a8886; background: #fff; padding: 0 6px; }
 .doc .textbox { border: 1px solid #555; padding: 6pt 8pt; margin: 6pt 0; display: inline-block; min-width: 120px; }
 .doc .toc { border: 1px solid #e1dfdd; padding: 8pt 12pt; margin-bottom: 10pt; }
-.doc .toc p { margin: 0 0 2pt; }
+.doc .toc p { margin: 0 0 3pt; display: flex; align-items: baseline; }
+.doc .toc p.toc-title { font-size: 14pt; font-weight: 600; color: #2f5496; margin-bottom: 6pt; display: block; }
+.doc .toc p.toc-l2 { padding-left: 18pt; } .doc .toc p.toc-l3 { padding-left: 36pt; }
+.doc .toc a { color: inherit; text-decoration: none; cursor: pointer; }
+.doc .toc a:hover { color: var(--accent, #2b579a); text-decoration: underline; }
+.doc .toc p:has(.toc-pg)::after { content: ''; flex: 1; order: 1; border-bottom: 1.5px dotted currentColor; margin: 0 4pt 3pt; opacity: .55; min-width: 12pt; }
+.doc .toc .toc-pg { order: 2; min-width: 1.2em; text-align: right; }
 body.show-marks .doc p::after, body.show-marks .doc h1::after, body.show-marks .doc h2::after, body.show-marks .doc h3::after { content: "¶"; color: #6c8ebf; }
 
 .styles-gallery { max-width: 420px !important; }

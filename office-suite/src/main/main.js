@@ -174,7 +174,7 @@ ipcMain.handle('file:export-pdf', async (e, { defaultName, landscape }) => {
   const res = await dialog.showSaveDialog(win, { defaultPath: defaultName, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
   if (res.canceled || !res.filePath) return null;
   const target = /\.pdf$/i.test(res.filePath) ? res.filePath : res.filePath + '.pdf';
-  const pdf = await e.sender.printToPDF({ printBackground: true, landscape: !!landscape, pageSize: 'Letter', preferCSSPageSize: true });
+  const pdf = await e.sender.printToPDF({ printBackground: true, landscape: !!landscape, pageSize: 'Letter', preferCSSPageSize: true, generateTaggedPDF: true, generateDocumentOutline: true });
   fs.writeFileSync(target, pdf);
   shell.openPath(target);
   return target;

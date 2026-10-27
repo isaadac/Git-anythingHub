@@ -287,11 +287,12 @@
    */
   const DROP_TAGS = 'script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,option,base,frame,frameset,noscript,template,svg,math,canvas,audio,video,source,track,portal,applet,dialog,slot,title,head';
   const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'style', 'class', 'id', 'colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'color', 'face', 'size', 'start', 'type', 'dir', 'lang', 'reversed', 'value', 'border', 'cellpadding', 'cellspacing', 'bgcolor', 'span', 'headers', 'scope']);
-  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry', 'mergefield']);
+  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'toc-title', 'toc-l1', 'toc-l2', 'toc-l3', 'toc-pg', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry', 'mergefield']);
   Platform.sanitizeHtml = function (html) {
     const d = new DOMParser().parseFromString(String(html || ''), 'text/html');
     d.querySelectorAll(DROP_TAGS).forEach(n => n.remove());
-    const reserved = new Set([...document.querySelectorAll('[id]')].map(e => e.id));
+    // The app's own ids; ids in the document being edited may come back (e.g. reopening a file).
+    const reserved = new Set([...document.querySelectorAll('[id]')].filter(e => !e.parentElement || !e.parentElement.closest('[contenteditable="true"]')).map(e => e.id));
     const clean = v => v.replace(/[\u0000-\u0020\u007f-\u009f]/g, '');
     d.body.querySelectorAll('*').forEach(el => {
       [...el.attributes].forEach(a => {
