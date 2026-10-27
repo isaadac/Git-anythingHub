@@ -36,7 +36,6 @@
     async open(filters) {
       return desktop ? window.atlas.openDialog(filters) : pickFileWeb(filters);
     },
-    async readPath(p) { return desktop ? window.atlas.readFile(p) : null; },
     /** Saves bytes or text. Returns {name, path} or null if cancelled. */
     async save({ data, name, path, filters, saveAs }) {
       if (desktop) return window.atlas.save({ data, filePath: path, defaultName: name, filters, saveAs });
@@ -61,8 +60,12 @@
     /** Desktop: asks where to save without writing anything yet. Web: asks for a file name. */
     async chooseSavePath(name, filters) {
       if (desktop) return window.atlas.chooseSavePath({ defaultName: name, filters });
-      const fileName = await UI.prompt('Save As', 'File name', name);
-      return fileName ? { name: fileName, path: null } : null;
+      let fileName = await UI.prompt('Save As', 'File name', name);
+      if (!fileName) return null;
+      // Keep a supported extension so the file is written in a format we can produce.
+      const exts = (filters || []).flatMap(f => f.extensions);
+      if (exts.length && !exts.includes(Platform.extOf(fileName))) fileName += '.' + (Platform.extOf(name) || exts[0]);
+      return { name: fileName, path: null };
     },
     /** Opens a picked file in place when the current doc is empty, else in a new window (desktop). */
     shouldOpenInPlace(isEmpty) { return !desktop || isEmpty; },
@@ -87,7 +90,15 @@
       if (on) document.documentElement.requestFullscreen?.(); else if (document.fullscreenElement) document.exitFullscreen?.();
     },
     onMenu(cb) { menuHandlers.push(cb); },
-    emit(cmd) { menuHandlers.forEach(h => h(cmd)); }
+    emit(cmd) {
+      // Undo/redo inside an ordinary text box (find bar, notes, dialogs) belongs to that box.
+      const a = document.activeElement;
+      if ((cmd === 'undo' || cmd === 'redo') && a && (a.tagName === 'INPUT' || (a.tagName === 'TEXTAREA' && !a.dataset.appEditor))) {
+        document.execCommand(cmd);
+        return;
+      }
+      menuHandlers.forEach(h => h(cmd));
+    }
   };
 
   function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
@@ -182,8 +193,13 @@
         back.querySelector('h2').textContent = title;
         back.querySelector('p').textContent = message;
         document.body.appendChild(back);
-        back.querySelector('.ok').onclick = () => { back.remove(); resolve(true); };
-        back.querySelector('.cancel').onclick = () => { back.remove(); resolve(false); };
+        const done = ok => { back.remove(); resolve(ok); };
+        back.querySelector('.ok').onclick = () => done(true);
+        back.querySelector('.cancel').onclick = () => done(false);
+        back.addEventListener('keydown', e => {
+          if (e.key === 'Escape') { e.preventDefault(); done(false); }
+          if (e.key === 'Enter') { e.preventDefault(); done(true); }
+        });
         back.querySelector('.ok').focus();
       });
     },
@@ -227,7 +243,13 @@
         }
       };
       const input = document.querySelector('.titlebar .docname input');
-      if (input) input.addEventListener('change', () => { state.set({ name: input.value.trim() || defaultName }); });
+      if (input) input.addEventListener('change', () => {
+        const name = input.value.trim() || defaultName;
+        if (name === state.name) return;
+        // A renamed document is a new file: the next Save asks where to put it instead of
+        // overwriting the old one under the old name.
+        state.set({ name, path: null, dirty: true });
+      });
       state.render();
       return state;
     }
@@ -240,6 +262,39 @@
     list.unshift({ name, app, opened: Date.now() });
     localStorageSet('atlas-recent', JSON.stringify(list.slice(0, 20)));
   };
+
+  /**
+   * Cleans untrusted HTML (opened files, pasted content) with an allow-list: no scripts,
+   * event handlers, frames or forms; links only to http(s)/mailto/#anchors; images only as
+   * data: URLs; ids and classes that can't collide with the app's own elements.
+   */
+  const DROP_TAGS = 'script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,option,base,frame,frameset,noscript,template,svg,math,canvas,audio,video,source,track,portal,applet,dialog,slot,title,head';
+  const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'style', 'class', 'id', 'colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'color', 'face', 'size', 'start', 'type', 'dir', 'lang', 'reversed', 'value', 'border', 'cellpadding', 'cellspacing', 'bgcolor', 'span', 'headers', 'scope']);
+  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc']);
+  Platform.sanitizeHtml = function (html) {
+    const d = new DOMParser().parseFromString(String(html || ''), 'text/html');
+    d.querySelectorAll(DROP_TAGS).forEach(n => n.remove());
+    const reserved = new Set([...document.querySelectorAll('[id]')].map(e => e.id));
+    const clean = v => v.replace(/[\u0000-\u0020\u007f-\u009f]/g, '');
+    d.body.querySelectorAll('*').forEach(el => {
+      [...el.attributes].forEach(a => {
+        const n = a.name.toLowerCase();
+        if (!ALLOWED_ATTRS.has(n)) { el.removeAttribute(a.name); return; }
+        if (n === 'href' && !/^(https?:|mailto:|#)/i.test(clean(a.value))) el.removeAttribute(a.name);
+        if (n === 'src' && !/^data:image\/(png|jpe?g|gif|webp|bmp|svg\+xml)[;,]/i.test(clean(a.value))) el.removeAttribute(a.name);
+        if (n === 'id' && (reserved.has(a.value) || !/^[A-Za-z_][\w-]{0,80}$/.test(a.value))) el.removeAttribute(a.name);
+      });
+      if (el.classList.length) {
+        const keep = [...el.classList].filter(c => ALLOWED_CLASSES.has(c));
+        if (keep.length) el.className = keep.join(' '); else el.removeAttribute('class');
+      }
+      // Content may not float over the app's own interface.
+      if (el.style && el.style.position) el.style.removeProperty('position');
+    });
+    d.body.querySelectorAll('img:not([src])').forEach(n => n.remove());
+    return d.body.innerHTML;
+  };
+  Platform.isColor = v => typeof v === 'string' && /^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(v);
 
   Platform.extOf = name => (name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
   Platform.baseName = name => name.replace(/\.[^.]+$/, '');

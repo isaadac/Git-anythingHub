@@ -6,26 +6,32 @@
 .fx-input:focus { border-color: var(--accent); }
 
 .grid-wrap { flex: 1; overflow: auto; position: relative; background: #fff; outline: none; }
+/* Only the rows and columns on screen are in the DOM; spacers stand in for the rest. */
+.grid-inner { position: relative; width: max-content; }
 .grid { border-collapse: separate; border-spacing: 0; table-layout: fixed; font-family: Calibri, Carlito, Arial, sans-serif; font-size: 11pt; user-select: none; }
-.grid th { position: sticky; background: #f3f2f1; color: #484644; font-weight: 400; font-size: 12px; border-right: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; z-index: 3; }
-.grid thead th { top: 0; height: 22px; text-align: center; }
-.grid tbody th { left: 0; text-align: center; width: 46px; min-width: 46px; z-index: 2; }
-.grid thead th.corner { left: 0; z-index: 5; cursor: pointer; }
+.grid th { position: sticky; background: #f3f2f1; color: #484644; font-weight: 400; font-size: 12px; border-right: 1px solid #d4d4d4; border-bottom: 1px solid #d4d4d4; z-index: 3; padding: 0; overflow: hidden; white-space: nowrap; }
+.grid thead tr.hdr th { top: 0; height: 22px; text-align: center; }
+.grid tbody th, .grid thead tr.frozen th { left: 0; text-align: center; z-index: 2; }
+.grid thead th.corner { left: 0; z-index: 6; cursor: pointer; }
 .grid thead th.corner::after { content: ""; position: absolute; right: 3px; bottom: 3px; border: 5px solid transparent; border-right-color: #b3b0ad; border-bottom-color: #b3b0ad; }
+.grid thead th.fc { left: 46px; z-index: 5; }
 .grid th.hl { background: #d2d0ce; color: var(--accent-dark); font-weight: 600; border-bottom-color: var(--accent); }
-.grid tbody th.hl { border-right: 2px solid var(--accent); }
-.grid thead th .resizer { position: absolute; right: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 6; }
-.grid td { height: 22px; border-right: 1px solid #e1e1e1; border-bottom: 1px solid #e1e1e1; padding: 0 3px; white-space: nowrap; overflow: hidden; text-overflow: clip; cursor: cell; vertical-align: bottom; line-height: 20px; }
+.grid tbody th.hl, .grid thead tr.frozen th.hl { border-right: 2px solid var(--accent); }
+.grid thead th .resizer { position: absolute; right: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 6; }
+.grid td { border-right: 1px solid #e1e1e1; border-bottom: 1px solid #e1e1e1; padding: 0 3px; white-space: nowrap; overflow: hidden; cursor: cell; vertical-align: bottom; line-height: 20px; background-clip: padding-box; }
+.grid td .cv { overflow: hidden; }
 .grid td.num { text-align: right; }
 .grid td.bool, .grid td.err { text-align: center; }
-.grid td.sel { background-color: rgba(33, 115, 70, .12); }
 .grid td.wrap { white-space: pre-wrap; word-break: break-word; line-height: 1.25; }
-.grid tr.filtered { display: none; }
 .grid td.hidden-merged { display: none; }
+.grid td.hs, .grid th.hs, .grid tr.sp td { border: 0; padding: 0; background: transparent; cursor: default; }
+.grid td.fc { position: sticky; left: 46px; z-index: 1; background-color: #fff; box-shadow: 2px 0 0 #bdbdbd; }
+.grid thead tr.frozen td, .grid thead tr.frozen th { position: sticky; top: 22px; z-index: 2; background-color: #fff; box-shadow: 0 2px 0 #bdbdbd; }
+.grid thead tr.frozen th { z-index: 4; background: #f3f2f1; }
+.grid thead tr.frozen td.fc { z-index: 4; }
+.grid td.sel { background-color: rgba(33, 115, 70, .12); }
+.grid td.fc.sel, .grid thead tr.frozen td.sel { background-color: #e1efe7; }
 body.no-grid .grid td { border-color: transparent; }
-body.freeze-row .grid tbody tr:first-child td, body.freeze-row .grid tbody tr:first-child th { position: sticky; top: 23px; z-index: 2; background: #fff; box-shadow: 0 2px 0 #bdbdbd; }
-body.freeze-row .grid tbody tr:first-child th { z-index: 4; background: #f3f2f1; }
-body.freeze-col .grid tbody td:nth-child(2) { position: sticky; left: 47px; z-index: 1; background: #fff; box-shadow: 2px 0 0 #bdbdbd; }
 
 .sel-box { position: absolute; border: 2px solid var(--accent); pointer-events: none; z-index: 4; display: none; }
 .sel-box::after { content: ""; position: absolute; right: -4px; bottom: -4px; width: 6px; height: 6px; background: var(--accent); border: 1px solid #fff; }

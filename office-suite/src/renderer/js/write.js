@@ -14,7 +14,19 @@
   ];
   const OPEN_FILTERS = [{ name: 'Documents', extensions: ['docx', 'html', 'htm', 'md', 'txt'] }, ...FILTERS];
   const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14] }; // inches
-  const setup = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff' };
+  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff' };
+  const setup = { ...DEFAULT_SETUP };
+  /** Page setup read from a file is untrusted: keep only values the ribbon itself can produce. */
+  function validSetup(v) {
+    const out = { ...DEFAULT_SETUP };
+    if (!v || typeof v !== 'object') return out;
+    if (['1in', '0.5in', '0.75in', '1.5in'].includes(v.margin)) out.margin = v.margin;
+    if (['portrait', 'landscape'].includes(v.orientation)) out.orientation = v.orientation;
+    if (Object.prototype.hasOwnProperty.call(PAGE_SIZES, v.size)) out.size = v.size;
+    if ([1, 2, 3].includes(+v.columns)) out.columns = +v.columns;
+    if (Platform.isColor(v.color)) out.color = v.color;
+    return out;
+  }
 
   UI.initRibbon();
   document.execCommand('styleWithCSS', false, true);
@@ -350,6 +362,7 @@
     e.currentTarget.classList.toggle('on', !doc.spellcheck);
     // Re-render so the browser shows/hides squiggles immediately.
     doc.innerHTML = doc.innerHTML;
+    savedRange = null;
     UI.toast(doc.spellcheck ? 'Spell check on' : 'Spell check off');
   });
   document.getElementById('wordCount').addEventListener('click', async () => {
@@ -455,26 +468,80 @@
     findText.focus();
     findText.select();
   }
+  /** Finds the next/previous match of the find text inside the document body (across formatting). */
   function findNext(back) {
-    if (!findText.value) return false;
-    doc.focus();
-    // window.find searches the whole page; restrict hits to the document body.
-    for (let i = 0; i < 2; i++) {
-      const ok = window.find(findText.value, false, back, true, false, false, false);
-      if (ok && doc.contains(getSelection().anchorNode)) return true;
-      if (!ok) break;
+    const q = findText.value.toLowerCase();
+    if (!q) return false;
+    const walker = document.createTreeWalker(doc, NodeFilter.SHOW_TEXT);
+    const nodes = [];
+    let text = '';
+    while (walker.nextNode()) { nodes.push({ n: walker.currentNode, at: text.length }); text += walker.currentNode.nodeValue; }
+    const lower = text.toLowerCase();
+    // Current position in the joined text.
+    let pos = back ? text.length : 0;
+    const sel = getSelection();
+    // Search from the caret if the user clicked into the document since, else from the last match.
+    const caret = document.activeElement === doc && sel.rangeCount && doc.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
+    const cur = caret || (lastFound && doc.contains(lastFound.startContainer) ? lastFound : null);
+    if (cur) {
+      const r = cur;
+      const hit = nodes.find(x => x.n === (back ? r.startContainer : r.endContainer));
+      if (hit) pos = hit.at + (back ? r.startOffset : r.endOffset);
     }
-    UI.toast('No more matches');
-    return false;
+    let i = back ? lower.lastIndexOf(q, pos - 1) : lower.indexOf(q, pos);
+    if (i < 0) i = back ? lower.lastIndexOf(q) : lower.indexOf(q); // wrap around
+    if (i < 0) { UI.toast('No matches'); return false; }
+    const locate = off => { let k = nodes.length - 1; while (k > 0 && nodes[k].at > off) k--; return [nodes[k].n, off - nodes[k].at]; };
+    const [sn, so] = locate(i);
+    const [en, eo] = locate(i + q.length);
+    const range = document.createRange();
+    range.setStart(sn, so);
+    range.setEnd(en, Math.min(eo, en.nodeValue.length));
+    lastFound = range.cloneRange();
+    if (window.CSS && CSS.highlights && window.Highlight) {
+      // Highlight without moving the selection: selecting inside the document would steal focus
+      // from the find box, and the key that triggered the search would then edit the text.
+      CSS.highlights.set('find-match', new Highlight(range));
+    } else {
+      sel.removeAllRanges();
+      sel.addRange(range);
+      savedRange = range.cloneRange();
+      findText.focus();
+    }
+    (sn.parentElement || doc).scrollIntoView({ block: 'center', behavior: 'smooth' });
+    return true;
   }
-  findText.addEventListener('keydown', e => { if (e.key === 'Enter') findNext(e.shiftKey); if (e.key === 'Escape') findbar.classList.remove('open'); });
+  let lastFound = null;
+  function closeFind() {
+    findbar.classList.remove('open');
+    if (window.CSS && CSS.highlights) CSS.highlights.delete('find-match');
+    // Leave the last match selected so the user can act on it.
+    if (lastFound && doc.contains(lastFound.startContainer)) {
+      doc.focus();
+      getSelection().removeAllRanges();
+      getSelection().addRange(lastFound);
+      savedRange = lastFound.cloneRange();
+    }
+    lastFound = null;
+  }
+  findText.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); findNext(e.shiftKey); }
+    if (e.key === 'Escape') { e.preventDefault(); closeFind(); }
+  });
+  findText.addEventListener('input', () => { lastFound = null; if (window.CSS && CSS.highlights) CSS.highlights.delete('find-match'); });
   document.getElementById('findNext').addEventListener('click', () => findNext(false));
   document.getElementById('findPrev').addEventListener('click', () => findNext(true));
-  document.getElementById('findClose').addEventListener('click', () => findbar.classList.remove('open'));
+  document.getElementById('findClose').addEventListener('click', closeFind);
   document.getElementById('replaceOne').addEventListener('click', () => {
-    const sel = getSelection().toString();
-    if (sel.toLowerCase() === findText.value.toLowerCase() && doc.contains(getSelection().anchorNode)) {
+    // Replace the match found last (the live selection is in the find box while typing there).
+    if (lastFound && lastFound.toString().toLowerCase() === findText.value.toLowerCase() && doc.contains(lastFound.startContainer)) {
+      doc.focus();
+      const sel = getSelection();
+      sel.removeAllRanges();
+      sel.addRange(lastFound);
       document.execCommand('insertText', false, replaceText.value);
+      // Continue after the replacement.
+      lastFound = getSelection().getRangeAt(0).cloneRange();
       changed();
     }
     findNext(false);
@@ -505,7 +572,8 @@
   function updateStatus() {
     const words = (doc.innerText.match(/\S+/g) || []).length;
     document.getElementById('stWords').textContent = `${words.toLocaleString()} word${words === 1 ? '' : 's'}`;
-    document.getElementById('stPages').textContent = `${pageCount()} page${pageCount() === 1 ? '' : 's'}`;
+    const pages = pageCount();
+    document.getElementById('stPages').textContent = `${pages} page${pages === 1 ? '' : 's'}`;
   }
   let navTimer;
   function changed() {
@@ -527,7 +595,7 @@
         const i = cells.indexOf(closest('td,th'));
         const next = cells[i + (e.shiftKey ? -1 : 1)];
         if (next) { const r = document.createRange(); r.selectNodeContents(next); r.collapse(true); getSelection().removeAllRanges(); getSelection().addRange(r); }
-      } else document.execCommand('insertText', false, '    ');
+      } else document.execCommand('insertText', false, '\u00a0\u00a0\u00a0\u00a0');
     }
     if (mod && e.key === 'Enter') { e.preventDefault(); document.getElementById('insPageBreak').click(); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); exec('justifyCenter'); }
@@ -542,30 +610,18 @@
   // Keep the document from ever being completely empty (so typing starts in a paragraph).
   doc.addEventListener('keyup', () => { if (!doc.firstElementChild) doc.innerHTML = '<p><br></p>'; });
 
-  // Paste: keep formatting but strip anything unsafe.
-  doc.addEventListener('paste', e => {
+  // Paste: keep formatting but strip anything unsafe (header and footer too).
+  [doc, header, footer].forEach(el => el.addEventListener('paste', e => {
     const html = e.clipboardData.getData('text/html');
     if (!html) return;
     e.preventDefault();
     document.execCommand('insertHTML', false, sanitize(html));
     changed();
-  });
+  }));
 
   // ---------- Import ----------
   function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
-  /** Removes scripts, event handlers and javascript: URLs from untrusted HTML. */
-  function sanitize(html) {
-    const d = new DOMParser().parseFromString(html, 'text/html');
-    d.querySelectorAll('script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,base,frame,frameset,noscript,template').forEach(n => n.remove());
-    d.querySelectorAll('*').forEach(el => {
-      [...el.attributes].forEach(a => {
-        const n = a.name.toLowerCase();
-        if (n.startsWith('on') || n === 'contenteditable' || n === 'srcdoc') el.removeAttribute(a.name);
-        if ((n === 'href' || n === 'src' || n === 'xlink:href') && /^\s*(javascript|vbscript|data:text\/html)/i.test(a.value)) el.removeAttribute(a.name);
-      });
-    });
-    return d.body.innerHTML;
-  }
+  const sanitize = html => Platform.sanitizeHtml(html);
   function markdownToHtml(md) {
     const inline = s => escapeHtml(s)
       .replace(/`([^`]+)`/g, '<code>$1</code>')
@@ -599,7 +655,7 @@
   }
   function htmlToMarkdown(root) {
     const walk = (n, ctx = {}) => {
-      if (n.nodeType === 3) return n.nodeValue.replace(/ /g, ' ');
+      if (n.nodeType === 3) return n.nodeValue.replace(/\u00a0/g, ' ');
       if (n.nodeType !== 1) return '';
       const kids = () => [...n.childNodes].map(c => walk(c, ctx)).join('');
       switch (n.tagName) {
@@ -631,6 +687,8 @@
   async function loadFile(f) {
     const ext = Platform.extOf(f.name);
     let html;
+    let nextSetup = { ...DEFAULT_SETUP };
+    let headerHtml = '', footerHtml = '';
     try {
       if (ext === 'docx') {
         const res = await mammoth.convertToHtml({ arrayBuffer: f.data.buffer.slice(f.data.byteOffset, f.data.byteOffset + f.data.byteLength) }, {
@@ -641,10 +699,10 @@
       } else if (ext === 'html' || ext === 'htm') {
         const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
         const saved = d.querySelector('meta[name=atlas-setup]');
-        if (saved) { try { Object.assign(setup, JSON.parse(saved.content)); } catch { /* ignore */ } }
+        if (saved) { try { nextSetup = validSetup(JSON.parse(saved.content)); } catch { /* ignore */ } }
         const h = d.querySelector('header.atlas-header'), ft = d.querySelector('footer.atlas-footer');
-        header.innerHTML = h ? sanitize(h.innerHTML) : ''; header.hidden = !h;
-        footer.innerHTML = ft ? sanitize(ft.innerHTML) : ''; footer.hidden = !ft;
+        headerHtml = h ? h.innerHTML : '';
+        footerHtml = ft ? ft.innerHTML : '';
         h?.remove(); ft?.remove();
         html = d.querySelector('main.atlas-doc')?.innerHTML ?? d.body.innerHTML;
       } else if (ext === 'md') {
@@ -656,7 +714,12 @@
       UI.toast('Could not open file: ' + err.message, 4000);
       return;
     }
+    // Nothing from the previous document (page setup, header, footer) carries over.
+    Object.assign(setup, nextSetup);
+    header.innerHTML = sanitize(headerHtml); header.hidden = !header.textContent.trim();
+    footer.innerHTML = sanitize(footerHtml); footer.hidden = !footer.textContent.trim();
     doc.innerHTML = sanitize(html) || '<p><br></p>';
+    savedRange = null;
     applySetup();
     syncSetupControls();
     state.set({ name: f.name, path: f.path, dirty: false });
@@ -696,7 +759,8 @@
     const [w, h] = PAGE_SIZES[setup.size];
     const twip = inch => Math.round(inch * 1440);
     const margin = twip(parseFloat(setup.margin));
-    const opts = { stylesheet: DOCX_STYLESHEET, maxImageWidth: Math.round((w - 2 * parseFloat(setup.margin)) * 96) };
+    const textWidth = (setup.orientation === 'landscape' ? h : w) - 2 * parseFloat(setup.margin);
+    const opts = { stylesheet: DOCX_STYLESHEET, maxImageWidth: Math.round(textWidth / setup.columns * 96) };
     const section = {
       properties: {
         page: {

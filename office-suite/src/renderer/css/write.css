@@ -20,6 +20,7 @@
 .doc td, .doc th { border: 1px solid #8e8e8e; padding: 3pt 6pt; vertical-align: top; min-width: 30px; }
 .doc th { background: #f2f2f2; }
 .doc img { max-width: 100%; height: auto; }
+::highlight(find-match) { background-color: #ffd54f; color: #000; }
 .doc img.selected { outline: 2px solid var(--accent); }
 .doc a { color: #0563c1; }
 .doc hr { border: 0; border-top: 1px solid #999; margin: 10pt 0; }

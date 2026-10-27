@@ -1,9 +1,12 @@
 'use strict';
 // Atlas Sheets — spreadsheet.
+// The grid is virtual: only the rows and columns on screen exist in the DOM, and every
+// position (selection box, editor, scrolling) is computed from row heights and column widths.
 (function () {
   const F = window.Formula;
   const { addr, indexToCol, parseRef } = F;
   const wrap = document.getElementById('gridWrap');
+  const inner = document.getElementById('gridInner');
   const grid = document.getElementById('grid');
   const thead = grid.querySelector('thead');
   const tbody = grid.querySelector('tbody');
@@ -13,6 +16,12 @@
   const nameBox = document.getElementById('nameBox');
   const state = UI.docState('Atlas Sheets', 'Book1');
   const DEFAULT_COL_W = 80;
+  const ROW_H = 22;          // default row height (px)
+  const HEAD_H = 22;         // column header height
+  const RH_W = 46;           // row header width
+  const MAX_ROWS = 1048576;  // Excel's limits
+  const MAX_COLS = 16384;
+  const ROW_BUFFER = 20, COL_BUFFER = 4;
   const SAVE_FILTERS = [
     { name: 'Excel Workbook', extensions: ['xlsx'] },
     { name: 'OpenDocument Spreadsheet', extensions: ['ods'] },
@@ -20,11 +29,12 @@
     { name: 'Excel 97-2003 Workbook', extensions: ['xls'] }
   ];
   const OPEN_FILTERS = [{ name: 'Spreadsheets', extensions: ['xlsx', 'xls', 'xlsm', 'ods', 'csv', 'tsv'] }];
+  const CELL_KEY = /^[A-Z]{1,3}[1-9]\d{0,6}$/;
 
   UI.initRibbon();
 
   // ---------- Model ----------
-  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, merges: [], charts: [], hiddenRows: [] });
+  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [] });
   let book = { sheets: [newSheet('Sheet1')], active: 0 };
   const sheet = () => book.sheets[book.active];
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
@@ -35,7 +45,25 @@
       const s = book.sheets.find(x => x.name === name);
       return s ? rawAt(r, c, s) : '';
     },
-    sheetNames: () => book.sheets.map(s => s.name)
+    sheetNames: () => book.sheets.map(s => s.name),
+    formulasInRange: (name, r1, c1, r2, c2) => {
+      const s = book.sheets.find(x => x.name === name);
+      if (!s) return [];
+      const out = [];
+      const area = (r2 - r1 + 1) * (c2 - c1 + 1);
+      const keys = Object.keys(s.cells);
+      if (area < keys.length) {
+        for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const v = rawAt(r, c, s); if (typeof v === 'string' && v[0] === '=') out.push([r, c]); }
+      } else {
+        for (const k of keys) {
+          const v = s.cells[k].v;
+          if (typeof v !== 'string' || v[0] !== '=') continue;
+          const p = parseRef(k);
+          if (p.row >= r1 && p.row <= r2 && p.col >= c1 && p.col <= c2) out.push([p.row, p.col]);
+        }
+      }
+      return out;
+    }
   });
   const valueAt = (r, c) => engine.value(sheet().name, r, c);
 
@@ -46,15 +74,32 @@
     if (props.s) next.s = { ...(cur.s || {}), ...props.s };
     if ((next.v === undefined || next.v === '') && (!next.s || !Object.keys(next.s).length)) delete s.cells[key];
     else s.cells[key] = next;
-    if (r >= s.rows - 1) s.rows = r + 20;
-    if (c >= s.cols - 1) s.cols = c + 5;
+    if (r >= s.rows - 1) s.rows = Math.min(MAX_ROWS, r + 20);
+    if (c >= s.cols - 1) s.cols = Math.min(MAX_COLS, c + 5);
+  }
+  /** Largest row/column that holds anything. */
+  function usedBounds(s = sheet()) {
+    let r = 0, c = 0;
+    for (const k of Object.keys(s.cells)) { const p = parseRef(k); if (p.row > r) r = p.row; if (p.col > c) c = p.col; }
+    return { r, c };
+  }
+  /** A selection clipped to the used area when it is huge (select all, whole columns). */
+  function opRange(g = selRange()) {
+    if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) <= 100000) return g;
+    const u = usedBounds();
+    return { r1: g.r1, c1: g.c1, r2: Math.max(g.r1, Math.min(g.r2, u.r)), c2: Math.max(g.c1, Math.min(g.c2, u.c)) };
   }
 
   // ---------- Undo ----------
   const undoStack = [], redoStack = [];
+  let undoBytes = 0;
+  const UNDO_BUDGET = 150e6; // characters of history kept
   function snapshot() {
-    undoStack.push(JSON.stringify(book));
-    if (undoStack.length > 100) undoStack.shift();
+    const json = JSON.stringify(book);
+    undoStack.push(json);
+    undoBytes += json.length;
+    // Big workbooks keep fewer steps so history can't exhaust memory.
+    while (undoStack.length > 100 || (undoBytes > UNDO_BUDGET && undoStack.length > 1)) undoBytes -= undoStack.shift().length;
     redoStack.length = 0;
   }
   function restore(json) {
@@ -63,8 +108,52 @@
     buildGrid();
     changed(false);
   }
-  function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(book)); restore(undoStack.pop()); }
-  function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify(book)); restore(redoStack.pop()); }
+  function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(book)); const j = undoStack.pop(); undoBytes -= j.length; restore(j); }
+  function redo() { if (!redoStack.length) return; const j = JSON.stringify(book); undoStack.push(j); undoBytes += j.length; restore(redoStack.pop()); }
+
+  // ---------- Geometry ----------
+  let colX = [0];                         // colX[c] = left edge of column c (data area)
+  let rowSpecials = [], rowPrefix = [0];  // rows whose height isn't ROW_H, with cumulative deltas
+  let hiddenSet = new Set();
+  let rowHMap = new Map();
+  const zoomLevel = () => +(inner.style.zoom || 1);
+  function colWidth(c) { return sheet().colWidths[c] || DEFAULT_COL_W; }
+  function rebuildCols() {
+    const s = sheet();
+    colX = new Array(s.cols + 1);
+    colX[0] = 0;
+    for (let c = 0; c < s.cols; c++) colX[c + 1] = colX[c] + colWidth(c);
+  }
+  function rebuildRows() {
+    const s = sheet();
+    hiddenSet = new Set(s.hiddenRows);
+    rowHMap = new Map();
+    for (const [r, h] of Object.entries(s.rowHeights || {})) if (+h !== ROW_H) rowHMap.set(+r, +h);
+    hiddenSet.forEach(r => rowHMap.set(r, 0));
+    rowSpecials = [...rowHMap.keys()].sort((a, b) => a - b);
+    rowPrefix = [0];
+    rowSpecials.forEach((r, i) => { rowPrefix[i + 1] = rowPrefix[i] + rowHMap.get(r) - ROW_H; });
+  }
+  const rowH = r => (rowHMap.has(r) ? rowHMap.get(r) : ROW_H);
+  function rowTop(r) {
+    let lo = 0, hi = rowSpecials.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (rowSpecials[m] < r) lo = m + 1; else hi = m; }
+    return r * ROW_H + rowPrefix[lo];
+  }
+  function rowAtY(y) {
+    let lo = 0, hi = sheet().rows - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rowTop(m) <= y) lo = m; else hi = m - 1; }
+    return lo;
+  }
+  function colAtX(x) {
+    let lo = 0, hi = sheet().cols - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (colX[m] <= x) lo = m; else hi = m - 1; }
+    return lo;
+  }
+  /** Box of a cell range in grid coordinates (unzoomed). */
+  function rangeBox(g) {
+    return { x: RH_W + colX[g.c1], y: HEAD_H + rowTop(g.r1), w: colX[g.c2 + 1] - colX[g.c1], h: rowTop(g.r2 + 1) - rowTop(g.r1) };
+  }
 
   // ---------- Selection ----------
   let active = { r: 0, c: 0 };
@@ -72,111 +161,198 @@
   const selRange = () => ({ r1: Math.min(active.r, anchor.r), c1: Math.min(active.c, anchor.c), r2: Math.max(active.r, anchor.r), c2: Math.max(active.c, anchor.c) });
   const rangeText = g => g.r1 === g.r2 && g.c1 === g.c2 ? addr(g.r1, g.c1) : `${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`;
   function forRange(g, fn) { for (let r = g.r1; r <= g.r2; r++) for (let c = g.c1; c <= g.c2; c++) fn(r, c); }
-  const td = (r, c) => tbody.rows[r] && tbody.rows[r].cells[c + 1];
   function mergeAt(r, c) { return sheet().merges.find(m => r >= m.r1 && r <= m.r2 && c >= m.c1 && c <= m.c2); }
+  function expandByMerges(g) {
+    let out = { ...g };
+    sheet().merges.forEach(m => { if (m.r1 <= out.r2 && m.r2 >= out.r1 && m.c1 <= out.c2 && m.c2 >= out.c1) out = { r1: Math.min(out.r1, m.r1), c1: Math.min(out.c1, m.c1), r2: Math.max(out.r2, m.r2), c2: Math.max(out.c2, m.c2) }; });
+    return out;
+  }
 
   function select(r, c, extend = false) {
-    r = Math.max(0, r); c = Math.max(0, c);
+    r = Math.max(0, Math.min(MAX_ROWS - 1, r)); c = Math.max(0, Math.min(MAX_COLS - 1, c));
     ensureSize(r, c);
     const m = mergeAt(r, c);
     if (m && !extend) { r = m.r1; c = m.c1; }
     active = { r, c };
     if (!extend) anchor = { r, c };
-    drawSelection();
     scrollIntoView(r, c);
+    drawSelection();
+  }
+  let paintedSel = [];
+  /** Highlights the selection on the cells currently in the DOM and positions the box. */
+  function paintSelection() {
+    paintedSel.forEach(el => el.classList.remove('sel', 'hl'));
+    paintedSel = [];
+    const g = expandByMerges(selRange());
+    const multi = g.r1 !== g.r2 || g.c1 !== g.c2;
+    for (const [r, tr] of rowEls) {
+      if (r < g.r1 || r > g.r2) continue;
+      paintedSel.push(tr.cells[0]); tr.cells[0].classList.add('hl');
+      if (!multi) continue;
+      for (const [c, idx] of colPos) {
+        if (c < g.c1 || c > g.c2 || (r === active.r && c === active.c)) continue;
+        const t = tr.cells[idx];
+        if (t) { t.classList.add('sel'); paintedSel.push(t); }
+      }
+    }
+    const hdr = thead.rows[0];
+    for (const [c, idx] of colPos) if (c >= g.c1 && c <= g.c2 && hdr.cells[idx]) { hdr.cells[idx].classList.add('hl'); paintedSel.push(hdr.cells[idx]); }
+    const b = rangeBox(g);
+    Object.assign(selBox.style, { display: 'block', left: (b.x - 1) + 'px', top: (b.y - 1) + 'px', width: (b.w + 1) + 'px', height: (b.h + 1) + 'px' });
   }
   function drawSelection() {
-    tbody.querySelectorAll('td.sel').forEach(t => t.classList.remove('sel'));
-    thead.querySelectorAll('th.hl').forEach(t => t.classList.remove('hl'));
-    tbody.querySelectorAll('th.hl').forEach(t => t.classList.remove('hl'));
-    let g = selRange();
-    // Grow the box to cover merged cells.
-    sheet().merges.forEach(m => { if (m.r1 <= g.r2 && m.r2 >= g.r1 && m.c1 <= g.c2 && m.c2 >= g.c1) g = { r1: Math.min(g.r1, m.r1), c1: Math.min(g.c1, m.c1), r2: Math.max(g.r2, m.r2), c2: Math.max(g.c2, m.c2) }; });
-    if (g.r1 !== g.r2 || g.c1 !== g.c2) forRange(g, (r, c) => { const t = td(r, c); if (t && !(r === active.r && c === active.c)) t.classList.add('sel'); });
-    for (let c = g.c1; c <= g.c2; c++) thead.rows[0].cells[c + 1]?.classList.add('hl');
-    for (let r = g.r1; r <= g.r2; r++) tbody.rows[r]?.cells[0].classList.add('hl');
-    const a = td(g.r1, g.c1), b = td(g.r2, g.c2);
-    if (a && b) {
-      const wr = wrap.getBoundingClientRect();
-      const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect();
-      Object.assign(selBox.style, {
-        display: 'block',
-        left: (ra.left - wr.left + wrap.scrollLeft - 1) + 'px',
-        top: (ra.top - wr.top + wrap.scrollTop - 1) + 'px',
-        width: (rb.right - ra.left + 1) + 'px',
-        height: (rb.bottom - ra.top + 1) + 'px'
-      });
-    }
+    paintSelection();
     nameBox.value = rangeText(selRange());
     if (document.activeElement !== fx) fx.value = rawAt(active.r, active.c);
     syncToolbar();
     updateAggregate();
   }
   function scrollIntoView(r, c) {
-    const t = td(r, c);
-    if (!t) return;
-    const wr = wrap.getBoundingClientRect();
-    const tr = t.getBoundingClientRect();
-    const headH = thead.getBoundingClientRect().height;
-    const headW = tbody.rows[0].cells[0].getBoundingClientRect().width;
-    if (tr.bottom > wr.bottom - 14) wrap.scrollTop += tr.bottom - wr.bottom + 16;
-    if (tr.top < wr.top + headH) wrap.scrollTop -= wr.top + headH - tr.top;
-    if (tr.right > wr.right - 14) wrap.scrollLeft += tr.right - wr.right + 16;
-    if (tr.left < wr.left + headW) wrap.scrollLeft -= wr.left + headW - tr.left;
+    const z = zoomLevel();
+    const s = sheet();
+    const top = HEAD_H + (s.freezeRow ? rowH(0) : 0);
+    const left = RH_W + (s.freezeCol ? colWidth(0) : 0);
+    const y0 = HEAD_H + rowTop(r), y1 = y0 + rowH(r);
+    const x0 = RH_W + colX[c], x1 = RH_W + colX[c + 1];
+    const viewTop = wrap.scrollTop / z, viewH = wrap.clientHeight / z;
+    const viewLeft = wrap.scrollLeft / z, viewW = wrap.clientWidth / z;
+    if (!(s.freezeRow && r === 0)) {
+      if (y1 > viewTop + viewH) wrap.scrollTop = (y1 - viewH + 2) * z;
+      else if (y0 < viewTop + top) wrap.scrollTop = Math.max(0, (y0 - top) * z);
+    }
+    if (!(s.freezeCol && c === 0)) {
+      if (x1 > viewLeft + viewW) wrap.scrollLeft = (x1 - viewW + 2) * z;
+      else if (x0 < viewLeft + left) wrap.scrollLeft = Math.max(0, (x0 - left) * z);
+    }
+    renderWindow(false);
   }
 
   // ---------- Rendering ----------
-  function colWidth(c) { return sheet().colWidths[c] || DEFAULT_COL_W; }
-  function buildGrid() {
+  let win = null;                 // rendered window {r0, r1, c0, c1}
+  let rowEls = new Map();         // row -> <tr>
+  let colPos = new Map();         // col -> cell index within a row
+  let showFormulas = false;
+
+  function neededWindow() {
+    const z = zoomLevel();
     const s = sheet();
+    const y = wrap.scrollTop / z - HEAD_H, x = wrap.scrollLeft / z - RH_W;
+    const r0 = rowAtY(Math.max(0, y)), r1 = rowAtY(Math.max(0, y + wrap.clientHeight / z));
+    const c0 = colAtX(Math.max(0, x)), c1 = colAtX(Math.max(0, x + wrap.clientWidth / z));
+    return { r0, r1: Math.min(s.rows - 1, r1), c0, c1: Math.min(s.cols - 1, c1) };
+  }
+  /** Re-renders the visible rows/columns when the view moved outside what is rendered. */
+  function renderWindow(force) {
+    const s = sheet();
+    const need = neededWindow();
+    if (!force && win && need.r0 >= win.r0 && need.r1 <= win.r1 && need.c0 >= win.c0 && need.c1 <= win.c1) return;
+    win = {
+      r0: Math.max(0, need.r0 - ROW_BUFFER), r1: Math.min(s.rows - 1, need.r1 + ROW_BUFFER),
+      c0: Math.max(0, need.c0 - COL_BUFFER), c1: Math.min(s.cols - 1, need.c1 + COL_BUFFER)
+    };
+    // Column layout: [row header] [frozen col 0] [left spacer] [cols c0..c1] [right spacer]
+    const items = [];
+    let gapFrom = 0;
+    if (s.freezeCol && win.c0 > 0) { items.push({ c: 0 }); gapFrom = 1; }
+    if (colX[win.c0] - colX[gapFrom] > 0) items.push({ sp: colX[win.c0] - colX[gapFrom] });
+    for (let c = win.c0; c <= win.c1; c++) items.push({ c });
+    if (colX[s.cols] - colX[win.c1 + 1] > 0) items.push({ sp: colX[s.cols] - colX[win.c1 + 1] });
+    colPos = new Map();
+    items.forEach((it, i) => { if (it.c !== undefined) colPos.set(it.c, i + 1); });
+    const fc = c => (s.freezeCol && c === 0 ? ' class="fc"' : '');
+    const cellsHtml = items.map(it => (it.sp !== undefined ? '<td class="hs"></td>' : `<td data-c="${it.c}"${fc(it.c)}></td>`)).join('');
+
     let colgroup = grid.querySelector('colgroup');
     if (colgroup) colgroup.remove();
     colgroup = document.createElement('colgroup');
-    colgroup.innerHTML = '<col style="width:46px">' + Array.from({ length: s.cols }, (_, c) => `<col style="width:${colWidth(c)}px">`).join('');
+    colgroup.innerHTML = `<col style="width:${RH_W}px">` + items.map(it => `<col style="width:${it.sp !== undefined ? it.sp : colWidth(it.c)}px">`).join('');
     grid.prepend(colgroup);
-    thead.innerHTML = '<tr><th class="corner" title="Select all"></th>' + Array.from({ length: s.cols }, (_, c) => `<th data-c="${c}">${indexToCol(c)}<span class="resizer" data-c="${c}"></span></th>`).join('') + '</tr>';
-    const rows = [];
-    for (let r = 0; r < s.rows; r++) {
-      rows.push(`<tr${s.hiddenRows.includes(r) ? ' class="filtered"' : ''}><th data-r="${r}">${r + 1}</th>` + '<td></td>'.repeat(s.cols) + '</tr>');
+    grid.style.width = (RH_W + colX[s.cols]) + 'px';
+
+    let headHtml = '<tr class="hdr"><th class="corner" title="Select all"></th>' + items.map(it => (it.sp !== undefined
+      ? '<th class="hs"></th>'
+      : `<th data-c="${it.c}"${fc(it.c)}>${indexToCol(it.c)}<span class="resizer" data-c="${it.c}"></span></th>`)).join('') + '</tr>';
+    const firstBodyRow = s.freezeRow ? Math.max(1, win.r0) : win.r0;
+    if (s.freezeRow) headHtml += `<tr class="frozen" data-r="0" style="height:${rowH(0)}px"><th>1</th>${cellsHtml}</tr>`;
+    thead.innerHTML = headHtml;
+
+    const span = items.length + 1;
+    const rowsHtml = [];
+    const topGap = rowTop(firstBodyRow) - rowTop(s.freezeRow ? 1 : 0);
+    if (topGap > 0) rowsHtml.push(`<tr class="sp"><td colspan="${span}" style="height:${topGap}px"></td></tr>`);
+    for (let r = firstBodyRow; r <= win.r1; r++) {
+      if (hiddenSet.has(r)) continue;
+      rowsHtml.push(`<tr data-r="${r}" style="height:${rowH(r)}px"><th>${r + 1}</th>${cellsHtml}</tr>`);
     }
-    tbody.innerHTML = rows.join('');
-    s.merges.forEach(m => {
-      const t = td(m.r1, m.c1);
-      if (!t) return;
-      t.colSpan = m.c2 - m.c1 + 1;
-      t.rowSpan = m.r2 - m.r1 + 1;
-      forRange(m, (r, c) => { if (r !== m.r1 || c !== m.c1) td(r, c)?.classList.add('hidden-merged'); });
-    });
-    grid.style.width = (46 + Array.from({ length: s.cols }, (_, c) => colWidth(c)).reduce((a, b) => a + b, 0)) + 'px';
-    renderAll();
-    renderTabs();
-    renderCharts();
-    drawSelection();
+    const bottomGap = rowTop(s.rows) - rowTop(win.r1 + 1);
+    if (bottomGap > 0) rowsHtml.push(`<tr class="sp"><td colspan="${span}" style="height:${bottomGap}px"></td></tr>`);
+    tbody.innerHTML = rowsHtml.join('');
+
+    rowEls = new Map();
+    for (const tr of [...thead.rows, ...tbody.rows]) if (tr.dataset.r !== undefined) rowEls.set(+tr.dataset.r, tr);
+    applyMerges();
+    renderVisibleCells();
+    paintSelection();
   }
-  function ensureSize(r, c) {
-    const s = sheet();
-    if (r < s.rows - 1 && c < s.cols - 1) return;
-    s.rows = Math.max(s.rows, r + 50);
-    s.cols = Math.max(s.cols, c + 5);
-    buildGrid();
+  const tdAt = (r, c) => { const tr = rowEls.get(r); const i = colPos.get(c); return tr && i !== undefined ? tr.cells[i] : null; };
+  /** Where a merge is drawn: its top-left cell, or the first rendered cell inside it. */
+  function mergeDrawCell(m) {
+    let r = m.r1;
+    while (r <= m.r2 && !rowEls.has(r)) r++;
+    let c = m.c1;
+    while (c <= m.c2 && !colPos.has(c)) c++;
+    return r <= m.r2 && c <= m.c2 ? { r, c } : null;
+  }
+  function applyMerges() {
+    sheet().merges.forEach(m => {
+      const at = mergeDrawCell(m);
+      if (!at) return;
+      let rows = 0, cols = 0;
+      for (let r = at.r; r <= m.r2; r++) if (rowEls.has(r)) rows++;
+      for (let c = at.c; c <= m.c2; c++) if (colPos.has(c)) cols++;
+      const t = tdAt(at.r, at.c);
+      t.rowSpan = rows; t.colSpan = cols;
+      for (let r = at.r; r <= m.r2; r++) for (let c = at.c; c <= m.c2; c++) if (r !== at.r || c !== at.c) tdAt(r, c)?.classList.add('hidden-merged');
+    });
   }
 
-  let showFormulas = false;
+  /** The text and alignment class a cell shows. */
+  function cellDisplay(r, c, s = sheet()) {
+    const cell = cellAt(r, c, s);
+    if (!cell) return { text: '', cls: '' };
+    const st = cell.s || {};
+    const v = s === sheet() ? valueAt(r, c) : engine.value(s.name, r, c);
+    if (showFormulas && typeof cell.v === 'string' && cell.v[0] === '=') return { text: cell.v, cls: '' };
+    if (v instanceof F.FormulaError) return { text: v.error, cls: 'err' };
+    if (typeof v === 'number') return st.fmt === '@' ? { text: String(cell.v), cls: '' } : { text: F.formatValue(v, st.fmt || 'General'), cls: 'num' };
+    if (typeof v === 'boolean') return { text: v ? 'TRUE' : 'FALSE', cls: 'bool' };
+    return { text: String(v), cls: '' };
+  }
+  let paintedCells = [];
   function renderCell(r, c) {
-    const t = td(r, c);
+    const m = mergeAt(r, c);
+    let t;
+    if (m) {
+      if (r !== m.r1 || c !== m.c1) return;
+      const at = mergeDrawCell(m);
+      t = at && tdAt(at.r, at.c);
+    } else t = tdAt(r, c);
     if (!t) return;
     const cell = cellAt(r, c);
     const st = (cell && cell.s) || {};
-    let v = cell ? valueAt(r, c) : '';
-    let cls = '';
-    let text;
-    if (showFormulas && cell && typeof cell.v === 'string' && cell.v[0] === '=') { text = cell.v; }
-    else if (v instanceof F.FormulaError) { text = v.error; cls = 'err'; }
-    else if (typeof v === 'number') { text = st.fmt === '@' ? String(cell.v) : F.formatValue(v, st.fmt || 'General'); cls = st.fmt === '@' ? '' : 'num'; }
-    else if (typeof v === 'boolean') { text = v ? 'TRUE' : 'FALSE'; cls = 'bool'; }
-    else text = v;
-    t.textContent = text;
-    t.className = cls + (st.wrap ? ' wrap' : '') + (t.classList.contains('hidden-merged') ? ' hidden-merged' : '');
+    const { text, cls } = cellDisplay(r, c);
+    t.textContent = '';
+    if (text !== '') {
+      const d = document.createElement('div');
+      d.className = 'cv';
+      d.textContent = text;
+      // Rows never grow past their height, so the computed geometry stays exact.
+      let h = 0;
+      if (m) { for (let rr = m.r1; rr <= m.r2; rr++) h += rowH(rr); } else h = rowH(r);
+      d.style.maxHeight = Math.max(0, h - 1) + 'px';
+      t.appendChild(d);
+    }
+    t.className = [cls, st.wrap ? 'wrap' : '', s_fc(c)].filter(Boolean).join(' ');
     const style = t.style;
     style.fontWeight = st.b ? '700' : '';
     style.fontStyle = st.i ? 'italic' : '';
@@ -191,21 +367,86 @@
     style.borderLeft = bd.l ? '1px solid #000' : '';
     style.borderRight = bd.r ? '1px solid #000' : '';
     style.borderBottom = bd.b ? '1px solid #000' : '';
-    if (sheet().hiddenRows.length && r === 0 && sheet().filterCol !== undefined && c === sheet().filterCol) t.textContent += ' ⏷';
-  }
-  function renderAll() {
-    engine.invalidate();
     const s = sheet();
-    // Only cells that have content or style need work; clear the rest cheaply.
-    tbody.querySelectorAll('td').forEach(t => { if (t.textContent || t.getAttribute('style')) { t.textContent = ''; t.removeAttribute('style'); t.className = t.classList.contains('hidden-merged') ? 'hidden-merged' : ''; } });
-    Object.keys(s.cells).forEach(k => { const p = parseRef(k); renderCell(p.row, p.col); });
+    if (s.hiddenRows.length && r === 0 && s.filterCol === c) t.firstChild ? (t.firstChild.textContent += ' ⏷') : (t.textContent = '⏷');
+    paintedCells.push(t);
+  }
+  const s_fc = c => (sheet().freezeCol && c === 0 ? 'fc' : '');
+  function renderVisibleCells() {
+    engine.invalidate();
+    paintedCells.forEach(t => { if (t.isConnected) { t.textContent = ''; t.removeAttribute('style'); t.className = t.classList.contains('hidden-merged') ? 'hidden-merged' : s_fc(+t.dataset.c); } });
+    paintedCells = [];
+    const s = sheet();
+    for (const r of rowEls.keys()) {
+      for (const c of colPos.keys()) if (s.cells[addr(r, c)]) renderCell(r, c);
+    }
+    // Merged cells whose top-left is scrolled away still show their value.
+    s.merges.forEach(m => { if (!rowEls.has(m.r1) || !colPos.has(m.c1)) renderCell(m.r1, m.c1); });
+  }
+  function buildGrid() {
+    const s = sheet();
+    s.rowHeights = s.rowHeights || {};
+    s.hiddenRows = s.hiddenRows || [];
+    rebuildCols();
+    rebuildRows();
+    document.getElementById('freezeRow').classList.toggle('on', !!s.freezeRow);
+    document.getElementById('freezeCol').classList.toggle('on', !!s.freezeCol);
+    renderWindow(true);
+    renderTabs();
+    renderCharts();
+    drawSelection();
+  }
+  function ensureSize(r, c) {
+    const s = sheet();
+    if (r < s.rows - 1 && c < s.cols - 1) return;
+    s.rows = Math.min(MAX_ROWS, Math.max(s.rows, r + 50));
+    s.cols = Math.min(MAX_COLS, Math.max(s.cols, c + 5));
+    rebuildCols();
+    rebuildRows();
+    renderWindow(true);
   }
   function changed(markDirty = true) {
-    renderAll();
+    renderVisibleCells();
     renderCharts();
     drawSelection();
     if (markDirty) state.markDirty();
   }
+
+  // Row heights: wrapped text and large fonts make a row taller, as in Excel.
+  const measurer = document.createElement('div');
+  Object.assign(measurer.style, { position: 'absolute', visibility: 'hidden', left: '-10000px', top: '0', whiteSpace: 'pre-wrap', wordBreak: 'break-word', lineHeight: '1.25', fontFamily: 'Calibri, Carlito, Arial, sans-serif', fontSize: '11pt', padding: '0 3px', boxSizing: 'border-box' });
+  document.body.appendChild(measurer);
+  function neededHeight(r, c, cell) {
+    const st = cell.s || {};
+    const size = st.size || 11;
+    let h = size > 11 ? Math.ceil(size * 1.3333 * 1.2) + 4 : ROW_H;
+    if (st.wrap && cell.v !== '' && cell.v !== undefined) {
+      measurer.style.width = colWidth(c) + 'px';
+      measurer.style.fontSize = size + 'pt';
+      measurer.style.fontFamily = st.font || 'Calibri, Carlito, Arial, sans-serif';
+      measurer.textContent = cellDisplay(r, c).text;
+      h = Math.max(h, measurer.offsetHeight + 4);
+    }
+    return Math.min(545, h);
+  }
+  /** Recomputes the height of the given rows (or of every row with tall content when rows is null). */
+  function fitRows(rows) {
+    const s = sheet();
+    const need = new Map();
+    for (const [k, cell] of Object.entries(s.cells)) {
+      const st = cell.s;
+      if (!st || !(st.wrap || st.size > 11)) continue;
+      const p = parseRef(k);
+      if (rows && !rows.has(p.row)) continue;
+      if (mergeAt(p.row, p.col)) continue;
+      need.set(p.row, Math.max(need.get(p.row) || ROW_H, neededHeight(p.row, p.col, cell)));
+    }
+    if (rows) rows.forEach(r => { if (!need.has(r)) delete s.rowHeights[r]; });
+    need.forEach((h, r) => { if (h > ROW_H) s.rowHeights[r] = h; else delete s.rowHeights[r]; });
+    rebuildRows();
+    renderWindow(true);
+  }
+  const rowsOf = g => { const set = new Set(); for (let r = g.r1; r <= g.r2; r++) set.add(r); return set; };
 
   function renderTabs() {
     const box = document.getElementById('sheetTabs');
@@ -214,14 +455,14 @@
       const t = document.createElement('div');
       t.className = 'tab' + (i === book.active ? ' active' : '');
       t.textContent = s.name;
-      t.onclick = () => { if (i !== book.active) { commitEdit(); book.active = i; active = anchor = { r: 0, c: 0 }; buildGrid(); } };
+      t.onclick = () => { if (i !== book.active) { commitEdit(); book.active = i; active = anchor = { r: 0, c: 0 }; wrap.scrollTop = wrap.scrollLeft = 0; buildGrid(); } };
       t.ondblclick = () => renameSheet(i);
       t.oncontextmenu = async e => {
         e.preventDefault();
         const r = await UI.form(`Sheet "${s.name}"`, [{ name: 'a', label: 'Action', type: 'select', options: ['Rename', 'Duplicate', 'Delete', 'Move left', 'Move right'] }]);
         if (!r) return;
         if (r.a === 'Rename') renameSheet(i);
-        if (r.a === 'Duplicate') { snapshot(); const copy = JSON.parse(JSON.stringify(s)); copy.name = uniqueName(s.name + ' (2)'); book.sheets.splice(i + 1, 0, copy); book.active = i + 1; buildGrid(); state.markDirty(); }
+        if (r.a === 'Duplicate') { snapshot(); const copy = JSON.parse(JSON.stringify(s)); copy.name = uniqueName(s.name.slice(0, 26) + ' (2)'); book.sheets.splice(i + 1, 0, copy); book.active = i + 1; buildGrid(); state.markDirty(); }
         if (r.a === 'Delete') deleteSheet(i);
         if (r.a === 'Move left' && i > 0) { snapshot(); book.sheets.splice(i - 1, 0, book.sheets.splice(i, 1)[0]); book.active = i - 1; renderTabs(); state.markDirty(); }
         if (r.a === 'Move right' && i < book.sheets.length - 1) { snapshot(); book.sheets.splice(i + 1, 0, book.sheets.splice(i, 1)[0]); book.active = i + 1; renderTabs(); state.markDirty(); }
@@ -234,17 +475,20 @@
     while (book.sheets.some(s => s.name.toLowerCase() === n.toLowerCase())) n = base.replace(/ \(\d+\)$/, '') + ` (${i++})`;
     return n;
   }
+  /** Sheet names Excel accepts: no \ / ? * [ ] :, 1–31 characters. */
+  const cleanSheetName = n => String(n || '').replace(/[\\/?*[\]:]/g, '_').replace(/^'+|'+$/g, '').slice(0, 31).trim();
   async function renameSheet(i) {
     const name = await UI.prompt('Rename Sheet', 'Sheet name', book.sheets[i].name);
     if (!name || name === book.sheets[i].name) return;
-    if (/[\\/?*[\]:]/.test(name) || name.length > 31) return UI.toast('Sheet names can\'t contain \\ / ? * [ ] : and must be 31 characters or fewer', 4000);
+    if (/[\\/?*[\]:]/.test(name) || name.length > 31 || /^'|'$/.test(name)) return UI.toast('Sheet names can\'t contain \\ / ? * [ ] :, start or end with \', or be longer than 31 characters', 4000);
     if (book.sheets.some((s, j) => j !== i && s.name.toLowerCase() === name.toLowerCase())) return UI.toast('That name is already taken');
     snapshot();
     const old = book.sheets[i].name;
     book.sheets[i].name = name;
     // Update references to the renamed sheet in every formula.
     const quote = n => /^[A-Za-z_][\w.]*$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`;
-    const re = new RegExp(`(^|[^\\w.'])(${old.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}|'${old.replace(/'/g, "''").replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}')!`, 'gi');
+    const esc = t => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const re = new RegExp(`(^|[^\\w.'])(${esc(old)}|'${esc(old.replace(/'/g, "''"))}')!`, 'gi');
     book.sheets.forEach(s => Object.values(s.cells).forEach(cell => {
       if (typeof cell.v === 'string' && cell.v[0] === '=') cell.v = cell.v.replace(re, (m, p) => p + quote(name) + '!');
     }));
@@ -267,6 +511,7 @@
     book.sheets.push(newSheet('Sheet' + n));
     book.active = book.sheets.length - 1;
     active = anchor = { r: 0, c: 0 };
+    wrap.scrollTop = wrap.scrollLeft = 0;
     buildGrid();
     state.markDirty();
   }
@@ -275,18 +520,15 @@
 
   // ---------- Editing ----------
   let editing = false;
-  let editFromFx = false;
   function startEdit(initial) {
-    const t = td(active.r, active.c);
-    if (!t) return;
-    const wr = wrap.getBoundingClientRect();
-    const r = t.getBoundingClientRect();
+    scrollIntoView(active.r, active.c);
+    const m = mergeAt(active.r, active.c);
+    const b = rangeBox(m || { r1: active.r, c1: active.c, r2: active.r, c2: active.c });
     editing = true;
     editor.hidden = false;
     Object.assign(editor.style, {
-      left: (r.left - wr.left + wrap.scrollLeft - 1) + 'px',
-      top: (r.top - wr.top + wrap.scrollTop - 1) + 'px',
-      minWidth: (r.width + 2) + 'px', width: (r.width + 2) + 'px', height: (r.height + 2) + 'px'
+      left: (b.x - 1) + 'px', top: (b.y - 1) + 'px',
+      minWidth: (b.w + 2) + 'px', width: (b.w + 2) + 'px', height: Math.max(b.h + 2, 24) + 'px'
     });
     const st = (cellAt(active.r, active.c) || {}).s || {};
     editor.style.fontWeight = st.b ? '700' : '';
@@ -314,7 +556,10 @@
       snapshot();
       setCell(active.r, active.c, { v });
       autoFormat(active.r, active.c, v);
+      // A line break typed with Alt+Enter turns on wrapping, as in Excel.
+      if (v.includes('\n') && v[0] !== '=') setCell(active.r, active.c, { s: { wrap: true } });
       ensureSize(active.r, active.c);
+      fitRows(new Set([active.r]));
       changed();
     }
     document.getElementById('stMode').textContent = 'Ready';
@@ -347,7 +592,7 @@
   editor.addEventListener('keydown', e => {
     e.stopPropagation(); // the editor sits inside the grid; don't let the grid handle these keys too
     if (hintKey(e)) return;
-    if (e.key === 'Enter' && e.altKey) { e.preventDefault(); const p = editor.selectionStart; editor.setRangeText('\n', p, p, 'end'); return; }
+    if (e.key === 'Enter' && e.altKey) { e.preventDefault(); const p = editor.selectionStart; editor.setRangeText('\n', p, editor.selectionEnd, 'end'); fx.value = editor.value; return; }
     if (e.key === 'Enter') { e.preventDefault(); commitEdit(e.shiftKey ? -1 : 1, 0); }
     else if (e.key === 'Tab') { e.preventDefault(); commitEdit(0, e.shiftKey ? -1 : 1); }
     else if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
@@ -357,22 +602,20 @@
       commitEdit(...d);
     }
   });
-  fx.addEventListener('focus', () => { editFromFx = true; });
   fx.addEventListener('input', () => { if (!editing) startEdit(fx.value); editor.value = fx.value; fx.focus(); showHint(fx); });
   fx.addEventListener('keydown', e => {
     if (hintKey(e)) return;
-    if (e.key === 'Enter') { e.preventDefault(); editor.value = fx.value; if (!editing) { editing = true; } commitEdit(1, 0); }
+    if (e.key === 'Enter') { e.preventDefault(); editor.value = fx.value; editing = true; commitEdit(1, 0); }
     if (e.key === 'Escape') { e.preventDefault(); cancelEdit(); }
   });
-  fx.addEventListener('blur', () => { editFromFx = false; });
   nameBox.addEventListener('keydown', e => {
     if (e.key !== 'Enter') return;
     e.preventDefault();
     const [a, b] = nameBox.value.trim().toUpperCase().split(':');
-    const p = parseRef(a), q = b ? parseRef(b) : null;
-    if (!p) return UI.toast('Enter a reference like B7 or A1:C5');
+    const p = parseRef(a || ''), q = b ? parseRef(b) : null;
+    if (!p || p.row >= MAX_ROWS || p.col >= MAX_COLS || (q && (q.row >= MAX_ROWS || q.col >= MAX_COLS))) return UI.toast('Enter a reference like B7 or A1:C5');
     select(p.row, p.col);
-    if (q) { anchor = { r: p.row, c: p.col }; active = { r: q.row, c: q.col }; drawSelection(); }
+    if (q) { anchor = { r: p.row, c: p.col }; active = { r: q.row, c: q.col }; ensureSize(q.row, q.col); drawSelection(); }
     wrap.focus();
   });
   const isRefInsertPoint = () => {
@@ -423,94 +666,128 @@
 
   // ---------- Mouse ----------
   let dragging = false, refDrag = null;
-  function cellFromEvent(e) {
-    const t = e.target.closest('td');
-    if (!t || !tbody.contains(t)) return null;
-    return { r: t.parentElement.rowIndex - 1, c: t.cellIndex - 1 };
+  /** What the pointer is on: a cell, a row header, a column header or the corner. */
+  function hit(e) {
+    const el = e.target.closest('td,th');
+    if (!el || !grid.contains(el)) return null;
+    const tr = el.parentElement;
+    if (tr.classList.contains('hdr')) {
+      if (el.classList.contains('corner')) return { kind: 'corner' };
+      if (el.dataset.c !== undefined) return { kind: 'col', c: +el.dataset.c };
+      return null;
+    }
+    if (tr.dataset.r === undefined) return null;
+    const r = +tr.dataset.r;
+    if (el.tagName === 'TH') return { kind: 'row', r };
+    if (el.dataset.c === undefined) return null;
+    return { kind: 'cell', r, c: +el.dataset.c };
   }
-  tbody.addEventListener('mousedown', e => {
+  grid.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
-    const rowHead = e.target.closest('tbody th');
-    if (rowHead) {
+    if (e.target.classList.contains('resizer')) return startResize(e);
+    const h = hit(e);
+    if (!h) return;
+    const s = sheet();
+    if (h.kind === 'corner') { commitEdit(); anchor = { r: 0, c: 0 }; active = { r: s.rows - 1, c: s.cols - 1 }; drawSelection(); return; }
+    if (h.kind === 'col') {
       commitEdit();
-      const r = +rowHead.dataset.r;
-      if (e.shiftKey) { active = { r, c: sheet().cols - 1 }; anchor = { r: anchor.r, c: 0 }; }
-      else { anchor = { r, c: 0 }; active = { r, c: sheet().cols - 1 }; }
+      if (e.shiftKey) { active = { r: s.rows - 1, c: h.c }; anchor = { r: 0, c: anchor.c }; }
+      else { anchor = { r: 0, c: h.c }; active = { r: s.rows - 1, c: h.c }; }
       drawSelection();
       return;
     }
-    const p = cellFromEvent(e);
-    if (!p) return;
+    if (h.kind === 'row') {
+      commitEdit();
+      if (e.shiftKey) { active = { r: h.r, c: s.cols - 1 }; anchor = { r: anchor.r, c: 0 }; }
+      else { anchor = { r: h.r, c: 0 }; active = { r: h.r, c: s.cols - 1 }; }
+      drawSelection();
+      return;
+    }
     if (editing && editor.value[0] === '=' && isRefInsertPoint()) {
       // Clicking while typing a formula inserts a reference.
       e.preventDefault();
       const pos = editor.selectionStart;
-      const ref = addr(p.r, p.c);
-      editor.setRangeText(ref, pos, pos, 'end');
-      refDrag = { start: pos, from: p };
+      editor.setRangeText(addr(h.r, h.c), pos, pos, 'end');
+      refDrag = { start: pos, from: h };
       fx.value = editor.value;
       return;
     }
     commitEdit();
-    if (e.shiftKey) { active = p; drawSelection(); }
-    else select(p.r, p.c);
+    if (e.shiftKey) { active = { r: h.r, c: h.c }; drawSelection(); }
+    else select(h.r, h.c);
     dragging = true;
     wrap.focus();
     e.preventDefault();
   });
-  tbody.addEventListener('mousemove', e => {
-    const p = cellFromEvent(e);
-    if (!p) return;
+  grid.addEventListener('mousemove', e => {
+    if (!refDrag && !dragging) return;
+    const h = hit(e);
+    if (!h || h.kind !== 'cell') return;
     if (refDrag) {
       const a = refDrag.from;
-      const text = (a.r === p.r && a.c === p.c) ? addr(a.r, a.c) : `${addr(Math.min(a.r, p.r), Math.min(a.c, p.c))}:${addr(Math.max(a.r, p.r), Math.max(a.c, p.c))}`;
+      const text = (a.r === h.r && a.c === h.c) ? addr(a.r, a.c) : `${addr(Math.min(a.r, h.r), Math.min(a.c, h.c))}:${addr(Math.max(a.r, h.r), Math.max(a.c, h.c))}`;
       editor.setRangeText(text, refDrag.start, editor.selectionStart, 'end');
       fx.value = editor.value;
       return;
     }
-    if (dragging && (p.r !== active.r || p.c !== active.c)) { active = p; drawSelection(); }
+    if (h.r !== active.r || h.c !== active.c) { active = { r: h.r, c: h.c }; drawSelection(); }
   });
   document.addEventListener('mouseup', () => { dragging = false; if (refDrag) { refDrag = null; editor.focus(); } });
-  tbody.addEventListener('dblclick', e => { if (cellFromEvent(e)) startEdit(); });
-  thead.addEventListener('mousedown', e => {
-    if (e.target.classList.contains('resizer')) return startResize(e);
-    const th = e.target.closest('th');
-    if (!th) return;
-    commitEdit();
-    if (th.classList.contains('corner')) { anchor = { r: 0, c: 0 }; active = { r: sheet().rows - 1, c: sheet().cols - 1 }; drawSelection(); return; }
-    const c = +th.dataset.c;
-    if (e.shiftKey) { active = { r: sheet().rows - 1, c }; anchor = { r: 0, c: anchor.c }; }
-    else { anchor = { r: 0, c }; active = { r: sheet().rows - 1, c }; }
-    drawSelection();
-  });
-  thead.addEventListener('dblclick', e => {
-    if (!e.target.classList.contains('resizer')) return;
-    autoFitColumn(+e.target.dataset.c);
+  grid.addEventListener('dblclick', e => {
+    if (e.target.classList.contains('resizer')) return autoFitColumn(+e.target.dataset.c);
+    const h = hit(e);
+    if (h && h.kind === 'cell') startEdit();
   });
   function startResize(e) {
     e.preventDefault();
     const c = +e.target.dataset.c;
     const startX = e.clientX, startW = colWidth(c);
-    const col = grid.querySelectorAll('colgroup col')[c + 1];
-    const move = ev => { const w = Math.max(20, startW + ev.clientX - startX); col.style.width = w + 'px'; sheet().colWidths[c] = w; };
-    const up = () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); buildGrid(); state.markDirty(); };
+    const z = zoomLevel();
+    const col = grid.querySelectorAll('colgroup col')[colPos.get(c)];
+    let w = startW;
+    const move = ev => { w = Math.max(20, Math.round(startW + (ev.clientX - startX) / z)); if (col) col.style.width = w + 'px'; };
+    const up = () => {
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+      if (w === startW) return;
+      snapshot();
+      sheet().colWidths[c] = w;
+      fitRows(null);
+      buildGrid();
+      state.markDirty();
+    };
     document.addEventListener('mousemove', move);
     document.addEventListener('mouseup', up);
   }
   function autoFitColumn(c) {
     const ctx = document.createElement('canvas').getContext('2d');
-    ctx.font = '11pt Calibri, Arial';
     let w = 40;
-    for (let r = 0; r < sheet().rows; r++) { const t = td(r, c); if (t && t.textContent) w = Math.max(w, ctx.measureText(t.textContent).width + 14); }
+    for (const k of Object.keys(sheet().cells)) {
+      const p = parseRef(k);
+      if (p.col !== c || mergeAt(p.row, p.col)) continue;
+      const st = sheet().cells[k].s || {};
+      ctx.font = `${st.b ? 'bold ' : ''}${st.size || 11}pt ${st.font || 'Calibri, Carlito, Arial'}`;
+      const text = cellDisplay(p.row, c).text;
+      if (text) w = Math.max(w, ctx.measureText(text).width + 14);
+    }
+    snapshot();
     sheet().colWidths[c] = Math.min(500, Math.ceil(w));
     buildGrid();
     state.markDirty();
   }
+  let scrollQueued = false;
   wrap.addEventListener('scroll', () => {
-    // Grow the sheet as the user scrolls near the end, like an endless grid.
-    const s = sheet();
-    if (wrap.scrollTop + wrap.clientHeight > wrap.scrollHeight - 200 && s.rows < 100000) { s.rows += 100; buildGrid(); }
-    if (wrap.scrollLeft + wrap.clientWidth > wrap.scrollWidth - 200 && s.cols < 16384) { s.cols += 10; buildGrid(); }
+    if (scrollQueued) return;
+    scrollQueued = true;
+    requestAnimationFrame(() => {
+      scrollQueued = false;
+      // Grow the sheet as the user scrolls near the end, like an endless grid.
+      const s = sheet();
+      let grew = false;
+      if (wrap.scrollTop + wrap.clientHeight > wrap.scrollHeight - 300 && s.rows < MAX_ROWS) { s.rows = Math.min(MAX_ROWS, s.rows + 200); rebuildRows(); grew = true; }
+      if (wrap.scrollLeft + wrap.clientWidth > wrap.scrollWidth - 300 && s.cols < MAX_COLS) { s.cols = Math.min(MAX_COLS, s.cols + 10); rebuildCols(); grew = true; }
+      renderWindow(grew);
+    });
   });
 
   // ---------- Keyboard ----------
@@ -518,6 +795,7 @@
     if (editing) return;
     const mod = e.ctrlKey || e.metaKey;
     const k = e.key;
+    const s = sheet();
     const moves = { ArrowUp: [-1, 0], ArrowDown: [1, 0], ArrowLeft: [0, -1], ArrowRight: [0, 1] };
     if (moves[k]) {
       e.preventDefault();
@@ -526,28 +804,38 @@
         // Jump to the edge of the data region.
         let r = active.r, c = active.c;
         const filled = (r2, c2) => rawAt(r2, c2) !== '';
+        const u = usedBounds();
+        const limR = Math.max(u.r + 1, active.r), limC = Math.max(u.c + 1, active.c);
         const startFilled = filled(r, c) && filled(r + dr, c + dc);
-        do { r += dr; c += dc; } while (r >= 0 && c >= 0 && r < sheet().rows && c < sheet().cols && (startFilled ? filled(r + dr, c + dc) : !filled(r, c)));
-        r = Math.max(0, Math.min(sheet().rows - 1, r)); c = Math.max(0, Math.min(sheet().cols - 1, c));
-        if (e.shiftKey) { active = { r, c }; drawSelection(); scrollIntoView(r, c); } else select(r, c);
+        do { r += dr; c += dc; } while (r >= 0 && c >= 0 && r <= limR && c <= limC && (startFilled ? filled(r + dr, c + dc) : !filled(r, c)));
+        r = Math.max(0, Math.min(limR, r)); c = Math.max(0, Math.min(limC, c));
+        if (e.shiftKey) { active = { r, c }; ensureSize(r, c); scrollIntoView(r, c); drawSelection(); } else select(r, c);
         return;
       }
       // Skip over hidden (filtered) rows.
       let nr = active.r + dr;
-      while (dr && sheet().hiddenRows.includes(nr)) nr += dr;
+      while (dr && hiddenSet.has(nr)) nr += dr;
       const m = mergeAt(active.r, active.c);
       if (m && !e.shiftKey) { if (dr > 0) nr = m.r2 + 1; if (dc > 0) dc = m.c2 - active.c + 1; }
-      if (e.shiftKey) { active = { r: Math.max(0, nr), c: Math.max(0, active.c + dc) }; ensureSize(active.r, active.c); drawSelection(); scrollIntoView(active.r, active.c); }
-      else select(nr, active.c + dc);
+      if (e.shiftKey) {
+        active = { r: Math.max(0, Math.min(MAX_ROWS - 1, nr)), c: Math.max(0, Math.min(MAX_COLS - 1, active.c + dc)) };
+        ensureSize(active.r, active.c); scrollIntoView(active.r, active.c); drawSelection();
+      } else select(nr, active.c + dc);
       return;
     }
     if (k === 'Enter') { e.preventDefault(); moveInSelection(e.shiftKey ? -1 : 1, 0); return; }
     if (k === 'Tab') { e.preventDefault(); moveInSelection(0, e.shiftKey ? -1 : 1); return; }
     if (k === 'F2') { e.preventDefault(); startEdit(); return; }
     if (k === 'Home') { e.preventDefault(); select(mod ? 0 : active.r, 0); return; }
-    if (k === 'PageDown' || k === 'PageUp') { e.preventDefault(); select(active.r + (k === 'PageDown' ? 20 : -20), active.c); return; }
+    if (k === 'End' && mod) { e.preventDefault(); const u = usedBounds(); select(u.r, u.c); return; }
+    if (k === 'PageDown' || k === 'PageUp') {
+      e.preventDefault();
+      const page = Math.max(1, Math.floor(wrap.clientHeight / zoomLevel() / ROW_H) - 1);
+      select(active.r + (k === 'PageDown' ? page : -page), active.c);
+      return;
+    }
     if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); clearRange('contents'); return; }
-    if (mod && k.toLowerCase() === 'a') { e.preventDefault(); anchor = { r: 0, c: 0 }; active = { r: sheet().rows - 1, c: sheet().cols - 1 }; drawSelection(); return; }
+    if (mod && k.toLowerCase() === 'a') { e.preventDefault(); anchor = { r: 0, c: 0 }; active = { r: s.rows - 1, c: s.cols - 1 }; drawSelection(); return; }
     if (mod && k.toLowerCase() === 'b') { e.preventDefault(); toggleStyle('b'); return; }
     if (mod && k.toLowerCase() === 'i') { e.preventDefault(); toggleStyle('i'); return; }
     if (mod && k.toLowerCase() === 'u') { e.preventDefault(); toggleStyle('u'); return; }
@@ -559,6 +847,8 @@
     if (e.altKey && k === '=') { e.preventDefault(); autoSum(); return; }
     if (k.length === 1 && !mod && !e.altKey) { e.preventDefault(); startEdit(k); }
   });
+  // Input methods (Chinese, Japanese, Korean…) compose text; start editing so it lands in the cell.
+  wrap.addEventListener('compositionstart', () => { if (!editing) { startEdit(''); } });
   function moveInSelection(dr, dc) {
     const g = selRange();
     if (g.r1 === g.r2 && g.c1 === g.c2) return select(active.r + dr, active.c + dc);
@@ -567,6 +857,7 @@
     if (r > g.r2) { r = g.r1; c = dc ? c : c + 1; } if (r < g.r1) { r = g.r2; }
     if (c > g.c2) c = g.c1;
     active = { r, c };
+    scrollIntoView(r, c);
     drawSelection();
   }
 
@@ -577,9 +868,7 @@
     for (let r = g.r1; r <= g.r2; r++) {
       const row = [];
       for (let c = g.c1; c <= g.c2; c++) {
-        const v = valueAt(r, c);
-        const st = (cellAt(r, c) || {}).s || {};
-        let t = v instanceof F.FormulaError ? v.error : typeof v === 'number' ? F.formatValue(v, st.fmt || 'General') : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v);
+        let t = cellDisplay(r, c).text;
         if (/[\t\n"]/.test(t)) t = '"' + t.replace(/"/g, '""') + '"';
         row.push(t);
       }
@@ -588,7 +877,7 @@
     return lines.join('\n');
   }
   function copy(cut) {
-    const g = selRange();
+    const g = opRange();
     const cells = [];
     for (let r = g.r1; r <= g.r2; r++) {
       const row = [];
@@ -617,6 +906,7 @@
     return rows;
   }
   function paste(text) {
+    if (!text) return;
     snapshot();
     const r0 = active.r, c0 = active.c;
     if (clip && text.replace(/\r/g, '') === clip.text.replace(/\r/g, '')) {
@@ -625,42 +915,46 @@
         let v = cell.v ?? '';
         if (typeof v === 'string' && v[0] === '=' && !clip.cut) v = F.shiftFormula(v, r0 - clip.g.r1, c0 - clip.g.c1);
         setCell(r0 + i, c0 + j, { v, s: cell.s ? { ...cell.s } : undefined });
-        if (!cell.s) { const cur = cellAt(r0 + i, c0 + j); if (cur) delete cur.s; }
+        if (!cell.s) { const cur = cellAt(r0 + i, c0 + j); if (cur) delete cur.s; if (cur && (cur.v === '' || cur.v === undefined)) delete sheet().cells[addr(r0 + i, c0 + j)]; }
       }));
       if (clip.cut) {
         const src = book.sheets[clip.sheet];
         forRange(clip.g, (r, c) => {
-          const inside = book.active === clip.sheet && r >= r0 && r < r0 + clip.cells.length && c >= c0 && c < c0 + clip.cells[0].length;
+          const inside = book.active === clip.sheet && r >= r0 && r < r0 + h && c >= c0 && c < c0 + w;
           if (!inside) delete src.cells[addr(r, c)];
         });
         clip = null;
       }
       anchor = { r: r0 + h - 1, c: c0 + w - 1 };
     } else {
-      const rows = parseDelimited(text.replace(/\n$/, ''), text.includes('\t') ? '\t' : ',');
+      const rows = parseDelimited(text.replace(/\r?\n$/, ''), text.includes('\t') ? '\t' : ',');
       rows.forEach((row, i) => row.forEach((v, j) => setCell(r0 + i, c0 + j, { v })));
       if (rows.length) { anchor = { r: r0 + rows.length - 1, c: c0 + Math.max(...rows.map(r => r.length)) - 1 }; }
     }
     ensureSize(anchor.r, anchor.c);
+    fitRows(rowsOf({ r1: Math.min(r0, anchor.r), r2: Math.max(r0, anchor.r) }));
     buildGrid();
     state.markDirty();
   }
-  document.addEventListener('copy', e => { if (editing || document.activeElement === fx || document.activeElement === nameBox || isModalOpen()) return; e.preventDefault(); e.clipboardData.setData('text/plain', copy(false)); UI.toast('Copied'); });
-  document.addEventListener('cut', e => { if (editing || document.activeElement === fx || document.activeElement === nameBox || isModalOpen()) return; e.preventDefault(); e.clipboardData.setData('text/plain', copy(true)); });
-  document.addEventListener('paste', e => { if (editing || document.activeElement === fx || document.activeElement === nameBox || isModalOpen()) return; e.preventDefault(); paste(e.clipboardData.getData('text/plain')); });
-  const isModalOpen = () => !!document.querySelector('.modal-backdrop') || document.getElementById('findbar').classList.contains('open') && document.activeElement.closest('.findbar');
+  const ownsClipboard = () => !(editing || document.activeElement === fx || document.activeElement === nameBox || isModalOpen());
+  document.addEventListener('copy', e => { if (!ownsClipboard()) return; e.preventDefault(); e.clipboardData.setData('text/plain', copy(false)); UI.toast('Copied'); });
+  document.addEventListener('cut', e => { if (!ownsClipboard()) return; e.preventDefault(); e.clipboardData.setData('text/plain', copy(true)); });
+  document.addEventListener('paste', e => { if (!ownsClipboard()) return; e.preventDefault(); paste(e.clipboardData.getData('text/plain')); });
+  const isModalOpen = () => !!document.querySelector('.modal-backdrop') || !!document.activeElement.closest('.findbar');
 
   // ---------- Formatting ----------
   function styleRange(fn) {
     snapshot();
-    forRange(selRange(), (r, c) => {
+    const g = opRange();
+    forRange(g, (r, c) => {
       const cur = { ...((cellAt(r, c) || {}).s || {}) };
       const next = fn(cur, r, c) || cur;
       Object.keys(next).forEach(k => { if (next[k] === undefined || next[k] === false || next[k] === '') delete next[k]; });
       const cell = cellAt(r, c);
-      if (cell) { cell.s = next; if (!Object.keys(next).length) delete cell.s; if (cell.v === undefined || cell.v === '') { if (!cell.s) delete sheet().cells[addr(r, c)]; } }
+      if (cell) { cell.s = next; if (!Object.keys(next).length) delete cell.s; if ((cell.v === undefined || cell.v === '') && !cell.s) delete sheet().cells[addr(r, c)]; }
       else if (Object.keys(next).length) sheet().cells[addr(r, c)] = { v: '', s: next };
     });
+    fitRows(rowsOf(g));
     changed();
   }
   function toggleStyle(k) {
@@ -687,7 +981,7 @@
     const kind = e.target.value;
     e.target.value = '';
     if (!kind) return;
-    const g = selRange();
+    const g = opRange();
     styleRange((s, r, c) => {
       const b = { ...(s.border || {}) };
       if (kind === 'none') return { ...s, border: undefined };
@@ -718,7 +1012,7 @@
   document.getElementById('incDec').addEventListener('click', () => changeDecimals(1));
   document.getElementById('decDec').addEventListener('click', () => changeDecimals(-1));
   document.getElementById('merge').addEventListener('click', () => {
-    const g = selRange();
+    const g = opRange();
     snapshot();
     const s = sheet();
     const existing = s.merges.filter(m => m.r1 <= g.r2 && m.r2 >= g.r1 && m.c1 <= g.c2 && m.c2 >= g.c1);
@@ -761,12 +1055,19 @@
     book.sheets.forEach(other => Object.values(other.cells).forEach(cell => {
       if (typeof cell.v === 'string' && cell.v[0] === '=') cell.v = F.adjustForInsert(cell.v, axis, index, count, s.name, other.name);
     }));
-    if (axis === 'row') { s.rows = Math.max(1, s.rows + count); s.hiddenRows = []; }
-    else {
-      s.cols = Math.max(1, s.cols + count);
-      const w = {};
-      Object.entries(s.colWidths).forEach(([c, width]) => { c = +c; if (count < 0 && c >= index && c < index - count) return; w[c >= index ? c + count : c] = width; });
-      s.colWidths = w;
+    const shiftKeys = obj => {
+      const out = {};
+      Object.entries(obj || {}).forEach(([k, val]) => { k = +k; if (count < 0 && k >= index && k < index - count) return; out[k >= index ? k + count : k] = val; });
+      return out;
+    };
+    if (axis === 'row') {
+      s.rows = Math.max(1, Math.min(MAX_ROWS, s.rows + count));
+      s.rowHeights = shiftKeys(s.rowHeights);
+      s.hiddenRows = [];
+      delete s.filterCol;
+    } else {
+      s.cols = Math.max(1, Math.min(MAX_COLS, s.cols + count));
+      s.colWidths = shiftKeys(s.colWidths);
     }
     s.merges = s.merges.map(m => {
       const k1 = axis === 'row' ? 'r1' : 'c1', k2 = axis === 'row' ? 'r2' : 'c2';
@@ -779,30 +1080,32 @@
     buildGrid();
     state.markDirty();
   }
-  document.getElementById('insRow').addEventListener('click', () => { const g = selRange(); shiftStructure('row', g.r1, g.r2 - g.r1 + 1 > 1000 ? 1 : g.r2 - g.r1 + 1); });
-  document.getElementById('insCol').addEventListener('click', () => { const g = selRange(); shiftStructure('col', g.c1, g.c2 - g.c1 + 1 > 100 ? 1 : g.c2 - g.c1 + 1); });
+  document.getElementById('insRow').addEventListener('click', () => { const g = selRange(); shiftStructure('row', g.r1, Math.min(1000, g.r2 - g.r1 + 1)); });
+  document.getElementById('insCol').addEventListener('click', () => { const g = selRange(); shiftStructure('col', g.c1, Math.min(100, g.c2 - g.c1 + 1)); });
   document.getElementById('delRow').addEventListener('click', () => { const g = selRange(); shiftStructure('row', g.r1, -(g.r2 - g.r1 + 1)); select(g.r1, active.c); });
   document.getElementById('delCol').addEventListener('click', () => { const g = selRange(); shiftStructure('col', g.c1, -(g.c2 - g.c1 + 1)); select(active.r, g.c1); });
 
   // ---------- Editing group ----------
   function clearRange(what) {
     snapshot();
-    forRange(selRange(), (r, c) => {
+    const g = opRange();
+    forRange(g, (r, c) => {
       const cell = cellAt(r, c);
       if (!cell) return;
       if (what === 'all') delete sheet().cells[addr(r, c)];
       else if (what === 'formats') { delete cell.s; if (!cell.v) delete sheet().cells[addr(r, c)]; }
       else { cell.v = ''; if (!cell.s) delete sheet().cells[addr(r, c)]; }
     });
+    if (what !== 'contents') fitRows(rowsOf(g));
     changed();
   }
   document.getElementById('clear').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) clearRange(v); wrap.focus(); });
   function fill(dir) {
-    const g = selRange();
+    const g = opRange();
+    if (dir === 'down' ? (g.r1 === g.r2 && g.r1 === 0) : (g.c1 === g.c2 && g.c1 === 0)) return;
     snapshot();
     if (dir === 'down') {
       const r0 = g.r1 === g.r2 ? g.r1 - 1 : g.r1;
-      if (r0 < 0) return;
       for (let c = g.c1; c <= g.c2; c++) {
         const src = cellAt(r0, c) || {};
         for (let r = r0 + 1; r <= g.r2; r++) {
@@ -812,7 +1115,6 @@
       }
     } else {
       const c0 = g.c1 === g.c2 ? g.c1 - 1 : g.c1;
-      if (c0 < 0) return;
       for (let r = g.r1; r <= g.r2; r++) {
         const src = cellAt(r, c0) || {};
         for (let c = c0 + 1; c <= g.c2; c++) {
@@ -828,31 +1130,32 @@
 
   function autoSum() {
     const g = selRange();
-    snapshot();
     if (g.r1 !== g.r2 || g.c1 !== g.c2) {
+      const o = opRange(g);
+      snapshot();
       // Sum each selected column into the row below the selection.
-      for (let c = g.c1; c <= g.c2; c++) setCell(g.r2 + 1, c, { v: `=SUM(${addr(g.r1, c)}:${addr(g.r2, c)})` });
+      for (let c = o.c1; c <= o.c2; c++) setCell(o.r2 + 1, c, { v: `=SUM(${addr(o.r1, c)}:${addr(o.r2, c)})` });
+      ensureSize(o.r2 + 1, o.c2);
       changed();
-      select(g.r2 + 1, g.c1);
+      select(o.r2 + 1, o.c1);
       return;
     }
     // Single cell: look up for a block of numbers, else left.
     let r = active.r - 1;
     while (r >= 0 && typeof valueAt(r, active.c) === 'number') r--;
-    if (r < active.r - 1) { setCell(active.r, active.c, { v: `=SUM(${addr(r + 1, active.c)}:${addr(active.r - 1, active.c)})` }); changed(); return; }
+    if (r < active.r - 1) { snapshot(); setCell(active.r, active.c, { v: `=SUM(${addr(r + 1, active.c)}:${addr(active.r - 1, active.c)})` }); changed(); return; }
     let c = active.c - 1;
     while (c >= 0 && typeof valueAt(active.r, c) === 'number') c--;
-    if (c < active.c - 1) { setCell(active.r, active.c, { v: `=SUM(${addr(active.r, c + 1)}:${addr(active.r, active.c - 1)})` }); changed(); return; }
-    undoStack.pop();
+    if (c < active.c - 1) { snapshot(); setCell(active.r, active.c, { v: `=SUM(${addr(active.r, c + 1)}:${addr(active.r, active.c - 1)})` }); changed(); return; }
     startEdit('=SUM(');
   }
   document.getElementById('autoSum').addEventListener('click', autoSum);
   document.getElementById('autoSum2').addEventListener('click', autoSum);
 
   function dataRegion() {
-    // Use the selection if it is a block, else the contiguous data block around the active cell.
+    // Use the selection if it is a block, else the used area of the sheet.
     const g = selRange();
-    if (g.r1 !== g.r2 && g.r2 - g.r1 < sheet().rows - 1) return g;
+    if (g.r1 !== g.r2 && g.r2 - g.r1 < sheet().rows - 1) return opRange(g);
     const s = sheet();
     let maxR = 0, maxC = 0;
     Object.keys(s.cells).forEach(k => { const p = parseRef(k); if (s.cells[k].v !== '' && s.cells[k].v !== undefined) { maxR = Math.max(maxR, p.row); maxC = Math.max(maxC, p.col); } });
@@ -864,7 +1167,7 @@
     let hasHeader = false;
     if (g.r1 === 0 && g.r2 > 0) {
       const top = valueAt(0, col), next = valueAt(1, col);
-      hasHeader = typeof top === 'string' && typeof next === 'number';
+      hasHeader = typeof top === 'string' && top !== '' && typeof next === 'number';
     }
     snapshot();
     const start = hasHeader ? g.r1 + 1 : g.r1;
@@ -880,7 +1183,7 @@
       if (blank(x) && blank(y)) return 0;
       if (blank(x)) return 1;
       if (blank(y)) return -1;
-      let d = (typeof x === 'number' && typeof y === 'number') ? x - y : (typeof x === 'number' ? -1 : typeof y === 'number' ? 1 : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' }));
+      const d = (typeof x === 'number' && typeof y === 'number') ? x - y : (typeof x === 'number' ? -1 : typeof y === 'number' ? 1 : String(x).localeCompare(String(y), undefined, { numeric: true, sensitivity: 'base' }));
       return desc ? -d : d;
     });
     rows.forEach((item, i) => item.row.forEach((cell, j) => {
@@ -889,6 +1192,7 @@
       if (typeof cell.v === 'string' && cell.v[0] === '=') cell.v = F.shiftFormula(cell.v, r - item.r, 0);
       sheet().cells[addr(r, c)] = cell;
     }));
+    fitRows(rowsOf(g));
     changed();
     UI.toast(`Sorted by column ${indexToCol(col)}${hasHeader ? ' (header kept)' : ''}`);
   }
@@ -899,19 +1203,19 @@
     const g = dataRegion();
     const col = active.c;
     const values = new Set();
-    for (let r = g.r1 + 1; r <= g.r2; r++) { const v = valueAt(r, col); values.add(v === '' ? '(Blanks)' : String(v)); }
+    for (let r = g.r1 + 1; r <= g.r2 && values.size < 4; r++) { const v = valueAt(r, col); values.add(v === '' ? '(Blanks)' : String(v)); }
     const r = await UI.form(`Filter column ${indexToCol(col)}`, [
       { name: 'mode', label: 'Show rows where the value', type: 'select', options: ['equals', 'contains', 'is greater than', 'is less than', 'does not equal'] },
       { name: 'v', label: `Value (e.g. ${[...values].slice(0, 3).join(', ')})`, value: '' }
     ], 'Filter');
     if (!r) return;
     const hidden = [];
+    const q = r.v.toLowerCase(), n = parseFloat(r.v);
     for (let row = g.r1 + 1; row <= g.r2; row++) {
       const v = valueAt(row, col);
-      const s = v === '' ? '(Blanks)' : String(v);
-      const n = parseFloat(r.v);
-      const keep = { equals: s.toLowerCase() === r.v.toLowerCase(), contains: s.toLowerCase().includes(r.v.toLowerCase()),
-        'is greater than': typeof v === 'number' && v > n, 'is less than': typeof v === 'number' && v < n, 'does not equal': s.toLowerCase() !== r.v.toLowerCase() }[r.mode];
+      const s = (v === '' ? '(Blanks)' : String(v instanceof F.FormulaError ? v.error : v)).toLowerCase();
+      const keep = { equals: s === q, contains: s.includes(q),
+        'is greater than': typeof v === 'number' && v > n, 'is less than': typeof v === 'number' && v < n, 'does not equal': s !== q }[r.mode];
       if (!keep) hidden.push(row);
     }
     sheet().hiddenRows = hidden;
@@ -940,7 +1244,7 @@
   document.getElementById('textToCols').addEventListener('click', async () => {
     const r = await UI.form('Text to Columns', [{ name: 'd', label: 'Delimiter', type: 'select', options: [{ value: ',', label: 'Comma' }, { value: '\t', label: 'Tab' }, { value: ';', label: 'Semicolon' }, { value: ' ', label: 'Space' }, { value: '|', label: 'Pipe' }] }], 'Split');
     if (!r) return;
-    const g = selRange();
+    const g = opRange();
     snapshot();
     for (let row = g.r1; row <= g.r2; row++) {
       const v = String(rawAt(row, g.c1));
@@ -958,21 +1262,21 @@
   }
   document.getElementById('insFunction').addEventListener('click', insertFunction);
   document.getElementById('insFunction2').addEventListener('click', insertFunction);
-  document.getElementById('showFormulas').addEventListener('click', e => { showFormulas = !showFormulas; e.currentTarget.classList.toggle('on', showFormulas); renderAll(); });
+  document.getElementById('showFormulas').addEventListener('click', e => { showFormulas = !showFormulas; e.currentTarget.classList.toggle('on', showFormulas); renderVisibleCells(); });
   document.getElementById('recalc').addEventListener('click', () => { changed(false); UI.toast('Recalculated'); });
 
   // ---------- View ----------
-  document.getElementById('freezeRow').addEventListener('click', e => { sheet().freezeRow = !sheet().freezeRow; document.body.classList.toggle('freeze-row', sheet().freezeRow); e.currentTarget.classList.toggle('on', sheet().freezeRow); });
-  document.getElementById('freezeCol').addEventListener('click', e => { sheet().freezeCol = !sheet().freezeCol; document.body.classList.toggle('freeze-col', sheet().freezeCol); e.currentTarget.classList.toggle('on', sheet().freezeCol); });
+  document.getElementById('freezeRow').addEventListener('click', () => { sheet().freezeRow = !sheet().freezeRow; buildGrid(); state.markDirty(); });
+  document.getElementById('freezeCol').addEventListener('click', () => { sheet().freezeCol = !sheet().freezeCol; buildGrid(); state.markDirty(); });
   document.getElementById('gridlines').addEventListener('click', e => { document.body.classList.toggle('no-grid'); e.currentTarget.classList.toggle('on', document.body.classList.contains('no-grid')); });
   const zoom = document.getElementById('zoom');
   function setZoom(z) {
     z = Math.max(50, Math.min(200, Math.round(z)));
     zoom.value = z;
-    grid.style.zoom = z / 100;
+    inner.style.zoom = z / 100;
     document.getElementById('zoomLabel').textContent = z + '%';
-    drawSelection();
-    renderCharts();
+    renderWindow(true);
+    if (editing) startEdit(editor.value);
   }
   zoom.addEventListener('input', () => setZoom(+zoom.value));
   document.getElementById('zoomIn').addEventListener('click', () => setZoom(+zoom.value + 10));
@@ -983,17 +1287,14 @@
   function updateAggregate() {
     const g = selRange();
     const el = document.getElementById('stAgg');
-    if ((g.r1 === g.r2 && g.c1 === g.c2) || (g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 200000) { el.textContent = ''; return; }
+    if (g.r1 === g.r2 && g.c1 === g.c2) { el.textContent = ''; return; }
     let sum = 0, count = 0, numCount = 0;
+    const add = v => { if (v === '') return; count++; if (typeof v === 'number') { sum += v; numCount++; } };
     const s = sheet();
-    Object.keys(s.cells).forEach(k => {
-      const p = parseRef(k);
-      if (p.row < g.r1 || p.row > g.r2 || p.col < g.c1 || p.col > g.c2) return;
-      const v = valueAt(p.row, p.col);
-      if (v === '') return;
-      count++;
-      if (typeof v === 'number') { sum += v; numCount++; }
-    });
+    const keys = Object.keys(s.cells);
+    // Walk whichever is smaller: the selection or the filled cells.
+    if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) <= keys.length) forRange(g, (r, c) => { if (s.cells[addr(r, c)]) add(valueAt(r, c)); });
+    else keys.forEach(k => { const p = parseRef(k); if (p.row >= g.r1 && p.row <= g.r2 && p.col >= g.c1 && p.col <= g.c2) add(valueAt(p.row, p.col)); });
     el.textContent = numCount ? `Average: ${F.formatGeneral(sum / numCount)}    Count: ${count}    Sum: ${F.formatGeneral(sum)}` : (count ? `Count: ${count}` : '');
   }
 
@@ -1006,8 +1307,8 @@
     if (!q) return;
     const keys = Object.keys(sheet().cells).map(parseRef).sort((a, b) => a.row - b.row || a.col - b.col);
     const after = keys.filter(p => p.row > active.r || (p.row === active.r && p.col > active.c));
-    const hit = [...after, ...keys].find(p => { const v = valueAt(p.row, p.col); return String(v instanceof F.FormulaError ? v.error : v).toLowerCase().includes(q) || String(rawAt(p.row, p.col)).toLowerCase().includes(q); });
-    if (hit) select(hit.row, hit.col); else UI.toast('No matches');
+    const found = [...after, ...keys].find(p => cellDisplay(p.row, p.col).text.toLowerCase().includes(q) || String(rawAt(p.row, p.col)).toLowerCase().includes(q));
+    if (found) select(found.row, found.col); else UI.toast('No matches');
   }
   document.getElementById('findNext').addEventListener('click', findNext);
   findText.addEventListener('keydown', e => { if (e.key === 'Enter') findNext(); if (e.key === 'Escape') findbar.classList.remove('open'); });
@@ -1016,11 +1317,11 @@
     if (!q) return;
     snapshot();
     const re = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+    const replacement = document.getElementById('replaceText').value;
     let n = 0;
     Object.values(sheet().cells).forEach(cell => {
       if (typeof cell.v !== 'string' || cell.v[0] === '=') return;
-      const nv = cell.v.replace(re, () => { n++; return document.getElementById('replaceText').value; });
-      cell.v = nv;
+      cell.v = cell.v.replace(re, () => { n++; return replacement; });
     });
     changed();
     UI.toast(`Replaced ${n} occurrence${n === 1 ? '' : 's'}`);
@@ -1028,13 +1329,14 @@
 
   // ---------- Charts ----------
   const PALETTE = ['#4472c4', '#ed7d31', '#a5a5a5', '#ffc000', '#5b9bd5', '#70ad47', '#264478', '#9e480e'];
+  const CHART_TYPES = ['bar', 'line', 'pie', 'hbar'];
   function insertChart(type) {
-    const g = selRange();
+    const g = opRange();
     if (g.r1 === g.r2 && g.c1 === g.c2) return UI.toast('Select the data for the chart first (include labels)');
+    if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 20000) return UI.toast('Select a smaller range for the chart');
     snapshot();
-    const t = td(g.r1, g.c2 + 1) || td(g.r1, g.c2);
-    const wr = wrap.getBoundingClientRect(), tr = t.getBoundingClientRect();
-    sheet().charts.push({ type, range: rangeText(g), x: tr.left - wr.left + wrap.scrollLeft + 20, y: tr.top - wr.top + wrap.scrollTop, w: 440, h: 280, title: '' });
+    const b = rangeBox(g);
+    sheet().charts.push({ type, range: rangeText(g), x: b.x + b.w + 20, y: b.y, w: 440, h: 280, title: '' });
     renderCharts();
     state.markDirty();
   }
@@ -1042,7 +1344,7 @@
   function chartData(ch) {
     const [a, b] = ch.range.split(':');
     const p = parseRef(a), q = parseRef(b || a);
-    if (!p || !q) return null;
+    if (!p || !q || (q.row - p.row + 1) * (q.col - p.col + 1) > 20000) return null;
     const rows = [];
     for (let r = p.row; r <= q.row; r++) { const row = []; for (let c = p.col; c <= q.col; c++) row.push(valueAt(r, c)); rows.push(row); }
     const hasRowLabels = rows.slice(1).some(r => typeof r[0] === 'string' && r[0] !== '') || (rows.length > 1 && rows.every(r => typeof r[0] !== 'number'));
@@ -1066,8 +1368,7 @@
     ctx.scale(dpr, dpr);
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
     const data = chartData(ch);
-    if (!data || !data.series.length) return;
-    ctx.font = '12px Calibri, Arial, sans-serif';
+    if (!data || !data.series.length || !data.labels.length) return;
     const title = ch.title || (data.series.length === 1 ? data.series[0].name : 'Chart');
     ctx.fillStyle = '#404040'; ctx.textAlign = 'center'; ctx.font = '600 14px Calibri, Arial';
     ctx.fillText(title, W / 2, 20);
@@ -1075,7 +1376,7 @@
     if (ch.type === 'pie') {
       const vals = data.series[0].values.map(v => Math.max(0, v));
       const total = vals.reduce((a, b) => a + b, 0) || 1;
-      const cx = W * 0.4, cy = H / 2 + 10, rad = Math.min(W * 0.35, H / 2 - 30);
+      const cx = W * 0.4, cy = H / 2 + 10, rad = Math.max(10, Math.min(W * 0.35, H / 2 - 30));
       let a0 = -Math.PI / 2;
       vals.forEach((v, i) => {
         const a1 = a0 + v / total * Math.PI * 2;
@@ -1102,15 +1403,15 @@
     const L = 48, R = W - 14, T = 34, B = H - 26 - legendH;
     const horizontal = ch.type === 'hbar';
     ctx.strokeStyle = '#e1e1e1'; ctx.fillStyle = '#595959'; ctx.lineWidth = 1;
-    for (let v = min; v <= max + 1e-9; v += step) {
+    for (let v = min; v <= max + step / 1e6; v += step) {
       if (horizontal) {
         const x = L + (v - min) / (max - min) * (R - L);
         ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, B); ctx.stroke();
-        ctx.textAlign = 'center'; ctx.fillText(F.formatGeneral(+v.toFixed(10)), x, B + 14);
+        ctx.textAlign = 'center'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), x, B + 14);
       } else {
         const y = B - (v - min) / (max - min) * (B - T);
         ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke();
-        ctx.textAlign = 'right'; ctx.fillText(F.formatGeneral(+v.toFixed(10)), L - 6, y + 4);
+        ctx.textAlign = 'right'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), L - 6, y + 4);
       }
     }
     const n = data.labels.length;
@@ -1134,10 +1435,10 @@
           const off = band * 0.15 + bw * si;
           if (horizontal) {
             const x = L + (v - min) / (max - min) * (R - L);
-            ctx.fillRect(Math.min(zero, x), T + band * i + off, Math.abs(x - zero), bw - 1);
+            ctx.fillRect(Math.min(zero, x), T + band * i + off, Math.abs(x - zero), Math.max(1, bw - 1));
           } else {
             const y = B - (v - min) / (max - min) * (B - T);
-            ctx.fillRect(L + band * i + off, Math.min(zero, y), bw - 1, Math.abs(zero - y));
+            ctx.fillRect(L + band * i + off, Math.min(zero, y), Math.max(1, bw - 1), Math.abs(zero - y));
           }
         });
       }
@@ -1171,83 +1472,155 @@
       barEl.addEventListener('mousedown', e => {
         if (e.target.tagName === 'BUTTON') return;
         e.preventDefault();
-        const sx = e.clientX, sy = e.clientY, ox = ch.x, oy = ch.y;
-        const mv = ev => { ch.x = Math.max(0, ox + ev.clientX - sx); ch.y = Math.max(0, oy + ev.clientY - sy); box.style.left = ch.x + 'px'; box.style.top = ch.y + 'px'; };
-        const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); state.markDirty(); };
+        const sx = e.clientX, sy = e.clientY, ox = ch.x, oy = ch.y, z = zoomLevel();
+        let moved = false;
+        const mv = ev => {
+          if (!moved) { snapshot(); moved = true; }
+          ch.x = Math.max(0, Math.round(ox + (ev.clientX - sx) / z)); ch.y = Math.max(0, Math.round(oy + (ev.clientY - sy) / z));
+          box.style.left = ch.x + 'px'; box.style.top = ch.y + 'px';
+        };
+        const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); if (moved) state.markDirty(); };
         document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
       });
       box.querySelector('.grip').addEventListener('mousedown', e => {
         e.preventDefault();
-        const sx = e.clientX, sy = e.clientY, ow = ch.w, oh = ch.h;
-        const mv = ev => { ch.w = Math.max(200, ow + ev.clientX - sx); ch.h = Math.max(150, oh + ev.clientY - sy); box.style.width = ch.w + 'px'; box.style.height = ch.h + 'px'; drawChart(box.querySelector('canvas'), ch); };
+        const sx = e.clientX, sy = e.clientY, ow = ch.w, oh = ch.h, z = zoomLevel();
+        snapshot();
+        const mv = ev => { ch.w = Math.max(200, Math.round(ow + (ev.clientX - sx) / z)); ch.h = Math.max(150, Math.round(oh + (ev.clientY - sy) / z)); box.style.width = ch.w + 'px'; box.style.height = ch.h + 'px'; drawChart(box.querySelector('canvas'), ch); };
         const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); state.markDirty(); };
         document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
       });
       barEl.addEventListener('click', async e => {
         const a = e.target.dataset.a;
         if (a === 'del') { snapshot(); sheet().charts.splice(i, 1); renderCharts(); state.markDirty(); }
-        if (a === 'type') { const order = ['bar', 'line', 'pie', 'hbar']; ch.type = order[(order.indexOf(ch.type) + 1) % order.length]; drawChart(box.querySelector('canvas'), ch); state.markDirty(); }
+        if (a === 'type') { snapshot(); ch.type = CHART_TYPES[(CHART_TYPES.indexOf(ch.type) + 1) % CHART_TYPES.length]; drawChart(box.querySelector('canvas'), ch); state.markDirty(); }
         if (a === 'title') {
           const r = await UI.form('Chart', [{ name: 'title', label: 'Title', value: ch.title }, { name: 'range', label: 'Data range', value: ch.range }]);
-          if (r) { ch.title = r.title; if (/^[A-Z]+\d+(:[A-Z]+\d+)?$/i.test(r.range.trim())) ch.range = r.range.trim().toUpperCase(); drawChart(box.querySelector('canvas'), ch); state.markDirty(); }
+          if (r) {
+            snapshot();
+            ch.title = r.title.slice(0, 200);
+            if (/^[A-Z]{1,3}\d+(:[A-Z]{1,3}\d+)?$/i.test(r.range.trim())) ch.range = r.range.trim().toUpperCase();
+            drawChart(box.querySelector('canvas'), ch);
+            state.markDirty();
+          }
         }
         if (a === 'png') {
           const blob = await new Promise(res => box.querySelector('canvas').toBlob(res));
-          await Platform.save({ data: new Uint8Array(await blob.arrayBuffer()), name: (ch.title || 'Chart') + '.png', filters: [{ name: 'PNG image', extensions: ['png'] }], saveAs: true });
+          const name = (ch.title || 'Chart').replace(/[\\/:*?"<>|]/g, '_') + '.png';
+          await Platform.save({ data: new Uint8Array(await blob.arrayBuffer()), name, filters: [{ name: 'PNG image', extensions: ['png'] }], saveAs: true });
         }
       });
     });
   }
 
   // ---------- File I/O ----------
-  function workbookFromXlsx(bytes, name) {
+  /** Styling and charts saved by Atlas inside an .xlsx are untrusted input: keep only known, well-typed values. */
+  function cleanStyle(st) {
+    if (!st || typeof st !== 'object') return null;
+    const out = {};
+    ['b', 'i', 'u', 'wrap'].forEach(k => { if (st[k] === true) out[k] = true; });
+    if (['left', 'center', 'right'].includes(st.align)) out.align = st.align;
+    if (Platform.isColor(st.color)) out.color = st.color;
+    if (Platform.isColor(st.bg)) out.bg = st.bg;
+    if (typeof st.font === 'string' && /^[\w .-]{1,64}$/.test(st.font)) out.font = st.font;
+    if (typeof st.size === 'number' && st.size >= 4 && st.size <= 96) out.size = st.size;
+    if (st.border && typeof st.border === 'object') {
+      const b = {};
+      ['t', 'l', 'r', 'b'].forEach(k => { if (st.border[k]) b[k] = 1; });
+      if (Object.keys(b).length) out.border = b;
+    }
+    return Object.keys(out).length ? out : null;
+  }
+  function cleanChart(ch) {
+    if (!ch || typeof ch !== 'object' || !CHART_TYPES.includes(ch.type) || typeof ch.range !== 'string' || !/^[A-Z]{1,3}\d+(:[A-Z]{1,3}\d+)?$/.test(ch.range)) return null;
+    const n = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+    return { type: ch.type, range: ch.range, x: n(ch.x, 100, 0, 1e7), y: n(ch.y, 100, 0, 1e8), w: n(ch.w, 440, 200, 4000), h: n(ch.h, 280, 150, 4000), title: typeof ch.title === 'string' ? ch.title.slice(0, 200) : '' };
+  }
+  const cleanSizes = (obj, lo, hi) => {
+    const out = {};
+    if (obj && typeof obj === 'object') Object.entries(obj).forEach(([k, v]) => { if (/^\d{1,7}$/.test(k) && typeof v === 'number' && v >= lo && v <= hi) out[+k] = Math.round(v); });
+    return out;
+  };
+
+  function workbookFromFile(bytes, name) {
     const ext = Platform.extOf(name);
-    let wb;
     if (ext === 'csv' || ext === 'tsv') {
-      const text = Platform.bytesToText(bytes).replace(/^\ufeff/, '');
-      const s = newSheet(Platform.baseName(name).slice(0, 31) || 'Sheet1');
-      parseDelimited(text, ext === 'tsv' ? '\t' : (text.split('\n')[0].includes(';') && !text.split('\n')[0].includes(',') ? ';' : ',')).forEach((row, r) => row.forEach((v, c) => { if (v !== '') setCell(r, c, { v }, s); }));
+      const text = Platform.bytesToText(bytes).replace(/^﻿/, '');
+      const s = newSheet(cleanSheetName(Platform.baseName(name)) || 'Sheet1');
+      const first = text.slice(0, text.search(/\r?\n|$/));
+      const delim = ext === 'tsv' ? '\t' : (first.includes(';') && !first.includes(',') ? ';' : ',');
+      parseDelimited(text, delim).forEach((row, r) => row.forEach((v, c) => {
+        if (v === '' || r >= MAX_ROWS || c >= MAX_COLS) return;
+        s.cells[addr(r, c)] = { v };
+      }));
+      const u = usedBounds(s);
+      s.rows = Math.max(100, u.r + 20); s.cols = Math.max(26, u.c + 5);
       return { sheets: [s], active: 0 };
     }
-    wb = XLSX.read(bytes, { type: 'array', cellFormula: true, cellNF: true, cellStyles: true });
+    const wb = XLSX.read(bytes, { type: 'array', cellFormula: true, cellNF: true, cellStyles: true });
     let meta = null;
-    try { meta = wb.Custprops && wb.Custprops.AtlasMeta ? JSON.parse(wb.Custprops.AtlasMeta) : null; } catch { meta = null; }
+    try { meta = wb.Custprops && typeof wb.Custprops.AtlasMeta === 'string' ? JSON.parse(wb.Custprops.AtlasMeta) : null; } catch { meta = null; }
+    const usedNames = new Set();
     const sheets = wb.SheetNames.map((sn, si) => {
       const ws = wb.Sheets[sn];
-      const s = newSheet(sn);
-      const range = ws['!ref'] ? XLSX.utils.decode_range(ws['!ref']) : { s: { r: 0, c: 0 }, e: { r: 0, c: 0 } };
-      for (let r = range.s.r; r <= range.e.r; r++) {
-        for (let c = range.s.c; c <= range.e.c; c++) {
-          const cell = ws[XLSX.utils.encode_cell({ r, c })];
-          if (!cell) continue;
-          let v;
-          if (cell.f) v = '=' + cell.f;
-          else if (cell.t === 'n') v = String(cell.v);
-          else if (cell.t === 'b') v = cell.v ? 'TRUE' : 'FALSE';
-          else if (cell.t === 'e') v = cell.w || '#N/A';
-          else if (cell.t === 'd') v = String(F.dateToSerial(cell.v));
-          else {
-            v = cell.v === undefined ? '' : String(cell.v);
-            if (v && (v[0] === '=' || typeof F.parseLiteral(v) !== 'string')) v = "'" + v;
-          }
-          const st = {};
-          if (cell.z && cell.z !== 'General') st.fmt = String(cell.z);
-          if (v !== '' || Object.keys(st).length) s.cells[addr(r, c)] = Object.keys(st).length ? { v, s: st } : { v };
+      let name = cleanSheetName(sn) || 'Sheet' + (si + 1);
+      while (usedNames.has(name.toLowerCase())) name = name.slice(0, 27) + '_' + si;
+      usedNames.add(name.toLowerCase());
+      const s = newSheet(name);
+      // Walk the cells that exist rather than the declared range, which can be the whole sheet.
+      let maxR = 0, maxC = 0;
+      for (const k of Object.keys(ws)) {
+        if (k[0] === '!') continue;
+        const cell = ws[k];
+        const p = parseRef(k);
+        if (!p || !cell || p.row >= MAX_ROWS || p.col >= MAX_COLS) continue;
+        let v;
+        if (cell.f) v = '=' + cell.f;
+        else if (cell.t === 'n') v = String(cell.v);
+        else if (cell.t === 'b') v = cell.v ? 'TRUE' : 'FALSE';
+        else if (cell.t === 'e') v = cell.w || '#N/A';
+        else if (cell.t === 'd') v = String(F.dateToSerial(cell.v));
+        else if (cell.t === 'z') v = '';
+        else {
+          v = cell.v === undefined ? '' : String(cell.v);
+          if (v && (v[0] === '=' || typeof F.parseLiteral(v) !== 'string')) v = "'" + v;
         }
+        const st = {};
+        if (cell.z && cell.z !== 'General') st.fmt = String(cell.z).slice(0, 200);
+        if (v === '' && !Object.keys(st).length) continue;
+        s.cells[addr(p.row, p.col)] = Object.keys(st).length ? { v, s: st } : { v };
+        if (p.row > maxR) maxR = p.row;
+        if (p.col > maxC) maxC = p.col;
       }
-      s.rows = Math.max(100, range.e.r + 20);
-      s.cols = Math.max(26, range.e.c + 5);
-      (ws['!cols'] || []).forEach((col, c) => { if (col && (col.wpx || col.wch)) s.colWidths[c] = Math.round(col.wpx || col.wch * 7 + 5); });
-      (ws['!merges'] || []).forEach(m => s.merges.push({ r1: m.s.r, c1: m.s.c, r2: m.e.r, c2: m.e.c }));
-      const ms = meta && meta.sheets && meta.sheets[si];
-      if (ms && ms.name === sn) {
-        Object.entries(ms.styles || {}).forEach(([k, st]) => { s.cells[k] = { v: s.cells[k]?.v ?? '', s: { ...(s.cells[k]?.s || {}), ...st } }; });
-        s.charts = ms.charts || [];
-        if (ms.colWidths) s.colWidths = ms.colWidths;
+      s.rows = Math.min(MAX_ROWS, Math.max(100, maxR + 20));
+      s.cols = Math.min(MAX_COLS, Math.max(26, maxC + 5));
+      (ws['!cols'] || []).slice(0, MAX_COLS).forEach((col, c) => { if (col && (col.wpx || col.wch)) s.colWidths[c] = Math.max(10, Math.min(2000, Math.round(col.wpx || col.wch * 7 + 5))); });
+      (ws['!rows'] || []).slice(0, MAX_ROWS).forEach((row, r) => {
+        if (!row) return;
+        if (row.hidden) s.hiddenRows.push(r);
+        const h = row.hpx || (row.hpt && row.hpt * 4 / 3);
+        if (h && Math.abs(h - ROW_H) > 2) s.rowHeights[r] = Math.max(4, Math.min(545, Math.round(h)));
+      });
+      (ws['!merges'] || []).forEach(m => { if (m.e.r < MAX_ROWS && m.e.c < MAX_COLS) s.merges.push({ r1: m.s.r, c1: m.s.c, r2: m.e.r, c2: m.e.c }); });
+      const ms = meta && Array.isArray(meta.sheets) ? meta.sheets[si] : null;
+      if (ms && typeof ms === 'object' && ms.name === sn) {
+        if (ms.styles && typeof ms.styles === 'object') {
+          Object.entries(ms.styles).forEach(([k, st]) => {
+            const clean = CELL_KEY.test(k) && cleanStyle(st);
+            if (!clean) return;
+            s.cells[k] = { v: s.cells[k]?.v ?? '', s: { ...(s.cells[k]?.s || {}), ...clean } };
+          });
+        }
+        s.charts = (Array.isArray(ms.charts) ? ms.charts : []).map(cleanChart).filter(Boolean).slice(0, 100);
+        if (ms.colWidths) s.colWidths = cleanSizes(ms.colWidths, 10, 2000);
+        if (ms.freezeRow === true) s.freezeRow = true;
+        if (ms.freezeCol === true) s.freezeCol = true;
       }
       return s;
     });
-    return { sheets, active: Math.min(meta?.active || 0, sheets.length - 1) };
+    if (!sheets.length) sheets.push(newSheet('Sheet1'));
+    const act = meta && Number.isInteger(meta.active) ? meta.active : 0;
+    return { sheets, active: Math.max(0, Math.min(act, sheets.length - 1)) };
   }
 
   function toWorkbook() {
@@ -1279,9 +1652,13 @@
       const cols = [];
       Object.entries(s.colWidths).forEach(([c, w]) => { cols[+c] = { wpx: w }; });
       if (cols.length) { for (let i = 0; i < cols.length; i++) if (!cols[i]) cols[i] = { wpx: DEFAULT_COL_W }; ws['!cols'] = cols; }
+      const rows = [];
+      Object.entries(s.rowHeights || {}).forEach(([r, h]) => { rows[+r] = { hpx: h }; });
+      (s.hiddenRows || []).forEach(r => { rows[r] = { ...(rows[r] || {}), hidden: true }; });
+      if (rows.length) ws['!rows'] = rows;
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
-      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths });
+      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol });
     });
     // Cell styling and charts live in a custom document property so Atlas can restore them;
     // other apps ignore it and still get values, formulas, number formats, widths and merges.
@@ -1290,17 +1667,15 @@
   }
   function serialize(ext) {
     if (ext === 'csv') {
-      const s = sheet();
-      let maxR = 0, maxC = 0;
-      Object.keys(s.cells).forEach(k => { const p = parseRef(k); if (s.cells[k].v !== '') { maxR = Math.max(maxR, p.row); maxC = Math.max(maxC, p.col); } });
+      const u = usedBounds();
       const lines = [];
-      for (let r = 0; r <= maxR; r++) {
+      for (let r = 0; r <= u.r; r++) {
         const row = [];
-        for (let c = 0; c <= maxC; c++) {
+        for (let c = 0; c <= u.c; c++) {
           const v = valueAt(r, c);
           const st = (cellAt(r, c) || {}).s || {};
           let t = v instanceof F.FormulaError ? v.error : typeof v === 'number' ? (st.fmt && /[ymd]/i.test(st.fmt) ? F.formatValue(v, st.fmt) : String(v)) : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : String(v);
-          if (/[",\n]/.test(t)) t = '"' + t.replace(/"/g, '""') + '"';
+          if (/[",\r\n]/.test(t)) t = '"' + t.replace(/"/g, '""') + '"';
           row.push(t);
         }
         lines.push(row.join(','));
@@ -1312,18 +1687,37 @@
   }
 
   async function loadFile(f) {
+    let next;
     try {
-      book = workbookFromXlsx(f.data, f.name);
+      next = workbookFromFile(f.data, f.name);
     } catch (err) {
       UI.toast('Could not open file: ' + err.message, 4000);
       return;
     }
+    book = next;
     undoStack.length = redoStack.length = 0;
+    undoBytes = 0;
     engine.astCache.clear();
     active = anchor = { r: 0, c: 0 };
+    wrap.scrollTop = wrap.scrollLeft = 0;
     state.set({ name: f.name, path: f.path, dirty: false });
     Platform.rememberRecent(f.name, 'sheets');
+    // Size rows for wrapped text and big fonts on every sheet.
+    const keep = book.active;
+    book.sheets.forEach((s, i) => { book.active = i; rebuildCols(); fitRowsFor(s); });
+    book.active = keep;
     buildGrid();
+  }
+  /** Like fitRows(null) but keeps heights that came from the file. */
+  function fitRowsFor(s) {
+    for (const [k, cell] of Object.entries(s.cells)) {
+      const st = cell.s;
+      if (!st || !(st.wrap || st.size > 11)) continue;
+      const p = parseRef(k);
+      if (s.merges.some(m => p.row >= m.r1 && p.row <= m.r2 && p.col >= m.c1 && p.col <= m.c2)) continue;
+      const h = neededHeight(p.row, p.col, cell);
+      if (h > (s.rowHeights[p.row] || ROW_H)) s.rowHeights[p.row] = h;
+    }
   }
   async function save(saveAs, forcedExt) {
     commitEdit();
@@ -1353,15 +1747,24 @@
   }
   function printView() {
     const s = sheet();
-    let maxR = 0, maxC = 0;
-    Object.keys(s.cells).forEach(k => { const p = parseRef(k); maxR = Math.max(maxR, p.row); maxC = Math.max(maxC, p.col); });
+    const u = usedBounds();
     const t = document.createElement('table');
-    for (let r = 0; r <= maxR; r++) {
+    const cap = Math.min(u.r, 20000); // printing is for reports, not whole databases
+    for (let r = 0; r <= cap; r++) {
+      if (hiddenSet.has(r)) continue;
       const tr = t.insertRow();
-      for (let c = 0; c <= maxC; c++) {
-        const src = td(r, c);
-        const cell = tr.insertCell();
-        if (src) { cell.textContent = src.textContent; cell.style.cssText = src.style.cssText; cell.className = src.className; if (src.classList.contains('num')) cell.style.textAlign = cell.style.textAlign || 'right'; }
+      for (let c = 0; c <= u.c; c++) {
+        const td = tr.insertCell();
+        const cell = s.cells[addr(r, c)];
+        if (!cell) continue;
+        const st = cell.s || {};
+        const { text, cls } = cellDisplay(r, c);
+        td.textContent = text;
+        Object.assign(td.style, {
+          fontWeight: st.b ? '700' : '', fontStyle: st.i ? 'italic' : '', textDecoration: st.u ? 'underline' : '',
+          color: st.color || '', backgroundColor: st.bg || '', fontFamily: st.font || '', fontSize: st.size ? st.size + 'pt' : '',
+          textAlign: st.align || (cls === 'num' ? 'right' : cls ? 'center' : ''), whiteSpace: st.wrap ? 'pre-wrap' : 'nowrap'
+        });
       }
     }
     const area = document.getElementById('printArea');
@@ -1392,14 +1795,14 @@
       case 'undo': if (!editing) undo(); else document.execCommand('undo'); break;
       case 'redo': if (!editing) redo(); else document.execCommand('redo'); break;
       case 'find': case 'replace': findbar.classList.add('open'); findText.focus(); findText.select(); break;
-      case 'copy-btn': document.execCommand('copy') || UI.toast('Use Ctrl+C'); break;
-      case 'cut-btn': document.execCommand('cut') || UI.toast('Use Ctrl+X'); break;
-      case 'paste-btn': try { paste(await navigator.clipboard.readText()); } catch { UI.toast('Use Ctrl+V to paste'); } break;
+      case 'copy-btn': wrap.focus(); document.execCommand('copy') || UI.toast('Use Ctrl+C'); break;
+      case 'cut-btn': wrap.focus(); document.execCommand('cut') || UI.toast('Use Ctrl+X'); break;
+      case 'paste-btn': try { const text = await navigator.clipboard.readText(); wrap.focus(); paste(text); } catch { UI.toast('Use Ctrl+V to paste'); } break;
       case 'home': Platform.desktop ? Platform.newWindow('home') : (location.href = 'index.html'); break;
     }
   });
 
-  window.addEventListener('resize', () => { drawSelection(); });
+  window.addEventListener('resize', () => { renderWindow(false); paintSelection(); });
   (async () => {
     buildGrid();
     wrap.focus();
@@ -1408,5 +1811,11 @@
     else if (f) await loadFile(f);
   })();
 
-  window.AtlasSheets = { loadFile, serialize, get book() { return book; }, select, setCell: (ref, v) => { const p = parseRef(ref); setCell(p.row, p.col, { v }); changed(); }, valueOf: ref => { const p = parseRef(ref); return valueAt(p.row, p.col); } };
+  window.AtlasSheets = {
+    loadFile, serialize, select,
+    get book() { return book; },
+    setCell: (ref, v) => { const p = parseRef(ref); setCell(p.row, p.col, { v }); ensureSize(p.row, p.col); changed(); },
+    valueOf: ref => { const p = parseRef(ref); return valueAt(p.row, p.col); },
+    domStats: () => ({ rows: tbody.rows.length, cells: grid.querySelectorAll('td').length })
+  };
 })();

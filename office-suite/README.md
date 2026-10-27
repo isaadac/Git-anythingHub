@@ -50,10 +50,16 @@ To publish a release with installers for all three systems, push a tag such as `
 - `src/renderer/js/formula.js`: the spreadsheet engine (tokenizer, parser, evaluator, reference rewriting), with tests in `test/`.
 - File formats: [docx](https://github.com/dolanmiu/docx) and [mammoth](https://github.com/mwilliamson/mammoth.js) for Word, [SheetJS](https://sheetjs.com) for spreadsheets, [PptxGenJS](https://github.com/gitbrent/PptxGenJS) and [JSZip](https://stuk.github.io/jszip/) for PowerPoint.
 
+## Security and large files
+
+- Documents are treated as untrusted. Opened and pasted content is sanitized (no scripts, frames, forms or remote content), and every page runs under a strict Content Security Policy.
+- The renderer runs sandboxed with no Node.js access. It can only read or overwrite files the user picked in a dialog, opened from the OS or reopened from the recent list.
+- Sheets renders only the visible part of the grid, so workbooks with hundreds of thousands of rows open and scroll smoothly. Formula chains of any length (such as running totals down 100,000 rows) calculate without hitting the JavaScript stack limit.
+
 ## Known limitations
 
 Atlas Office covers the everyday features of Word, Excel and PowerPoint, not all of them. Some things don't survive a round trip through Office files:
 
 - **Write**: no live pagination (page count is estimated, and page breaks are explicit), and no tracked changes. Comments are kept as highlights only. Complex Word layouts (floating objects, section-specific headers) are simplified when opened.
-- **Sheets**: cell styling and charts are saved inside the `.xlsx` in a form only Atlas reads back; Excel shows the values, formulas, number formats, column widths and merged cells, but not the colours or charts. No pivot tables, macros or conditional formatting.
+- **Sheets**: cell styling and charts are saved inside the `.xlsx` in a form only Atlas reads back. Excel shows the values, formulas, number formats, column widths, row heights and merged cells, but not the colours or charts. Pivot tables, macros and conditional formatting are not supported.
 - **Slides**: imported `.pptx` files keep text, pictures, shapes, tables, backgrounds and notes, but placeholder positions that come only from the slide master use default positions, and animations aren't supported. Save as `.aslides` to keep a presentation exactly as it is.

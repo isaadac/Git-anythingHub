@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Atlas Sheets</title>
 <link rel="stylesheet" href="css/office.css">
 <link rel="stylesheet" href="css/sheets.css">
@@ -167,10 +167,12 @@
 
 <div class="workspace">
   <div class="grid-wrap" id="gridWrap" tabindex="0">
-    <table class="grid" id="grid"><thead></thead><tbody></tbody></table>
-    <div class="sel-box" id="selBox"></div>
-    <textarea class="cell-editor" id="cellEditor" spellcheck="false" hidden></textarea>
-    <div class="charts-layer" id="chartsLayer"></div>
+    <div class="grid-inner" id="gridInner">
+      <table class="grid" id="grid"><thead></thead><tbody></tbody></table>
+      <div class="sel-box" id="selBox"></div>
+      <textarea class="cell-editor" id="cellEditor" spellcheck="false" data-app-editor="1" hidden></textarea>
+      <div class="charts-layer" id="chartsLayer"></div>
+    </div>
   </div>
   <div class="findbar" id="findbar">
     <input id="findText" placeholder="Find">

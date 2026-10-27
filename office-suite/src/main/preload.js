@@ -6,7 +6,6 @@ contextBridge.exposeInMainWorld('atlas', {
   isDesktop: true,
   platform: process.platform,
   openDialog: filters => ipcRenderer.invoke('file:open-dialog', filters),
-  readFile: p => ipcRenderer.invoke('file:read', p),
   save: opts => ipcRenderer.invoke('file:save', opts),
   chooseSavePath: opts => ipcRenderer.invoke('file:choose-save-path', opts),
   pendingFile: () => ipcRenderer.invoke('file:pending'),

@@ -51,44 +51,52 @@
         "ext": "docx",
         "name": "Word Document",
         "description": "Word Document",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       },
       {
         "ext": "md",
         "name": "Markdown Document",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "text/markdown"
       },
       {
         "ext": "xlsx",
         "name": "Excel Workbook",
         "description": "Excel Workbook",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
       },
       {
         "ext": "xls",
         "name": "Excel 97-2003 Workbook",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "application/vnd.ms-excel"
       },
       {
         "ext": "ods",
         "name": "OpenDocument Spreadsheet",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "application/vnd.oasis.opendocument.spreadsheet"
       },
       {
         "ext": "csv",
         "name": "CSV File",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "text/csv"
       },
       {
         "ext": "pptx",
         "name": "PowerPoint Presentation",
         "description": "PowerPoint Presentation",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
       },
       {
         "ext": "aslides",
         "name": "Atlas Presentation",
-        "role": "Editor"
+        "role": "Editor",
+        "mimeType": "application/x-atlas-slides"
       }
     ],
     "win": {

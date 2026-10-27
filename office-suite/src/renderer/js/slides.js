@@ -46,6 +46,48 @@
       default: return [title({ x: 60, y: 28, w: 840, h: 90 }), body({ x: 60, y: 130, w: 840, h: 370 })];
     }
   }
+  /**
+   * Presentations from files are untrusted: rebuild them from known fields with checked
+   * types, fresh ids and sanitized text, so nothing can inject markup into the editor.
+   */
+  const SHAPE_NAMES = ['rect', 'roundRect', 'ellipse', 'triangle', 'rightArrow', 'line', 'star5', 'diamond'];
+  const num = (v, d, lo = -5000, hi = 5000) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
+  const color = v => (Platform.isColor(v) ? v : null);
+  const imageUrl = v => (typeof v === 'string' && /^data:image\/(png|jpe?g|gif|webp|bmp|svg\+xml)[;,]/i.test(v) ? v : null);
+  const oneOf = (v, list, d) => (list.includes(v) ? v : d);
+  function cleanPres(p) {
+    if (!p || !Array.isArray(p.slides)) throw new Error('Not a presentation');
+    const slides = p.slides.slice(0, 2000).map(sl => {
+      const s = newSlide('blank');
+      if (!sl || typeof sl !== 'object') return s;
+      s.layout = oneOf(sl.layout, ['title', 'content', 'section', 'two', 'titleonly', 'blank'], 'blank');
+      s.bg = color(sl.bg);
+      s.bgImage = imageUrl(sl.bgImage);
+      s.transition = oneOf(sl.transition, ['none', 'fade', 'push', 'zoom'], 'none');
+      s.notes = typeof sl.notes === 'string' ? sl.notes.slice(0, 100000) : '';
+      s.elements = (Array.isArray(sl.elements) ? sl.elements : []).slice(0, 500).map(el => {
+        if (!el || typeof el !== 'object') return null;
+        const type = oneOf(el.type, ['text', 'shape', 'image', 'table'], null);
+        if (!type) return null;
+        const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
+        if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+        if (type === 'image') { out.src = imageUrl(el.src); return out.src ? out : null; }
+        out.html = Platform.sanitizeHtml(el.html);
+        out.size = num(el.size, 18, 4, 400);
+        out.align = oneOf(el.align, ['left', 'center', 'right'], 'left');
+        out.valign = oneOf(el.valign, ['top', 'middle', 'bottom'], 'top');
+        if (typeof el.font === 'string' && /^[\w .-]{1,64}$/.test(el.font)) out.font = el.font;
+        if (color(el.color)) out.color = el.color;
+        if (['title', 'subtitle', 'body'].includes(el.ph)) out.ph = el.ph;
+        if (el.bold === false) out.bold = false;
+        if (type === 'shape') { out.shape = oneOf(el.shape, SHAPE_NAMES, 'rect'); out.fill = color(el.fill); out.line = color(el.line); }
+        return out;
+      }).filter(Boolean);
+      return s;
+    });
+    if (!slides.length) slides.push(newSlide('title'));
+    return { theme: Object.prototype.hasOwnProperty.call(THEMES, p.theme) ? p.theme : 'office', slides };
+  }
   const newSlide = kind => ({ id: newId(), layout: kind, bg: null, bgImage: null, transition: 'none', notes: '', elements: makeLayout(kind) });
   const PLACEHOLDER = { title: 'Click to add title', subtitle: 'Click to add subtitle', body: 'Click to add text' };
 
@@ -84,7 +126,7 @@
   function renderSlide(s, container, interactive) {
     container.innerHTML = '';
     container.style.backgroundColor = s.bg || theme().bg;
-    container.style.backgroundImage = s.bgImage ? `url("${s.bgImage}")` : '';
+    container.style.backgroundImage = imageUrl(s.bgImage) ? `url("${s.bgImage}")` : '';
     s.elements.forEach(el => {
       const div = document.createElement('div');
       div.className = 'el ' + el.type;
@@ -97,9 +139,10 @@
         div.appendChild(img);
       } else {
         if (el.type === 'shape') {
-          const stroke = el.line || 'none';
-          const fill = el.shape === 'line' ? 'none' : (el.fill || 'none');
-          div.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 100 100" preserveAspectRatio="none"><g fill="${fill}" stroke="${el.shape === 'line' ? (el.line || theme().accent) : stroke}" stroke-width="${el.shape === 'line' ? 3 : 1.5}" vector-effect="non-scaling-stroke">${SHAPES[el.shape] ? SHAPES[el.shape]() : SHAPES.rect()}</g></svg>`);
+          // Colours are checked here too, since they go into SVG markup.
+          const stroke = color(el.line) || 'none';
+          const fill = el.shape === 'line' ? 'none' : (color(el.fill) || 'none');
+          div.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 100 100" preserveAspectRatio="none"><g fill="${fill}" stroke="${el.shape === 'line' ? (color(el.line) || theme().accent) : stroke}" stroke-width="${el.shape === 'line' ? 3 : 1.5}" vector-effect="non-scaling-stroke">${SHAPES[el.shape] ? SHAPES[el.shape]() : SHAPES.rect()}</g></svg>`);
           div.querySelectorAll('svg *').forEach(n => n.setAttribute('vector-effect', 'non-scaling-stroke'));
         }
         const c = document.createElement('div');
@@ -828,9 +871,9 @@
     const colorOf = node => {
       if (!node) return null;
       const srgb = node.getElementsByTagNameNS(A, 'srgbClr')[0];
-      if (srgb) return '#' + srgb.getAttribute('val');
+      if (srgb) return color('#' + srgb.getAttribute('val'));
       const sc = node.getElementsByTagNameNS(A, 'schemeClr')[0];
-      if (sc && scheme[sc.getAttribute('val')]) return '#' + scheme[sc.getAttribute('val')];
+      if (sc && Object.prototype.hasOwnProperty.call(scheme, sc.getAttribute('val'))) return color('#' + scheme[sc.getAttribute('val')]);
       return null;
     };
     const slides = [];
@@ -932,7 +975,8 @@
               const c = colorOf([...rPr.children].find(ch => ch.localName === 'solidFill'));
               if (c) style.push(`color:${c}`);
               const latin = rPr.getElementsByTagNameNS(A, 'latin')[0];
-              if (latin && !latin.getAttribute('typeface').startsWith('+')) style.push(`font-family:'${latin.getAttribute('typeface')}'`);
+              const face = latin && latin.getAttribute('typeface');
+              if (face && !face.startsWith('+') && /^[\w .-]{1,64}$/.test(face)) style.push(`font-family:'${face}'`);
               if (rPr.getAttribute('b') === '1') text = `<b>${text}</b>`;
               if (rPr.getAttribute('i') === '1') text = `<i>${text}</i>`;
               if (rPr.getAttribute('u') && rPr.getAttribute('u') !== 'none') text = `<u>${text}</u>`;
@@ -972,7 +1016,7 @@
       return 'data:' + mime + ';base64,' + await f.async('base64');
     }
     if (!slides.length) slides.push(newSlide('title'));
-    return { theme: 'office', slides, importedScheme: scheme };
+    return cleanPres({ theme: 'office', slides });
   }
 
   // ---------- Files ----------
@@ -980,9 +1024,7 @@
     try {
       const ext = Platform.extOf(f.name);
       if (ext === 'aslides') {
-        const data = JSON.parse(Platform.bytesToText(f.data));
-        if (!data || !Array.isArray(data.slides)) throw new Error('Not an Atlas presentation');
-        pres = data;
+        pres = cleanPres(JSON.parse(Platform.bytesToText(f.data)));
       } else pres = await fromPptx(f.data);
     } catch (err) {
       UI.toast('Could not open file: ' + err.message, 4000);

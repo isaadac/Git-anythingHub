@@ -148,3 +148,22 @@ test('adjusting references for inserted and deleted rows', () => {
   assert.strictEqual(F.adjustForInsert('=C1', 'col', 0, 2, 'Sheet1', 'Sheet1'), '=E1');
   assert.strictEqual(F.adjustForInsert('=Other!A5', 'row', 0, 1, 'Sheet1', 'Sheet1'), '=Other!A5');
 });
+
+test('long dependency chains do not overflow the stack', () => {
+  const cells = { A1: '1' };
+  for (let r = 2; r <= 20000; r++) cells['A' + r] = `=A${r - 1}+1`;
+  cells.B1 = '=SUM(A1:A20000)';
+  assert.strictEqual(val(cells, 'A20000'), 20000);
+  assert.strictEqual(val(cells, 'B1'), 200010000);
+});
+
+test('reference to an empty cell is 0', () => {
+  assert.strictEqual(calc('=A1'), 0);
+  assert.strictEqual(calc('=A1&"x"'), 'x');
+});
+
+test('scientific number format', () => {
+  assert.strictEqual(F.formatValue(12345.678, '0.00E+00'), '1.23E+04');
+  assert.strictEqual(F.formatValue(0.000123, '0.0E+00'), '1.2E-04');
+  assert.strictEqual(F.formatValue(-5000, '0.00E+00'), '-5.00E+03');
+});

@@ -1,7 +1,7 @@
 'use strict';
 // Atlas Office — Electron main process.
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 
@@ -19,6 +19,12 @@ const EXT_TO_APP = {
 };
 
 const pendingFiles = new Map(); // webContents.id -> file path to open on load
+// Files the user chose (dialogs, command line, Finder, recent list). The renderer may only
+// read or overwrite these, so a compromised page can't touch arbitrary files.
+const approvedPaths = new Set();
+const approve = p => { const abs = path.resolve(p); approvedPaths.add(abs); return abs; };
+const isApproved = p => typeof p === 'string' && approvedPaths.has(path.resolve(p));
+const SAFE_EXTERNAL = /^(https?:|mailto:)/i;
 const recentPath = () => path.join(app.getPath('userData'), 'recent.json');
 
 function readRecent() {
@@ -56,19 +62,29 @@ function createWindow(appName = 'home', filePath = null) {
 
   // Open external links in the user's browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:/i.test(url)) shell.openExternal(url);
+    if (SAFE_EXTERNAL.test(url)) shell.openExternal(url);
     return { action: 'deny' };
   });
+  // The app's pages never navigate; links in documents open in the browser instead.
   win.webContents.on('will-navigate', (e, url) => {
-    if (!url.startsWith('file://')) { e.preventDefault(); shell.openExternal(url); }
+    e.preventDefault();
+    if (SAFE_EXTERNAL.test(url)) shell.openExternal(url);
   });
+  win.webContents.on('will-attach-webview', e => e.preventDefault());
 
   // Ask the renderer whether there are unsaved changes before closing.
   let allowClose = false;
+  let asking = false;
   win.on('close', e => {
     if (allowClose) return;
     e.preventDefault();
-    win.webContents.executeJavaScript('window.__atlasDirty === true').catch(() => false).then(dirty => {
+    if (asking) return;
+    asking = true;
+    // A hung or crashed page must not keep the window open forever.
+    const timeout = new Promise(resolve => setTimeout(() => resolve(false), 1500));
+    Promise.race([win.webContents.executeJavaScript('window.__atlasDirty === true').catch(() => false), timeout]).then(dirty => {
+      asking = false;
+      if (win.isDestroyed()) return;
       if (!dirty) { allowClose = true; win.close(); return; }
       const choice = dialog.showMessageBoxSync(win, {
         type: 'warning',
@@ -85,29 +101,23 @@ function createWindow(appName = 'home', filePath = null) {
   return win;
 }
 
-function openPath(filePath, fromWin) {
+function openPath(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const appName = EXT_TO_APP[ext];
   if (!appName) {
     dialog.showErrorBox('Unsupported file', `Atlas Office can't open "${path.basename(filePath)}".`);
     return;
   }
-  createWindow(appName, filePath);
-  if (fromWin && fromWin.__isEmptyHome) fromWin.close();
+  createWindow(appName, approve(filePath));
 }
 
 // ---------- IPC ----------
-ipcMain.handle('file:read', (_e, filePath) => {
-  const data = fs.readFileSync(filePath);
-  addRecent(filePath);
-  return { path: filePath, name: path.basename(filePath), data: new Uint8Array(data) };
-});
 
 ipcMain.handle('file:open-dialog', async (e, filters) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const res = await dialog.showOpenDialog(win, { properties: ['openFile'], filters });
   if (res.canceled || !res.filePaths.length) return null;
-  const filePath = res.filePaths[0];
+  const filePath = approve(res.filePaths[0]);
   addRecent(filePath);
   return { path: filePath, name: path.basename(filePath), data: new Uint8Array(fs.readFileSync(filePath)) };
 });
@@ -115,10 +125,11 @@ ipcMain.handle('file:open-dialog', async (e, filters) => {
 ipcMain.handle('file:save', async (e, { data, filePath, defaultName, filters, saveAs }) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   let target = filePath;
+  if (target && !isApproved(target)) throw new Error('Choose where to save with Save As.');
   if (!target || saveAs) {
     const res = await dialog.showSaveDialog(win, { defaultPath: target || defaultName, filters });
     if (res.canceled || !res.filePath) return null;
-    target = res.filePath;
+    target = approve(res.filePath);
   }
   const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
   fs.writeFileSync(target, buf);
@@ -130,7 +141,12 @@ ipcMain.handle('file:choose-save-path', async (e, { defaultName, filters }) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const res = await dialog.showSaveDialog(win, { defaultPath: defaultName, filters });
   if (res.canceled || !res.filePath) return null;
-  return { path: res.filePath, name: path.basename(res.filePath) };
+  // Linux save dialogs don't add the extension for you.
+  let target = res.filePath;
+  const exts = (filters || []).flatMap(f => f.extensions);
+  if (exts.length && !exts.includes(path.extname(target).slice(1).toLowerCase())) target += '.' + exts[0];
+  approve(target);
+  return { path: target, name: path.basename(target) };
 });
 
 ipcMain.handle('file:pending', e => {
@@ -149,17 +165,22 @@ ipcMain.handle('file:export-pdf', async (e, { defaultName, landscape }) => {
   const win = BrowserWindow.fromWebContents(e.sender);
   const res = await dialog.showSaveDialog(win, { defaultPath: defaultName, filters: [{ name: 'PDF', extensions: ['pdf'] }] });
   if (res.canceled || !res.filePath) return null;
+  const target = /\.pdf$/i.test(res.filePath) ? res.filePath : res.filePath + '.pdf';
   const pdf = await e.sender.printToPDF({ printBackground: true, landscape: !!landscape, pageSize: 'Letter', preferCSSPageSize: true });
-  fs.writeFileSync(res.filePath, pdf);
-  shell.openPath(res.filePath);
-  return res.filePath;
+  fs.writeFileSync(target, pdf);
+  shell.openPath(target);
+  return target;
 });
 
 ipcMain.handle('app:print', e => new Promise(resolve => e.sender.print({ printBackground: true }, ok => resolve(ok))));
-ipcMain.handle('app:recent', () => readRecent().filter(r => fs.existsSync(r.path)));
+ipcMain.handle('app:recent', () => readRecent().filter(r => fs.existsSync(r.path)).map(r => ({ ...r, path: approve(r.path) })));
 ipcMain.handle('app:clear-recent', () => { try { fs.unlinkSync(recentPath()); } catch { /* none */ } app.clearRecentDocuments(); return true; });
-ipcMain.handle('app:new-window', (_e, appName) => { createWindow(appName); return true; });
-ipcMain.handle('app:open-path', (e, p) => { openPath(p, BrowserWindow.fromWebContents(e.sender)); return true; });
+ipcMain.handle('app:new-window', (_e, appName) => { createWindow(APPS[appName] ? appName : 'home'); return true; });
+ipcMain.handle('app:open-path', (_e, p) => {
+  if (!isApproved(p)) return false;
+  openPath(p);
+  return true;
+});
 ipcMain.handle('app:set-title', (e, title) => { BrowserWindow.fromWebContents(e.sender)?.setTitle(title); return true; });
 ipcMain.handle('app:close-now', e => {
   const win = BrowserWindow.fromWebContents(e.sender);
@@ -235,7 +256,10 @@ function buildMenu() {
 }
 
 // ---------- Lifecycle ----------
-const fileArgs = argv => argv.slice(app.isPackaged ? 1 : 2).filter(a => !a.startsWith('-') && fs.existsSync(a) && EXT_TO_APP[path.extname(a).toLowerCase()]);
+const fileArgs = (argv, cwd = process.cwd()) => argv.slice(app.isPackaged ? 1 : 2)
+  .filter(a => !a.startsWith('-'))
+  .map(a => path.resolve(cwd, a))
+  .filter(a => EXT_TO_APP[path.extname(a).toLowerCase()] && fs.existsSync(a));
 let macOpenQueue = [];
 
 app.on('open-file', (e, filePath) => { // macOS: double-click in Finder
@@ -246,13 +270,17 @@ app.on('open-file', (e, filePath) => { // macOS: double-click in Finder
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
-  app.on('second-instance', (_e, argv) => {
-    const files = fileArgs(argv);
+  app.on('second-instance', (_e, argv, workingDirectory) => {
+    const files = fileArgs(argv, workingDirectory);
     if (files.length) files.forEach(f => openPath(f));
     else createWindow('home');
   });
 
   app.whenReady().then(() => {
+    // Only the permissions the apps use: clipboard (Paste button) and full screen (slide show).
+    const allowed = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen']);
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
     buildMenu();
     const files = [...fileArgs(process.argv), ...macOpenQueue];
     macOpenQueue = [];

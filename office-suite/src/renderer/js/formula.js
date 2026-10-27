@@ -453,6 +453,15 @@
     else if (v === 0 && sections[2]) f = sections[2];
     f = f.replace(/\[[^\]]*\]/g, '');
     if (/[ymdhs]/i.test(f.replace(/"[^"]*"/g, '')) && !/[0#]/.test(f)) return formatDate(n, f);
+    const sci = /([0#.]+)E([+-])(0+)/i.exec(f.replace(/"[^"]*"/g, ''));
+    if (sci) {
+      // Scientific, e.g. 0.00E+00
+      const decimals = (sci[1].split('.')[1] || '').length;
+      const [mant, exp] = Math.abs(n).toExponential(decimals).split('e');
+      const e = +exp;
+      const expText = (e < 0 ? '-' : sci[2] === '+' ? '+' : '') + String(Math.abs(e)).padStart(sci[3].length, '0');
+      return (n < 0 && !sections[1] ? '-' : '') + mant + 'E' + expText;
+    }
     const pct = f.includes('%');
     if (pct) n *= 100;
     const m = /([#0,]*)(?:\.([0#]+))?/.exec(f.replace(/"[^"]*"/g, '').replace(/[^#0,.%]/g, m2 => m2 === '%' ? '%' : ' ').trim().split(' ').find(p => /[0#]/.test(p)) || '0');
@@ -508,6 +517,7 @@
    * Evaluates cells for a workbook-like object:
    *   getRaw(sheetName, row, col) -> raw input string ('' if empty)
    *   sheetNames() -> list of sheet names
+   *   formulasInRange(sheetName, r1, c1, r2, c2) -> [[row, col], ...] (optional, speeds up big ranges)
    */
   class Engine {
     constructor(book) {
@@ -522,11 +532,74 @@
       const key = sheet + '\u0000' + row + ',' + col;
       if (this.cache.has(key)) return this.cache.get(key);
       if (this.stack.has(key)) return ERR.CIRC;
+      if (!this.stack.size) this.warm(sheet, row, col);
+      if (this.cache.has(key)) return this.cache.get(key);
       this.stack.add(key);
       let v;
       try { v = this.compute(sheet, this.book.getRaw(sheet, row, col)); } finally { this.stack.delete(key); }
       this.cache.set(key, v);
       return v;
+    }
+    /**
+     * Evaluates a cell's precedents bottom-up with an explicit stack, so long chains
+     * (e.g. a running total down 50,000 rows) don't overflow the JavaScript call stack.
+     */
+    warm(sheet, row, col) {
+      const onPath = new Set();
+      const frames = [{ sheet, row, col, key: sheet + '\u0000' + row + ',' + col, deps: null, i: 0 }];
+      onPath.add(frames[0].key);
+      while (frames.length) {
+        const f = frames[frames.length - 1];
+        if (!f.deps) f.deps = this.precedents(f.sheet, f.row, f.col);
+        if (f.i < f.deps.length) {
+          const [s2, r2, c2] = f.deps[f.i++];
+          const k2 = s2 + '\u0000' + r2 + ',' + c2;
+          if (this.cache.has(k2) || onPath.has(k2)) continue;
+          onPath.add(k2);
+          frames.push({ sheet: s2, row: r2, col: c2, key: k2, deps: null, i: 0 });
+          continue;
+        }
+        frames.pop();
+        onPath.delete(f.key);
+        if (frames.length) {
+          // Compute now: its precedents are cached, so this recursion stays shallow.
+          this.stack.add('\u0001warm');
+          try { this.value(f.sheet, f.row, f.col); } finally { this.stack.delete('\u0001warm'); }
+        }
+      }
+    }
+    /** Cells a formula cell refers to directly (only non-empty formula cells matter for depth). */
+    precedents(sheet, row, col) {
+      const raw = this.book.getRaw(sheet, row, col);
+      if (typeof raw !== 'string' || raw[0] !== '=' || raw.length < 2) return [];
+      let ast = this.astCache.get(raw);
+      if (!ast) { try { ast = parse(raw.slice(1)); } catch { return []; } this.astCache.set(raw, ast); }
+      const out = [];
+      const visit = n => {
+        if (!n || typeof n !== 'object') return;
+        if (n.k === 'ref' || n.k === 'range') {
+          let s;
+          try { s = this.resolveSheet(n.sheet, sheet); } catch { return; }
+          if (n.k === 'ref') { out.push([s, n.row, n.col]); return; }
+          if (this.book.formulasInRange) {
+            for (const [r, c] of this.book.formulasInRange(s, n.r1, n.c1, n.r2, n.c2)) out.push([s, r, c]);
+            return;
+          }
+          const area = (n.r2 - n.r1 + 1) * (n.c2 - n.c1 + 1);
+          if (area > 200000) return; // huge ranges are evaluated on demand
+          for (let r = n.r1; r <= n.r2; r++) for (let c = n.c1; c <= n.c2; c++) {
+            const v = this.book.getRaw(s, r, c);
+            if (typeof v === 'string' && v[0] === '=') out.push([s, r, c]);
+          }
+          return;
+        }
+        if (n.e) visit(n.e);
+        if (n.l) visit(n.l);
+        if (n.r) visit(n.r);
+        if (n.args) n.args.forEach(visit);
+      };
+      visit(ast);
+      return out;
     }
     compute(sheet, raw) {
       if (raw === null || raw === undefined || raw === '') return '';
@@ -538,7 +611,9 @@
           let v = this.evalNode(ast, sheet);
           if (v instanceof Range) v = v.flat()[0];
           if (typeof v === 'number' && !isFinite(v)) return ERR.NUM;
-          return v === undefined || v === null ? 0 : (v === '' && false ? '' : v);
+          // Like Excel, =A1 pointing at an empty cell shows 0.
+          if (v === undefined || v === null || (v === '' && (ast.k === 'ref' || ast.k === 'range'))) return 0;
+          return v;
         } catch (e) {
           if (isErr(e)) return e;
           return ERR.ERROR;
