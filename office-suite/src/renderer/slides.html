@@ -116,6 +116,8 @@
       <button class="btn" data-shape="line" title="Line">╱</button>
       <button class="btn" data-shape="star5" title="Star">☆</button>
       <button class="btn" data-shape="diamond" title="Diamond">◇</button>
+      <button class="btn" data-connector="straight" title="Arrow connector: click two shapes">↗</button>
+      <button class="btn" data-connector="elbow" title="Elbow connector: click two shapes">↳</button>
     </div><div class="label">Shapes</div></div>
   </div>
 
@@ -200,6 +202,17 @@
       <button class="btn big" id="toFront"><span class="ico">⬒</span>Bring to<br>Front</button>
       <button class="btn big" id="toBack"><span class="ico">⬓</span>Send to<br>Back</button>
     </div><div class="label">Order</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="groupEls" title="Group (Ctrl+G); Shift+click to select several objects"><span class="ico">⧈</span>Group</button>
+      <button class="btn big" id="ungroupEls" title="Ungroup (Ctrl+Shift+G)"><span class="ico">⧉</span>Ungroup</button>
+    </div><div class="label">Group</div></div>
+    <div class="group"><div class="controls col">
+      <button class="btn" id="rotRight">↻ Rotate right 90°</button>
+      <button class="btn" id="rotLeft">↺ Rotate left 90°</button>
+    </div><div class="controls col">
+      <button class="btn" id="flipH">⇋ Flip horizontal</button>
+      <button class="btn" id="flipV">⇵ Flip vertical</button>
+    </div><div class="label">Rotate</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="alignCenterH"><span class="ico">⇹</span>Center<br>Horizontally</button>
       <button class="btn big" id="alignCenterV"><span class="ico">⇵</span>Center<br>Vertically</button>

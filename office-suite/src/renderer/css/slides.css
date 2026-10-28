@@ -124,3 +124,12 @@ body.master-view .stage-wrap { background: #dfe7f0; }
 .el.media .media-audio-icon { width: 100%; height: 100%; display: grid; place-items: center; font-size: calc(min(100%, 48px)); background: rgba(255,255,255,.85); border-radius: 8px; }
 .el.media .media-badge { position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.65); color: #fff; font: 11px var(--font); padding: 1px 6px; border-radius: 3px; pointer-events: none; }
 .presenter .el.media { cursor: pointer; }
+
+/* Rotation handle, groups and connectors */
+.handle.rot { left: calc(50% - 6px); top: -30px; width: 12px; height: 12px; border-radius: 50%; background: #fff; cursor: grab; }
+.handle.rot::after { content: ''; position: absolute; left: 5px; top: 12px; width: 1px; height: 16px; background: #5b9bd5; }
+.el.group > .el { pointer-events: none; }
+.el.connector { pointer-events: none; overflow: visible; }
+.el.connector .conn-hit { pointer-events: stroke; cursor: move; }
+#stage .el.connector.selected { outline: 1px dashed #5b9bd5; }
+body.connecting #stage, body.connecting #stage .el { cursor: crosshair !important; }

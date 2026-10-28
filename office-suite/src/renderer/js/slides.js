@@ -28,6 +28,7 @@
   let pres = { theme: 'office', slides: [], master: null, layouts: {} };
   let current = 0;
   let selectedId = null;
+  const extraSel = new Set(); // more objects selected with Shift/Ctrl+click
   let editingId = null;
   const theme = () => (pres.theme === 'custom' && pres.customTheme) || THEMES[pres.theme] || THEMES.office;
   // The audience window of Presenter View runs this page with ?audience=1 and only shows slides.
@@ -127,12 +128,42 @@
     return out;
   }
   /** Elements from a file, rebuilt from known fields (phs: extra placeholder kinds allowed, e.g. footers on the master). */
-  function cleanElements(list, phs = []) {
-    return (Array.isArray(list) ? list : []).slice(0, 500).map(el => {
+  function cleanElements(list, phs = [], depth = 0) {
+    const ids = new Map(); // old id -> new id, so connectors keep pointing at their shapes
+    const out = (Array.isArray(list) ? list : []).slice(0, 500).map(el => cleanElement(el, phs, depth, ids)).filter(Boolean);
+    out.forEach(c => {
+      if (c.type !== 'connector') return;
+      ['from', 'to'].forEach(k => { if (c[k]) { const id = ids.get(c[k].id); if (id) c[k].id = id; else delete c[k]; } });
+    });
+    return out;
+  }
+  function cleanElement(el, phs, depth, ids) {
+    {
       if (!el || typeof el !== 'object') return null;
-      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media'], null);
+      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector'], null);
       if (!type) return null;
       const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
+      if (typeof el.id === 'string') ids.set(el.id, out.id);
+      if (el.flipH === true) out.flipH = true;
+      if (el.flipV === true) out.flipV = true;
+      if (type === 'group') {
+        if (depth >= 5) return null;
+        out.children = cleanElements(el.children, phs, depth + 1).filter(c => c.type !== 'connector');
+        if (!out.children.length) return null;
+        if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+        const anim = SlidesAnim.clean(el.anim);
+        if (anim) out.anim = anim;
+        return out;
+      }
+      if (type === 'connector') {
+        out.kind = oneOf(el.kind, ['straight', 'elbow'], 'straight');
+        out.arrow = oneOf(el.arrow, ['none', 'end', 'both'], 'end');
+        if (color(el.color)) out.color = el.color;
+        out.width = num(el.width, 2, 0.5, 20);
+        ['x1', 'y1', 'x2', 'y2'].forEach(k => { out[k] = num(el[k], 0); });
+        ['from', 'to'].forEach(k => { const e = el[k]; if (e && typeof e === 'object' && typeof e.id === 'string') out[k] = { id: e.id, site: oneOf(e.site, ['n', 's', 'e', 'w', 'auto'], 'auto') }; });
+        return out;
+      }
       if (type === 'media') {
         out.src = mediaUrl(el.src);
         if (!out.src) return null;
@@ -158,7 +189,7 @@
       if (el.bold === false) out.bold = false;
       if (type === 'shape') { out.shape = oneOf(el.shape, SHAPE_NAMES, 'rect'); out.fill = color(el.fill); out.line = color(el.line); }
       return out;
-    }).filter(Boolean);
+    }
   }
   const newSlide = kind => ({ id: newId(), layout: kind, bg: null, bgImage: null, transition: 'none', transDur: 1, advance: null, notes: '', elements: layoutFor(kind) });
   const PLACEHOLDER = { title: 'Click to add title', subtitle: 'Click to add subtitle', body: 'Click to add text', footer: 'Footer', sldNum: '‹#›', dt: 'Date' };
@@ -223,64 +254,110 @@
     container.style.backgroundImage = imageUrl(bgFrom.bgImage) ? `url("${bgFrom.bgImage}")` : '';
     const list = [...masterItems(s), ...s.elements];
     list.forEach(el => {
-      const div = document.createElement('div');
-      div.className = 'el ' + el.type + (el.master ? ' master-el' : '');
-      if (el.master) div.dataset.masterId = el.id; else div.dataset.id = el.id;
-      Object.assign(div.style, { left: el.x + 'px', top: el.y + 'px', width: el.w + 'px', height: el.h + 'px', transform: el.rot ? `rotate(${el.rot}deg)` : '' });
-      if (el.type === 'media') {
-        if (el.kind === 'video') {
-          const v = document.createElement('video');
-          v.src = el.src; v.preload = 'metadata'; v.playsInline = true;
-          if (el.poster) v.poster = el.poster;
-          v.loop = !!el.loop;
-          v.className = 'media-video';
-          div.appendChild(v);
-        } else {
-          const a = document.createElement('audio');
-          a.src = el.src; a.preload = 'metadata'; a.loop = !!el.loop;
-          div.appendChild(a);
-          const icon = document.createElement('div');
-          icon.className = 'media-audio-icon';
-          icon.textContent = '🔊';
-          div.appendChild(icon);
-        }
-        if (interactive) { const tag = document.createElement('div'); tag.className = 'media-badge'; tag.textContent = (el.kind === 'video' ? '▶ Video' : '♪ Audio') + (el.autoplay ? ' · auto' : ''); div.appendChild(tag); }
-      } else if (el.type === 'image') {
-        const img = document.createElement('img');
-        img.src = el.src;
-        img.alt = '';
-        div.appendChild(img);
-      } else {
-        if (el.type === 'shape') {
-          // Colours are checked here too, since they go into SVG markup.
-          const stroke = color(el.line) || 'none';
-          const fill = el.shape === 'line' ? 'none' : (color(el.fill) || 'none');
-          div.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 100 100" preserveAspectRatio="none"><g fill="${fill}" stroke="${el.shape === 'line' ? (color(el.line) || theme().accent) : stroke}" stroke-width="${el.shape === 'line' ? 3 : 1.5}" vector-effect="non-scaling-stroke">${SHAPES[el.shape] ? SHAPES[el.shape]() : SHAPES.rect()}</g></svg>`);
-          div.querySelectorAll('svg *').forEach(n => n.setAttribute('vector-effect', 'non-scaling-stroke'));
-        }
-        const c = document.createElement('div');
-        c.className = 'content v-' + (el.valign || 'top');
-        c.innerHTML = el.html || '';
-        Object.assign(c.style, { fontSize: el.size + 'pt', color: textColor(el), textAlign: el.align || 'left', fontFamily: fontOf(el) });
-        if (el.ph === 'title') c.style.fontWeight = el.bold === false ? '400' : '';
-        if (el.type === 'table') div.style.setProperty('--tbl-accent', theme().accent);
-        if ((interactive || s.isLayout || s === pres.master) && el.type === 'text' && el.ph && !el.master) c.dataset.placeholder = PLACEHOLDER[el.ph];
-        else if (interactive && el.type === 'text') c.dataset.placeholder = 'Type here';
-        div.appendChild(c);
-      }
+      const div = buildEl(el, s, interactive);
+      if (!el.master) div.dataset.id = el.id;
       if (interactive && !el.master && el.anim && document.body.classList.contains('show-anims')) {
         const b = document.createElement('span');
         b.className = 'anim-badge';
         b.textContent = animNumber(s, el);
         div.appendChild(b);
       }
-      if (interactive && el.id === selectedId) {
+      if (interactive && (el.id === selectedId || extraSel.has(el.id))) {
         div.classList.add('selected');
         if (el.id === editingId) div.classList.add('editing');
-        ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].forEach(h => { const d = document.createElement('div'); d.className = 'handle ' + h; d.dataset.h = h; div.appendChild(d); });
+        if (el.id === selectedId && !extraSel.size && el.type !== 'connector') {
+          ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w', 'rot'].forEach(h => { const d = document.createElement('div'); d.className = 'handle ' + h; d.dataset.h = h; if (h === 'rot') d.title = 'Rotate (Shift: 15° steps)'; div.appendChild(d); });
+        }
       }
       container.appendChild(div);
     });
+  }
+  /** Where a connector's ends are: on the facing sides of the shapes it joins, else its own points. */
+  function connectorPoints(c, s) {
+    const box = id => s.elements.find(e => e.id === id && e.type !== 'connector');
+    const site = (e, side) => ({ n: [e.x + e.w / 2, e.y], s: [e.x + e.w / 2, e.y + e.h], w: [e.x, e.y + e.h / 2], e: [e.x + e.w, e.y + e.h / 2] }[side] || [e.x + e.w / 2, e.y + e.h / 2]);
+    const a = c.from && box(c.from.id), b = c.to && box(c.to.id);
+    let p1 = a ? site(a, c.from.site) : [c.x1, c.y1], p2 = b ? site(b, c.to.site) : [c.x2, c.y2];
+    if (a && b && (c.from.site === 'auto' || c.to.site === 'auto' || !c.from.site)) {
+      const sides = facingSides(a, b);
+      p1 = site(a, sides[0]); p2 = site(b, sides[1]);
+    }
+    return [p1, p2];
+  }
+  function facingSides(a, b) {
+    const dx = (b.x + b.w / 2) - (a.x + a.w / 2), dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+    return Math.abs(dx) >= Math.abs(dy) ? (dx >= 0 ? ['e', 'w'] : ['w', 'e']) : (dy >= 0 ? ['s', 'n'] : ['n', 's']);
+  }
+  /** The DOM for one element (and, for groups, their children). */
+  function buildEl(el, s, interactive) {
+    const div = document.createElement('div');
+    div.className = 'el ' + el.type + (el.master ? ' master-el' : '');
+    if (el.master) div.dataset.masterId = el.id;
+    if (el.type === 'connector') {
+      const [[x1, y1], [x2, y2]] = connectorPoints(el, s);
+      const pad = 12, minX = Math.min(x1, x2) - pad, minY = Math.min(y1, y2) - pad;
+      Object.assign(el, { x: Math.round(Math.min(x1, x2)), y: Math.round(Math.min(y1, y2)), w: Math.max(1, Math.round(Math.abs(x2 - x1))), h: Math.max(1, Math.round(Math.abs(y2 - y1))) });
+      Object.assign(div.style, { left: minX + 'px', top: minY + 'px', width: Math.abs(x2 - x1) + 2 * pad + 'px', height: Math.abs(y2 - y1) + 2 * pad + 'px' });
+      const lx1 = x1 - minX, ly1 = y1 - minY, lx2 = x2 - minX, ly2 = y2 - minY;
+      const horizontalFirst = Math.abs(x2 - x1) >= Math.abs(y2 - y1);
+      const d = el.kind === 'elbow'
+        ? (horizontalFirst ? `M${lx1},${ly1} H${(lx1 + lx2) / 2} V${ly2} H${lx2}` : `M${lx1},${ly1} V${(ly1 + ly2) / 2} H${lx2} V${ly2}`)
+        : `M${lx1},${ly1} L${lx2},${ly2}`;
+      const col = color(el.color) || theme().text, wd = num(el.width, 2, 0.5, 20);
+      const mk = `m${el.id}`;
+      div.innerHTML = `<svg width="100%" height="100%" overflow="visible"><defs><marker id="${mk}e" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="${col}"/></marker><marker id="${mk}s" markerWidth="10" markerHeight="10" refX="1" refY="5" orient="auto-start-reverse" markerUnits="userSpaceOnUse"><path d="M0,0 L10,5 L0,10 z" fill="${col}"/></marker></defs>`
+        + `<path class="conn-hit" d="${d}" fill="none" stroke="transparent" stroke-width="12"/><path d="${d}" fill="none" stroke="${col}" stroke-width="${wd}"${el.arrow === 'end' || el.arrow === 'both' ? ` marker-end="url(#${mk}e)"` : ''}${el.arrow === 'both' ? ` marker-start="url(#${mk}s)"` : ''}/></svg>`;
+      return div;
+    }
+    const flip = `${el.flipH ? ' scaleX(-1)' : ''}${el.flipV ? ' scaleY(-1)' : ''}`;
+    Object.assign(div.style, { left: el.x + 'px', top: el.y + 'px', width: el.w + 'px', height: el.h + 'px', transform: el.rot ? `rotate(${el.rot}deg)` : '' });
+    if (el.type === 'group') {
+      (el.children || []).forEach(ch => div.appendChild(buildEl(ch, s, false)));
+      return div;
+    }
+    if (el.type === 'media') {
+      if (el.kind === 'video') {
+        const v = document.createElement('video');
+        v.src = el.src; v.preload = 'metadata'; v.playsInline = true;
+        if (el.poster) v.poster = el.poster;
+        v.loop = !!el.loop;
+        v.className = 'media-video';
+        div.appendChild(v);
+      } else {
+        const a = document.createElement('audio');
+        a.src = el.src; a.preload = 'metadata'; a.loop = !!el.loop;
+        div.appendChild(a);
+        const icon = document.createElement('div');
+        icon.className = 'media-audio-icon';
+        icon.textContent = '🔊';
+        div.appendChild(icon);
+      }
+      if (interactive) { const tag = document.createElement('div'); tag.className = 'media-badge'; tag.textContent = (el.kind === 'video' ? '▶ Video' : '♪ Audio') + (el.autoplay ? ' · auto' : ''); div.appendChild(tag); }
+    } else if (el.type === 'image') {
+      const img = document.createElement('img');
+      img.src = el.src;
+      img.alt = '';
+      if (flip) img.style.transform = flip.trim();
+      div.appendChild(img);
+    } else {
+      if (el.type === 'shape') {
+        // Colours are checked here too, since they go into SVG markup.
+        const stroke = color(el.line) || 'none';
+        const fill = el.shape === 'line' ? 'none' : (color(el.fill) || 'none');
+        div.insertAdjacentHTML('afterbegin', `<svg viewBox="0 0 100 100" preserveAspectRatio="none"${flip ? ` style="transform:${flip.trim()}"` : ''}><g fill="${fill}" stroke="${el.shape === 'line' ? (color(el.line) || theme().accent) : stroke}" stroke-width="${el.shape === 'line' ? 3 : 1.5}" vector-effect="non-scaling-stroke">${SHAPES[el.shape] ? SHAPES[el.shape]() : SHAPES.rect()}</g></svg>`);
+        div.querySelectorAll('svg *').forEach(n => n.setAttribute('vector-effect', 'non-scaling-stroke'));
+      }
+      const c = document.createElement('div');
+      c.className = 'content v-' + (el.valign || 'top');
+      c.innerHTML = el.html || '';
+      Object.assign(c.style, { fontSize: el.size + 'pt', color: textColor(el), textAlign: el.align || 'left', fontFamily: fontOf(el) });
+      if (el.ph === 'title') c.style.fontWeight = el.bold === false ? '400' : '';
+      if (el.type === 'table') div.style.setProperty('--tbl-accent', theme().accent);
+      if ((interactive || s.isLayout || s === pres.master) && el.type === 'text' && el.ph && !el.master) c.dataset.placeholder = PLACEHOLDER[el.ph];
+      else if (interactive && el.type === 'text') c.dataset.placeholder = 'Type here';
+      div.appendChild(c);
+    }
+    return div;
   }
 
   function renderStage() {
@@ -548,19 +625,33 @@
 
   stage.addEventListener('mousedown', e => {
     const elDiv = e.target.closest('.el');
-    if (!elDiv) { commitEditing(); select(null); return; }
+    if (connectMode) { e.preventDefault(); connectClick(elDiv && elDiv.dataset.id); return; }
+    if (!elDiv) { commitEditing(); extraSel.clear(); select(null); return; }
     const id = elDiv.dataset.id;
+    if (!id) return;
+    // Shift/Ctrl+click adds or removes an object from the selection.
+    if ((e.shiftKey || e.ctrlKey || e.metaKey) && selectedId && id !== selectedId && !editingId) {
+      e.preventDefault();
+      if (extraSel.has(id)) extraSel.delete(id); else extraSel.add(id);
+      renderStage();
+      return;
+    }
+    if (extraSel.size && (extraSel.has(id) || id === selectedId) && !e.target.classList.contains('handle')) { e.preventDefault(); startMove(e, elById(id)); return; }
+    extraSel.clear();
     if (id === editingId && !e.target.classList.contains('handle')) return; // let the caret move
     const el = elById(id);
-    if (e.target.classList.contains('handle')) return startResize(e, el, e.target.dataset.h);
+    if (e.target.classList.contains('handle')) return e.target.dataset.h === 'rot' ? startRotate(e, el) : startResize(e, el, e.target.dataset.h);
     if (el.type === 'text' && !el.html && id !== editingId) { e.preventDefault(); startEditing(id); return; }
+    if (el.type === 'group' || el.type === 'connector') { e.preventDefault(); if (selectedId !== id) select(id); if (el.type === 'group' || !el.from) startMove(e, el); return; }
     e.preventDefault();
     if (selectedId !== id) select(id);
     startMove(e, el);
   });
   stage.addEventListener('dblclick', e => {
     const elDiv = e.target.closest('.el');
-    if (elDiv && elDiv.dataset.id !== editingId) startEditing(elDiv.dataset.id);
+    const el = elDiv && elById(elDiv.dataset.id);
+    if (!el || ['group', 'connector', 'image', 'media'].includes(el.type)) return;
+    if (elDiv.dataset.id !== editingId) startEditing(elDiv.dataset.id);
   });
 
   function clearGuides() { stage.querySelectorAll('.guide').forEach(g => g.remove()); }
@@ -574,7 +665,10 @@
     const sx = e.clientX, sy = e.clientY, ox = el.x, oy = el.y;
     let moved = false;
     const div = stage.querySelector(`[data-id="${el.id}"]`);
-    const others = slide().elements.filter(o => o.id !== el.id);
+    // Everything selected moves together; connectors follow their shapes.
+    const group = [el, ...[...extraSel].map(elById).filter(x => x && x !== el)];
+    const start = group.map(x => ({ x, ox: x.x, oy: x.y, pts: x.type === 'connector' ? [x.x1, x.y1, x.x2, x.y2] : null, div: stage.querySelector(`[data-id="${x.id}"]`) }));
+    const others = slide().elements.filter(o => !group.includes(o) && o.type !== 'connector');
     const mv = ev => {
       let nx = ox + (ev.clientX - sx) / scale();
       let ny = oy + (ev.clientY - sy) / scale();
@@ -592,8 +686,15 @@
           for (const [edge, off] of [[ny, 0], [ny + el.h / 2, el.h / 2], [ny + el.h, el.h]]) if (Math.abs(edge - t) < 6) { ny = t - off; guide(false, t); break; }
         }
       }
-      el.x = Math.round(nx); el.y = Math.round(ny);
-      div.style.left = el.x + 'px'; div.style.top = el.y + 'px';
+      const dx = Math.round(nx) - ox, dy = Math.round(ny) - oy;
+      start.forEach(o => {
+        // An unattached connector end moves with the drag; an attached end stays on its shape.
+        if (o.pts) { if (!o.x.from) { o.x.x1 = o.pts[0] + dx; o.x.y1 = o.pts[1] + dy; } if (!o.x.to) { o.x.x2 = o.pts[2] + dx; o.x.y2 = o.pts[3] + dy; } return; }
+        o.x.x = o.ox + dx; o.x.y = o.oy + dy;
+        if (o.div) { o.div.style.left = o.x.x + 'px'; o.div.style.top = o.x.y + 'px'; }
+      });
+      if (div && el.type !== 'connector') { div.style.left = el.x + 'px'; div.style.top = el.y + 'px'; }
+      if (hasConnectors() || el.type === 'connector') renderStage();
     };
     const up = () => {
       document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up);
@@ -602,10 +703,31 @@
     };
     document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
   }
+  const hasConnectors = () => slide().elements.some(x => x.type === 'connector');
+  /** Drag the round handle above an object to turn it; Shift snaps to 15°, and it settles on right angles. */
+  function startRotate(e, el) {
+    e.preventDefault(); e.stopPropagation();
+    snapshot();
+    const r = stage.getBoundingClientRect(), k = scale();
+    const cx = r.left + (el.x + el.w / 2) * k, cy = r.top + (el.y + el.h / 2) * k;
+    const div = stage.querySelector(`[data-id="${el.id}"]`);
+    const mv = ev => {
+      let a = Math.atan2(ev.clientY - cy, ev.clientX - cx) * 180 / Math.PI + 90;
+      if (ev.shiftKey) a = Math.round(a / 15) * 15;
+      else { const near = Math.round(a / 90) * 90; if (Math.abs(a - near) < 3) a = near; }
+      a = ((Math.round(a) % 360) + 540) % 360 - 180;
+      el.rot = a || 0;
+      if (!el.rot) delete el.rot;
+      div.style.transform = el.rot ? `rotate(${el.rot}deg)` : '';
+    };
+    const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); renderStage(); state.markDirty(); refreshThumbSoon(); };
+    document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
+  }
   function startResize(e, el, h) {
     e.preventDefault(); e.stopPropagation();
     snapshot();
     const sx = e.clientX, sy = e.clientY, o = { x: el.x, y: el.y, w: el.w, h: el.h };
+    const kids = el.type === 'group' ? JSON.parse(JSON.stringify(el.children)) : null;
     const ratio = o.w / o.h;
     const div = stage.querySelector(`[data-id="${el.id}"]`);
     const mv = ev => {
@@ -622,7 +744,10 @@
       }
       el.w = Math.max(10, Math.round(w)); el.h = Math.max(10, Math.round(hh));
       el.x = Math.round(x); el.y = Math.round(y);
+      // A group scales what is inside it.
+      if (kids) { const fx = el.w / o.w, fy = el.h / o.h; const scaleKids = (list, src) => list.forEach((c, i) => { const s0 = src[i]; c.x = Math.round(s0.x * fx); c.y = Math.round(s0.y * fy); c.w = Math.max(1, Math.round(s0.w * fx)); c.h = Math.max(1, Math.round(s0.h * fy)); }); scaleKids(el.children, kids); renderStage(); return; }
       Object.assign(div.style, { left: el.x + 'px', top: el.y + 'px', width: el.w + 'px', height: el.h + 'px' });
+      if (hasConnectors()) renderStage();
     };
     const up = () => { document.removeEventListener('mousemove', mv); document.removeEventListener('mouseup', up); state.markDirty(); refreshThumbSoon(); };
     document.addEventListener('mousemove', mv); document.addEventListener('mouseup', up);
@@ -648,14 +773,18 @@
       return;
     }
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteElement(); }
-    else if (e.key === 'Escape') select(null);
+    else if (e.key === 'Escape') { extraSel.clear(); select(null); }
+    else if (mod && e.key.toLowerCase() === 'g') { e.preventDefault(); if (e.shiftKey) ungroup(); else groupSelected(); }
     else if (e.key === 'Enter' || e.key === 'F2') { e.preventDefault(); startEditing(el.id); }
     else if (/^Arrow/.test(e.key)) {
       e.preventDefault();
       snapshot();
       const d = e.shiftKey ? 10 : 1;
-      if (e.key === 'ArrowLeft') el.x -= d; if (e.key === 'ArrowRight') el.x += d;
-      if (e.key === 'ArrowUp') el.y -= d; if (e.key === 'ArrowDown') el.y += d;
+      [el, ...[...extraSel].map(elById).filter(Boolean)].forEach(x => {
+        if (x.type === 'connector') return;
+        if (e.key === 'ArrowLeft') x.x -= d; if (e.key === 'ArrowRight') x.x += d;
+        if (e.key === 'ArrowUp') x.y -= d; if (e.key === 'ArrowDown') x.y += d;
+      });
       renderStage(); refreshThumbSoon(); state.markDirty();
     } else if (mod && e.key.toLowerCase() === 'd') { e.preventDefault(); duplicateElement(); }
     else if (mod && e.key.toLowerCase() === 'c') { elClipboard = JSON.parse(JSON.stringify(el)); }
@@ -663,7 +792,7 @@
     else if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); wholeBox('bold'); }
     else if (mod && e.key.toLowerCase() === 'i') { e.preventDefault(); wholeBox('italic'); }
     else if (mod && e.key.toLowerCase() === 'u') { e.preventDefault(); wholeBox('underline'); }
-    else if (e.key.length === 1 && !mod && !e.altKey && el.type !== 'image') {
+    else if (e.key.length === 1 && !mod && !e.altKey && !['image', 'media', 'group', 'connector'].includes(el.type)) {
       // Typing on a selected box replaces its text, like PowerPoint.
       e.preventDefault();
       snapshot();
@@ -695,7 +824,16 @@
   function deleteElement() {
     if (!selectedId) return;
     snapshot();
-    slide().elements = slide().elements.filter(e => e.id !== selectedId);
+    const gone = new Set([selectedId, ...extraSel]);
+    // Connectors to deleted shapes stay where they were, unattached.
+    slide().elements.forEach(c => {
+      if (c.type !== 'connector' || gone.has(c.id)) return;
+      const [[x1, y1], [x2, y2]] = connectorPoints(c, slide());
+      if (c.from && gone.has(c.from.id)) { delete c.from; c.x1 = x1; c.y1 = y1; }
+      if (c.to && gone.has(c.to.id)) { delete c.to; c.x2 = x2; c.y2 = y2; }
+    });
+    slide().elements = slide().elements.filter(e => !gone.has(e.id));
+    extraSel.clear();
     selectedId = editingId = null;
     renderStage(); refreshThumbSoon(); state.markDirty();
   }
@@ -709,6 +847,72 @@
     selectedId = c.id;
     renderStage(); refreshThumbSoon(); state.markDirty();
   }
+  // ---------- Group, rotate, flip ----------
+  function groupSelected() {
+    const items = [selectedId, ...extraSel].map(elById).filter(x => x && x.type !== 'connector');
+    if (items.length < 2) return UI.toast('Select two or more objects (Shift+click) to group them');
+    snapshot();
+    const x = Math.min(...items.map(i => i.x)), y = Math.min(...items.map(i => i.y));
+    const g = { id: newId(), type: 'group', x, y, w: Math.max(...items.map(i => i.x + i.w)) - x, h: Math.max(...items.map(i => i.y + i.h)) - y,
+      children: items.map(i => ({ ...i, x: i.x - x, y: i.y - y })) };
+    const list = slide().elements;
+    const at = Math.max(...items.map(i => list.indexOf(i)));
+    list.splice(at + 1, 0, g);
+    // Connectors pointing at grouped shapes now point at the group.
+    const ids = new Set(items.map(i => i.id));
+    list.forEach(c => { if (c.type === 'connector') ['from', 'to'].forEach(k => { if (c[k] && ids.has(c[k].id)) c[k].id = g.id; }); });
+    slide().elements = list.filter(e => !items.includes(e));
+    extraSel.clear(); selectedId = g.id;
+    renderStage(); refreshThumbSoon(); state.markDirty();
+  }
+  function ungroup() {
+    const g = selectedId && elById(selectedId);
+    if (!g || g.type !== 'group') return UI.toast('Select a group to ungroup');
+    snapshot();
+    const list = slide().elements, at = list.indexOf(g);
+    const cx = g.x + g.w / 2, cy = g.y + g.h / 2, rad = (g.rot || 0) * Math.PI / 180;
+    const kids = g.children.map(c => {
+      // Keep each child where it appears when the group is turned.
+      let nx = g.x + c.x, ny = g.y + c.y;
+      if (g.rot) { const ox = nx + c.w / 2 - cx, oy = ny + c.h / 2 - cy; nx = cx + ox * Math.cos(rad) - oy * Math.sin(rad) - c.w / 2; ny = cy + ox * Math.sin(rad) + oy * Math.cos(rad) - c.h / 2; }
+      const out = { ...c, id: newId(), x: Math.round(nx), y: Math.round(ny) };
+      if (g.rot) out.rot = (((c.rot || 0) + g.rot + 540) % 360) - 180 || undefined;
+      return out;
+    });
+    list.splice(at, 1, ...kids);
+    selectedId = kids[0].id; extraSel.clear(); kids.slice(1).forEach(k => extraSel.add(k.id));
+    renderStage(); refreshThumbSoon(); state.markDirty();
+  }
+  document.getElementById('groupEls').addEventListener('click', groupSelected);
+  document.getElementById('ungroupEls').addEventListener('click', ungroup);
+  document.getElementById('rotRight').addEventListener('click', () => withSelected(el => { el.rot = ((((el.rot || 0) + 90) + 540) % 360) - 180; if (!el.rot) delete el.rot; }));
+  document.getElementById('rotLeft').addEventListener('click', () => withSelected(el => { el.rot = ((((el.rot || 0) - 90) + 540) % 360) - 180; if (!el.rot) delete el.rot; }));
+  document.getElementById('flipH').addEventListener('click', () => withSelected(el => { el.flipH = !el.flipH; if (!el.flipH) delete el.flipH; }));
+  document.getElementById('flipV').addEventListener('click', () => withSelected(el => { el.flipV = !el.flipV; if (!el.flipV) delete el.flipV; }));
+
+  // ---------- Connectors ----------
+  let connectMode = null; // { kind, from }
+  document.querySelectorAll('[data-connector]').forEach(b => b.addEventListener('click', () => {
+    commitEditing();
+    connectMode = { kind: b.dataset.connector, from: null };
+    document.body.classList.add('connecting');
+    UI.toast('Click the shape to connect from (Esc to cancel)', 3000);
+  }));
+  function connectClick(id) {
+    const el = id && elById(id);
+    if (!el || el.type === 'connector') { UI.toast('Click a shape'); return; }
+    if (!connectMode.from) { connectMode.from = id; UI.toast('Now click the shape to connect to', 3000); return; }
+    if (id === connectMode.from) return;
+    snapshot();
+    const c = { id: newId(), type: 'connector', kind: connectMode.kind, arrow: 'end', from: { id: connectMode.from, site: 'auto' }, to: { id, site: 'auto' }, width: 2, x: 0, y: 0, w: 1, h: 1 };
+    slide().elements.push(c);
+    endConnect();
+    selectedId = c.id;
+    renderStage(); refreshThumbSoon(); state.markDirty();
+  }
+  function endConnect() { connectMode = null; document.body.classList.remove('connecting'); }
+  document.addEventListener('keydown', e => { if (connectMode && e.key === 'Escape') { endConnect(); UI.toast('Connector cancelled'); } });
+
   document.getElementById('delEl').addEventListener('click', deleteElement);
   document.getElementById('dupEl').addEventListener('click', duplicateElement);
   document.getElementById('toFront').addEventListener('click', () => reorder(1));
@@ -1409,8 +1613,15 @@
       const bgFrom = [s, L, !s.hideMaster && pres.master].find(x => x && (x.bg || x.bgImage)) || {};
       if (bgFrom.bgImage) ps.background = { data: bgFrom.bgImage };
       else ps.background = { color: hex(bgFrom.bg || theme().bg) };
-      for (const el of [...masterItems(s), ...s.elements]) {
-        const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: (el.master ? 'atlas-master-' : 'atlas-') + el.id };
+      for (const el of [...masterItems(s), ...s.elements.flatMap(e => flattenGroup(e))]) {
+        if (el.type === 'connector') {
+          // A line now; addTimingToPptx turns it into a PowerPoint connector joined to its shapes.
+          const [[x1, y1], [x2, y2]] = connectorPoints(el, s);
+          ps.addShape(pptx.ShapeType.line, { x: inch(Math.min(x1, x2)), y: inch(Math.min(y1, y2)), w: inch(Math.max(1, Math.abs(x2 - x1))), h: inch(Math.max(1, Math.abs(y2 - y1))), flipH: x2 < x1, flipV: y2 < y1, objectName: 'atlas-' + el.id,
+            line: { color: hex(el.color || theme().text), width: (el.width || 2) * 0.75, endArrowType: el.arrow !== 'none' ? 'triangle' : undefined, beginArrowType: el.arrow === 'both' ? 'triangle' : undefined } });
+          continue;
+        }
+        const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: (el.master ? 'atlas-master-' : 'atlas-') + el.id, ...(el.flipH ? { flipH: true } : {}), ...(el.flipV ? { flipV: true } : {}) };
         if (el.type === 'image') { ps.addImage({ data: el.src, ...box }); continue; }
         if (el.type === 'media') { ps.addMedia({ type: el.kind, data: el.src, cover: el.poster ? await asPng(el.poster) : (el.kind === 'audio' ? AUDIO_ICON() : undefined), ...box }); continue; }
         if (el.type === 'table') {
@@ -1431,7 +1642,7 @@
           const shapeOpts = { ...textOpts, shape: pptx.ShapeType[type] || type };
           if (el.fill && el.shape !== 'line') shapeOpts.fill = { color: hex(el.fill) };
           if (el.line || el.shape === 'line') shapeOpts.line = { color: hex(el.line || theme().accent), width: el.shape === 'line' ? 2.25 : 1 };
-          if (el.shape === 'line') { shapeOpts.flipV = true; }
+          if (el.shape === 'line') { shapeOpts.flipV = !el.flipV; }
           ps.addText(el.html ? htmlToRuns(el.html) : '', shapeOpts);
           continue;
         }
@@ -1447,7 +1658,12 @@
   async function addTimingToPptx(bytes) {
     const zip = await JSZip.loadAsync(bytes);
     // The master, layouts and theme go in a custom document property so Atlas can restore them exactly.
-    const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({ layout: sl.layout, hideMaster: !!sl.hideMaster, media: Object.fromEntries(sl.elements.filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])) })) });
+    const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({
+      layout: sl.layout, hideMaster: !!sl.hideMaster,
+      media: Object.fromEntries(sl.elements.flatMap(e => flattenGroup(e)).filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])),
+      groups: sl.elements.filter(e => e.type === 'group').map(groupMeta),
+      connectors: Object.fromEntries(sl.elements.filter(e => e.type === 'connector').map(c => [c.id, { kind: c.kind, arrow: c.arrow, color: c.color || null, width: c.width, from: c.from || null, to: c.to || null }]))
+    })) });
     const xmlEsc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     zip.file('docProps/custom.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="AtlasSlidesMeta"><vt:lpwstr>${xmlEsc(meta)}</vt:lpwstr></property></Properties>`);
     const ct = await zip.file('[Content_Types].xml').async('string');
@@ -1468,6 +1684,30 @@
         const audioIds = new Set([...rels.matchAll(/<Relationship Id="([^"]+)" Type="[^"]*\/relationships\/audio"/g)].map(m => m[1]));
         xml = xml.replace(/<a:videoFile r:link="([^"]+)"\/>/g, (all, id) => (audioIds.has(id) ? `<a:audioFile r:link="${id}"/>` : all));
       }
+      // Connectors: PowerPoint connectors joined to the shapes' connection sites.
+      for (const c of s.elements.filter(e => e.type === 'connector')) {
+        const site = (id, side) => {
+          const t = s.elements.flatMap(e => flattenGroup(e)).find(e => e.id === id);
+          const k = t && t.type === 'shape' && t.shape === 'ellipse' ? { n: 0, w: 2, s: 4, e: 6 } : { n: 0, w: 1, s: 2, e: 3 };
+          return k[side];
+        };
+        const sides = c.from && c.to ? facingSides(s.elements.find(e => e.id === c.from.id) || {}, s.elements.find(e => e.id === c.to.id) || {}) : [];
+        // A connector joined to a group links to the group's child nearest that end.
+        const [[px1, py1], [px2, py2]] = connectorPoints(c, s);
+        const target = (end, x, y) => {
+          const t = end && s.elements.find(e => e.id === end.id);
+          if (!t || t.type !== 'group') return end;
+          const kids = flattenGroup(t);
+          const best = kids.reduce((a, k) => (Math.hypot(k.x + k.w / 2 - x, k.y + k.h / 2 - y) < Math.hypot(a.x + a.w / 2 - x, a.y + a.h / 2 - y) ? k : a), kids[0]);
+          return { id: best.id, site: end.site };
+        };
+        const link = (tag, end0, side, x, y) => { const end = target(end0, x, y); return end && ids[end.id] ? `<a:${tag} id="${ids[end.id]}" idx="${site(end.id, end.site === 'auto' ? side : end.site)}"/>` : ''; };
+        xml = xml.replace(new RegExp(`<p:sp>((?:(?!<p:sp>)[\\s\\S])*?<p:cNvPr id="(\\d+)" name="atlas-${c.id}"[\\s\\S]*?)</p:sp>`), (all, body) => {
+          const spPr = (body.match(/<p:spPr>[\s\S]*?<\/p:spPr>/) || [''])[0].replace(/prst="line"/, `prst="${c.kind === 'elbow' ? 'bentConnector3' : 'straightConnector1'}"`);
+          const nv = (body.match(/<p:cNvPr [^>]*\/>|<p:cNvPr [^>]*>[\s\S]*?<\/p:cNvPr>/) || [''])[0];
+          return `<p:cxnSp><p:nvCxnSpPr>${nv}<p:cNvCxnSpPr>${link('stCxn', c.from, sides[0], px1, py1)}${link('endCxn', c.to, sides[1], px2, py2)}</p:cNvCxnSpPr><p:nvPr/></p:nvCxnSpPr>${spPr}</p:cxnSp>`;
+        });
+      }
       const extra = SlidesAnim.transitionXml(s) + SlidesAnim.timingXml(s, el => ids[el.id]);
       if (!extra) { zip.file(path, xml); continue; }
       xml = xml.includes('</p:clrMapOvr>') ? xml.replace('</p:clrMapOvr>', '</p:clrMapOvr>' + extra) : xml.replace('</p:cSld>', '</p:cSld>' + extra);
@@ -1476,6 +1716,48 @@
     return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
   }
 
+  /** A group's children with slide coordinates (turned with the group), for formats without groups. */
+  function flattenGroup(el, parent) {
+    if (el.type !== 'group') return [parent ? el : el];
+    const cx = el.x + el.w / 2, cy = el.y + el.h / 2, rad = (el.rot || 0) * Math.PI / 180;
+    return el.children.flatMap(c => {
+      let nx = el.x + c.x, ny = el.y + c.y;
+      if (el.rot) { const ox = nx + c.w / 2 - cx, oy = ny + c.h / 2 - cy; nx = cx + ox * Math.cos(rad) - oy * Math.sin(rad) - c.w / 2; ny = cy + ox * Math.sin(rad) + oy * Math.cos(rad) - c.h / 2; }
+      const abs = { ...c, x: Math.round(nx), y: Math.round(ny), ...(el.rot ? { rot: ((((c.rot || 0) + el.rot) + 540) % 360) - 180 } : {}), ...(el.anim && !c.anim ? {} : {}) };
+      return flattenGroup(abs, el);
+    });
+  }
+  /** Groups as {id, x, y, w, h, rot, kids: [id | group]} for the Atlas metadata in .pptx. */
+  const groupMeta = g => ({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0, anim: g.anim || null, kids: g.children.map(c => (c.type === 'group' ? groupMeta(c) : c.id)) });
+  /** Rebuilds groups from that metadata out of the flattened elements Atlas wrote (matched by shape name). */
+  function regroup(sl, metas) {
+    const byName = new Map(sl.elements.filter(e => e.atlasName).map(e => [e.atlasName, e]));
+    const build = m => {
+      const kids = m.kids.map(k => (typeof k === 'string' ? byName.get(k) : build(k))).filter(Boolean);
+      if (!kids.length) return null;
+      const g = { id: newId(), type: 'group', x: m.x, y: m.y, w: m.w, h: m.h, atlasName: m.id, ...(m.rot ? { rot: m.rot } : {}), ...(m.anim ? { anim: m.anim } : {}) };
+      const cx = g.x + g.w / 2, cy = g.y + g.h / 2, rad = -(g.rot || 0) * Math.PI / 180;
+      g.children = kids.map(c => {
+        let nx = c.x, ny = c.y;
+        if (g.rot) { const ox = nx + c.w / 2 - cx, oy = ny + c.h / 2 - cy; nx = cx + ox * Math.cos(rad) - oy * Math.sin(rad) - c.w / 2; ny = cy + ox * Math.sin(rad) + oy * Math.cos(rad) - c.h / 2; }
+        const out = { ...c, x: Math.round(nx - g.x), y: Math.round(ny - g.y) };
+        if (g.rot) { out.rot = ((((c.rot || 0) - g.rot) + 540) % 360) - 180; if (!out.rot) delete out.rot; }
+        return out;
+      });
+      return g;
+    };
+    (Array.isArray(metas) ? metas : []).forEach(m => {
+      if (!m || !Array.isArray(m.kids)) return;
+      const g = build(m);
+      if (!g) return;
+      const members = new Set();
+      const collect = mm => mm.kids.forEach(k => (typeof k === 'string' ? members.add(k) : collect(k)));
+      collect(m);
+      const at = sl.elements.findIndex(e => members.has(e.atlasName));
+      sl.elements = sl.elements.filter(e => !members.has(e.atlasName));
+      sl.elements.splice(Math.max(0, at), 0, g);
+    });
+  }
   /** PptxGenJS stores a media cover as .png whatever it is, so convert other pictures first. */
   function asPng(url) {
     if (/^data:image\/png/i.test(url)) return Promise.resolve(url);
@@ -1554,7 +1836,7 @@
     const xfrmBox = node => {
       const x = [...node.getElementsByTagNameNS(A, 'xfrm')].find(e => e.parentNode && /spPr|grpSpPr/.test(e.parentNode.localName)) || node.getElementsByTagNameNS(P, 'xfrm')[0] || node.getElementsByTagNameNS(A, 'xfrm')[0];
       const off = x && x.getElementsByTagNameNS(A, 'off')[0], ext = x && x.getElementsByTagNameNS(A, 'ext')[0];
-      return off && ext ? { x: +off.getAttribute('x'), y: +off.getAttribute('y'), w: +ext.getAttribute('cx'), h: +ext.getAttribute('cy'), rot: (+x.getAttribute('rot') || 0) / 60000 } : null;
+      return off && ext ? { x: +off.getAttribute('x'), y: +off.getAttribute('y'), w: +ext.getAttribute('cx'), h: +ext.getAttribute('cy'), rot: (+x.getAttribute('rot') || 0) / 60000, flipH: x.getAttribute('flipH') === '1', flipV: x.getAttribute('flipV') === '1' } : null;
     };
     const lvl1Size = el => { const d = el && [...el.getElementsByTagNameNS(A, 'lvl1pPr')].map(l => l.getElementsByTagNameNS(A, 'defRPr')[0]).find(Boolean); return d && d.getAttribute('sz') ? +d.getAttribute('sz') / 100 : null; };
     /** Inheritance context for a slide (or the master/layout itself): where placeholders sit and their text size. */
@@ -1618,6 +1900,14 @@
         const el = await importShape(node, zip, path, rels, ctx);
         if (el) slide_push(s, el);
       }
+      // Connectors joined to shapes on this slide.
+      s.elements.forEach(c => {
+        if (c.type !== 'connector') return;
+        const a = c.stId && spids.get(c.stId), b = c.enId && spids.get(c.enId);
+        if (a && a.type !== 'connector') c.from = { id: a.id, site: 'auto' };
+        if (b && b.type !== 'connector') c.to = { id: b.id, site: 'auto' };
+        delete c.stId; delete c.enId;
+      });
       // The layout as an Atlas layout, so new slides can use it.
       if (layoutPath) {
         if (!layoutsSeen.has(layoutPath)) {
@@ -1682,22 +1972,54 @@
         const g = (tag, a) => { const e = x && x.getElementsByTagNameNS(A, tag)[0]; return e ? +e.getAttribute(a) : 0; };
         const off = { x: g('off', 'x'), y: g('off', 'y') }, ext = { w: g('ext', 'cx'), h: g('ext', 'cy') }, chOff = { x: g('chOff', 'x'), y: g('chOff', 'y') }, chExt = { w: g('chExt', 'cx') || ext.w, h: g('chExt', 'cy') || ext.h };
         const kx = chExt.w ? ext.w / chExt.w : 1, ky = chExt.h ? ext.h / chExt.h : 1;
-        const tf = b => ctx.tf({ x: off.x + (b.x - chOff.x) * kx, y: off.y + (b.y - chOff.y) * ky, w: b.w * kx, h: b.h * ky, rot: b.rot });
+        const tf = b => ctx.tf({ x: off.x + (b.x - chOff.x) * kx, y: off.y + (b.y - chOff.y) * ky, w: b.w * kx, h: b.h * ky, rot: b.rot, flipH: b.flipH, flipV: b.flipV });
         const out = [];
         for (const child of [...node.children]) { const e = await importShape(child, zipF, path, rels, { ...ctx, tf }, keepEmpty); if (e) out.push(...[].concat(e)); }
-        return out;
+        if (keepEmpty || out.length < 2) return out; // layouts and the master keep their shapes loose
+        // A group: its box in slide pixels, children relative to it.
+        const gb = ctx.tf({ x: off.x, y: off.y, w: ext.w, h: ext.h });
+        const gpx = Math.round(gb.x / EMU * sx), gpy = Math.round(gb.y / EMU * sy);
+        const grp = { id: newId(), type: 'group', x: gpx, y: gpy, w: Math.round(gb.w / EMU * sx), h: Math.round(gb.h / EMU * sy), children: out.filter(c => c.type !== 'connector').map(c => ({ ...c, x: c.x - gpx, y: c.y - gpy })) };
+        const grot = x ? (+x.getAttribute('rot') || 0) / 60000 : 0;
+        if (grot) grp.rot = grot;
+        const gnv = node.getElementsByTagNameNS(P, 'cNvPr')[0];
+        if (gnv && gnv.getAttribute('id')) spids.set(gnv.getAttribute('id'), grp);
+        return [grp, ...out.filter(c => c.type === 'connector')];
       }
       if (!['sp', 'cxnSp', 'pic', 'graphicFrame'].includes(ln)) return null;
       const nv = node.getElementsByTagNameNS(P, 'cNvPr')[0];
       const spid = nv ? nv.getAttribute('id') : null;
       if (nv && /^atlas-master-/.test(nv.getAttribute('name') || '')) return null; // drawn from the master Atlas saved
-      const tag = el => { if (el && spid) spids.set(spid, el); return el; };
+      const nm = (nv && nv.getAttribute('name')) || '';
+      const tag = el => { if (el && spid) spids.set(spid, el); if (el && /^atlas-/.test(nm)) el.atlasName = nm.slice(6); if (el && raw && raw.flipH && el.type !== 'connector') el.flipH = true; if (el && raw && raw.flipV && el.type !== 'connector') el.flipV = true; return el; };
       const phInfo = phOf(node);
       let phType = phInfo ? phInfo.type : null;
       const phIdx = phInfo ? phInfo.idx : null;
       // Footer placeholders on a slide are ordinary text there.
       if (['dt', 'ftr', 'sldNum', 'hdr'].includes(phType) && !keepEmpty) phType = null;
       let raw = xfrmBox(node) || (phInfo && ctx.phBox(phInfo.type, phIdx));
+      // Connectors: their ends come from the box and its flips; joined shapes are linked after the slide is read.
+      if (ln === 'cxnSp' && raw) {
+        const r2 = ctx.tf(raw);
+        const px = v => v / EMU;
+        const X = r2.x / EMU * sx, Y = r2.y / EMU * sy, Wd = r2.w / EMU * sx, Ht = r2.h / EMU * sy;
+        const spPr0 = node.getElementsByTagNameNS(P, 'spPr')[0];
+        const prst0 = (spPr0 && spPr0.getElementsByTagNameNS(A, 'prstGeom')[0] || { getAttribute: () => '' }).getAttribute('prst') || '';
+        const lnEl = spPr0 && spPr0.getElementsByTagNameNS(A, 'ln')[0];
+        const endType = n => { const e = lnEl && lnEl.getElementsByTagNameNS(A, n)[0]; return e && e.getAttribute('type') && e.getAttribute('type') !== 'none'; };
+        const c = {
+          id: newId(), type: 'connector', kind: /bent|elbow/i.test(prst0) ? 'elbow' : 'straight', arrow: endType('tailEnd') ? (endType('headEnd') ? 'both' : 'end') : (endType('headEnd') ? 'end' : 'none'),
+          x1: Math.round(X + (raw.flipH ? Wd : 0)), y1: Math.round(Y + (raw.flipV ? Ht : 0)), x2: Math.round(X + (raw.flipH ? 0 : Wd)), y2: Math.round(Y + (raw.flipV ? 0 : Ht)),
+          width: lnEl && lnEl.getAttribute('w') ? Math.max(0.5, Math.round(px(+lnEl.getAttribute('w')) * 10) / 10) : 2, x: 0, y: 0, w: 1, h: 1
+        };
+        if (endType('headEnd') && !endType('tailEnd')) { [c.x1, c.x2] = [c.x2, c.x1]; [c.y1, c.y2] = [c.y2, c.y1]; }
+        const col = lnEl && colorOf(lnEl);
+        if (col) c.color = col;
+        const st = node.getElementsByTagNameNS(A, 'stCxn')[0], en = node.getElementsByTagNameNS(A, 'endCxn')[0];
+        if (st) c.stId = st.getAttribute('id');
+        if (en) c.enId = en.getAttribute('id');
+        return tag(c);
+      }
       let box;
       if (raw) {
         raw = ctx.tf(raw);
@@ -1734,8 +2056,12 @@
       const prst = geom ? geom.getAttribute('prst') : null;
       const fillNode = spPr && [...spPr.children].find(c => c.localName === 'solidFill');
       const lnNode = spPr && spPr.getElementsByTagNameNS(A, 'ln')[0];
-      const fill = fillNode ? colorOf(fillNode) : null;
-      const line = lnNode && !lnNode.getElementsByTagNameNS(A, 'noFill')[0] ? colorOf(lnNode) : null;
+      // Shapes drawn with PowerPoint's default style take their colours from <p:style> theme references.
+      const styleEl = [...node.children].find(c => c.localName === 'style');
+      const styleRef = name => { const r = styleEl && [...styleEl.children].find(c => c.localName === name); return r && +r.getAttribute('idx') > 0 ? colorOf(r) : null; };
+      const noFill = spPr && [...spPr.children].some(c => c.localName === 'noFill');
+      const fill = fillNode ? colorOf(fillNode) : noFill ? null : styleRef('fillRef');
+      const line = lnNode && lnNode.getElementsByTagNameNS(A, 'noFill')[0] ? null : (lnNode && colorOf(lnNode)) || styleRef('lnRef');
       const txBody = node.getElementsByTagNameNS(P, 'txBody')[0];
       let html = '', size = ctx.inheritSize(phType, phIdx) || (phType && /title/i.test(phType) ? 40 : 18), align = 'left', valign = 'top';
       if (txBody) {
@@ -1825,6 +2151,16 @@
         slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true;
         // Playback options, matched by the shape names Atlas wrote.
         if (m.media && typeof m.media === 'object') slides[i].elements.forEach(e => { const o = e.type === 'media' && e.atlasName && Object.hasOwn(m.media, e.atlasName) ? m.media[e.atlasName] : null; if (o) ['autoplay', 'loop', 'hideIcon'].forEach(k => { e[k] = o[k] === true; }); });
+        if (m.connectors && typeof m.connectors === 'object') slides[i].elements.forEach(e => {
+          const o = e.type === 'connector' && e.atlasName && Object.hasOwn(m.connectors, e.atlasName) ? m.connectors[e.atlasName] : null;
+          if (!o) return;
+          Object.assign(e, { kind: o.kind, arrow: o.arrow, width: o.width, ...(o.color ? { color: o.color } : {}) });
+          ['from', 'to'].forEach(k => { if (o[k]) e[k] = { id: o[k].id, site: o[k].site }; });
+        });
+        regroup(slides[i], m.groups);
+        // Connector ends named by Atlas ids: point them at the reopened elements.
+        const byName = new Map(slides[i].elements.filter(e => e.atlasName).map(e => [e.atlasName, e.id]));
+        slides[i].elements.forEach(e => { if (e.type === 'connector') ['from', 'to'].forEach(k => { if (e[k] && byName.has(e[k].id)) e[k] = { ...e[k], id: byName.get(e[k].id) }; else if (e[k] && !slides[i].elements.some(x => x.id === e[k].id)) delete e[k]; }); });
       });
       return cleanPres({ theme: meta.theme, customTheme: meta.customTheme, master: meta.master, layouts: meta.layouts, slides });
     }
