@@ -35,7 +35,7 @@
   const isErr = v => v instanceof FormulaError;
 
   // ---------- Tokenizer ----------
-  const TOKEN_RE = /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|("(?:[^"]|"")*")|((?:'(?:[^']|'')+'|[A-Za-z_][\w.]*)!\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)|(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)(?![\w(])|([A-Za-z_][\w.]*)|(<>|<=|>=|[-+*/^&=<>%(),:;]))/y;
+  const TOKEN_RE = /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|("(?:[^"]|"")*")|((?:'(?:[^']|'')+'|[A-Za-z_][\w.]*)!\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)|(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)(?![\w(\[])|((?:[A-Za-z_][\w.]*)?\[(?:[^\[\]']|'.|\[(?:[^\[\]']|'.)*\])*\])|([A-Za-z_][\w.]*)|(<>|<=|>=|[-+*/^&=<>%(),:;]))/y;
 
   function tokenize(src) {
     const tokens = [];
@@ -54,11 +54,12 @@
         if (src[pos] === '#') { pos++; tokens.push({ t: 'ref', v: m[3] || m[4], spill: true }); }
         else tokens.push({ t: 'ref', v: m[3] || m[4] });
       }
-      else if (m[5] !== undefined) {
-        const up = m[5].toUpperCase();
+      else if (m[5] !== undefined) tokens.push({ t: 'sref', v: m[5] });
+      else if (m[6] !== undefined) {
+        const up = m[6].toUpperCase();
         if (up === 'TRUE' || up === 'FALSE') tokens.push({ t: 'bool', v: up === 'TRUE' });
         else tokens.push({ t: 'name', v: up });
-      } else tokens.push({ t: 'op', v: m[6] === ';' ? ',' : m[6] });
+      } else tokens.push({ t: 'op', v: m[7] === ';' ? ',' : m[7] });
     }
     return tokens;
   }
@@ -85,6 +86,7 @@
         if (n.k !== 'ref') throw ERR.ERROR;
         return { ...n, k: 'spill' };
       }
+      if (t.t === 'sref') return { k: 'tref', ...parseStructured(t.v) };
       if (t.t === 'name') {
         if (peek() && peek().t === 'op' && peek().v === '(') {
           next();
@@ -126,6 +128,45 @@
     const ast = expr(0);
     if (i < tokens.length) throw ERR.ERROR;
     return ast;
+  }
+
+  /**
+   * A table (structured) reference: Table1[Sales], Table1[#All], Table1[[#Headers],[Sales]],
+   * Table1[[Q1]:[Q4]], Table1[@Sales], [@Sales] (the table the formula is in), Table1[[#This Row],[Sales]].
+   * → { table, parts: Set of '#all' '#data' '#headers' '#totals', cols: [from, to] | null, thisRow }
+   */
+  function parseStructured(text) {
+    const at = text.indexOf('[');
+    const table = at > 0 ? text.slice(0, at) : null;
+    let inner = text.slice(at + 1, -1).trim();
+    const unesc = s => s.replace(/'(.)/g, '$1').trim();
+    const out = { table, parts: new Set(), cols: null, thisRow: false };
+    if (inner.startsWith('@')) { out.thisRow = true; inner = inner.slice(1).trim(); if (!inner) return out; if (inner[0] !== '[') { out.cols = [unesc(inner), unesc(inner)]; return out; } }
+    if (!inner.includes('[')) {
+      if (!inner) { out.parts.add('#data'); return out; }
+      if (inner[0] === '#') { const p = inner.toLowerCase(); if (p === '#this row') out.thisRow = true; else out.parts.add(p); return out; }
+      out.cols = [unesc(inner), unesc(inner)];
+      return out;
+    }
+    // [[#Headers],[Sales]:[Cost]] — items separated by commas at the top level.
+    const items = [];
+    let depth = 0, cur = '';
+    for (let i = 0; i < inner.length; i++) {
+      const ch = inner[i];
+      if (ch === "'") { cur += ch + (inner[i + 1] || ''); i++; continue; }
+      if (ch === '[') depth++;
+      if (ch === ']') depth--;
+      if (ch === ',' && depth === 0) { items.push(cur.trim()); cur = ''; continue; }
+      cur += ch;
+    }
+    if (cur.trim()) items.push(cur.trim());
+    for (const it of items) {
+      const m = it.match(/^\[((?:[^\]']|'.)*)\](?:\s*:\s*\[((?:[^\]']|'.)*)\])?$/);
+      if (!m) throw ERR.REF;
+      if (m[1][0] === '#' && !m[2]) { const p = m[1].toLowerCase(); if (p === '#this row') out.thisRow = true; else out.parts.add(p); continue; }
+      out.cols = [unesc(m[1]), unesc(m[2] !== undefined ? m[2] : m[1])];
+    }
+    return out;
   }
 
   function refNode(text) {
@@ -661,7 +702,8 @@
   function maySpill(n) {
     if (!n || typeof n !== 'object') return false;
     switch (n.k) {
-      case 'range': case 'spill': return true;
+      case 'range': case 'spill': case 'name': return true;
+      case 'tref': return !n.thisRow;
       case 'bin': return maySpill(n.l) || maySpill(n.r);
       case 'neg': case 'pct': return maySpill(n.e);
       case 'fn':
@@ -1187,10 +1229,17 @@
     while (i < f.length) {
       const ch = f[i];
       if (ch === '"' || ch === "'") { let j = i + 1; while (j < f.length && !(f[j] === ch && f[j + 1] !== ch)) j += f[j] === ch ? 2 : 1; out += f.slice(i, j + 1); i = j + 1; continue; }
+      if (ch === '[') {
+        let j = i, depth = 0;
+        for (; j < f.length; j++) { if (f[j] === "'") { j++; continue; } if (f[j] === '[') depth++; else if (f[j] === ']' && --depth === 0) break; }
+        out += fn(f.slice(i, j + 1), 'spec');
+        i = j + 1;
+        continue;
+      }
       const m = /^[A-Za-z_][\w.]*/.exec(f.slice(i));
       if (m && !/[\w.$]/.test(f[i - 1] || '')) {
         const rest = f.slice(i + m[0].length);
-        const kind = /^\s*\(/.test(rest) ? 'fn' : /^!/.test(rest) ? 'sheet' : /^[A-Za-z]{1,3}\d+$/.test(m[0]) || /^\$?\d/.test(rest) || /^(TRUE|FALSE)$/i.test(m[0]) ? 'other' : 'name';
+        const kind = /^\s*\(/.test(rest) ? 'fn' : /^!/.test(rest) ? 'sheet' : /^\[/.test(rest) ? 'table' : /^[A-Za-z]{1,3}\d+$/.test(m[0]) || /^\$?\d/.test(rest) || /^(TRUE|FALSE)$/i.test(m[0]) ? 'other' : 'name';
         out += fn(m[0], kind);
         i += m[0].length;
         continue;
@@ -1199,13 +1248,32 @@
     }
     return out;
   }
-  const toExcelFormula = f => mapIdentifiers(f, (id, kind) => {
-    const up = id.toUpperCase();
-    if (kind === 'fn' && XLFN.has(up)) return '_xlfn.' + (XLWS.has(up) ? '_xlws.' : '') + id;
-    if (kind === 'name') return '_xlpm.' + id;
-    return id;
-  });
-  const fromExcelFormula = f => mapIdentifiers(f, id => id.replace(/^_xlfn\./i, '').replace(/^_xlws\./i, '').replace(/^_xlpm\./i, ''));
+  /**
+   * A formula as Excel stores it. opts.names: workbook and table names (kept as they are; other
+   * names are LET's); opts.table: the table the cell is in, for [@Col] and [Col].
+   */
+  const toExcelFormula = (f, opts = {}) => {
+    let prevTable = null;
+    return mapIdentifiers(f, (id, kind) => {
+      const up = id.toUpperCase();
+      if (kind === 'table') { prevTable = id; return id; }
+      if (kind === 'spec') {
+        const t = prevTable; prevTable = null;
+        // Excel writes "this row" in full, and always with the table's name.
+        const m = /^\[@\s*(\[?)([\s\S]*?)\]?\]$/.exec(id);
+        const name = t ? '' : opts.table || '';
+        if (m) return name + (m[2] ? `[[#This Row],[${m[2]}]]` : '[#This Row]');
+        return name + id;
+      }
+      prevTable = null;
+      if (kind === 'fn' && XLFN.has(up)) return '_xlfn.' + (XLWS.has(up) ? '_xlws.' : '') + id;
+      if (kind === 'name' && !(opts.names && opts.names.has(up))) return '_xlpm.' + id;
+      return id;
+    });
+  };
+  const fromExcelFormula = f => mapIdentifiers(f, (id, kind) => (kind === 'spec'
+    ? id.replace(/^\[\[#This Row\],\s*\[((?:[^\]']|'.)*)\]\]$/i, '[@[$1]]').replace(/^\[@\[((?:[A-Za-z_][\w.]*))\]\]$/, '[@$1]').replace(/^\[#This Row\]$/i, '[@]')
+    : id.replace(/^_xlfn\./i, '').replace(/^_xlws\./i, '').replace(/^_xlpm\./i, '')));
 
   function lookup(a, horizontal) {
     const v = scalar(a[0]);
@@ -1456,6 +1524,20 @@
           }
           return;
         }
+        if (n.k === 'name' && this.book.resolveName) {
+          const t = this.book.resolveName(n.v, sheet);
+          if (t && !(this.nameSeen || (this.nameSeen = new Set())).has(n.v)) {
+            this.nameSeen.add(n.v);
+            try { visit(this.ast('=' + String(t).replace(/^=/, '').replace(/\$/g, ''))); } catch { /* not a formula */ } finally { this.nameSeen.delete(n.v); }
+          }
+          return;
+        }
+        if (n.k === 'tref' && this.book.tableRef) {
+          let g = null;
+          try { g = this.book.tableRef(n, sheet, { sheet, row, col }); } catch { g = null; }
+          if (g) visit({ k: 'range', sheet: g.sheet, r1: g.r1, c1: g.c1, r2: g.r2, c2: g.c2 });
+          return;
+        }
         if (n.e) visit(n.e);
         if (n.l) visit(n.l);
         if (n.r) visit(n.r);
@@ -1498,7 +1580,14 @@
         case 'empty': return '';
         case 'name': {
           for (let i = this.scopes.length - 1; i >= 0; i--) if (this.scopes[i].has(n.v)) return this.scopes[i].get(n.v);
-          throw ERR.NAME;
+          return this.definedName(n.v, sheet);
+        }
+        case 'tref': {
+          if (!this.book.tableRef) throw ERR.REF;
+          const g = this.book.tableRef(n, sheet, this.cur);
+          if (!g) throw ERR.REF;
+          if (g.r1 === g.r2 && g.c1 === g.c2) return this.value(g.sheet, g.r1, g.c1);
+          return this.evalNode({ k: 'range', sheet: g.sheet, r1: g.r1, c1: g.c1, r2: g.r2, c2: g.c2 }, sheet);
         }
         case 'spill': {
           const s = this.resolveSheet(n.sheet, sheet);
@@ -1549,6 +1638,19 @@
         }
       }
       throw ERR.ERROR;
+    }
+    /** A workbook name (Name Manager): what it refers to, evaluated where the formula is. */
+    definedName(name, sheet) {
+      const refersTo = this.book.resolveName ? this.book.resolveName(name, sheet) : null;
+      if (refersTo === null || refersTo === undefined || refersTo === '') throw ERR.NAME;
+      if (!this.nameStack) this.nameStack = new Set();
+      if (this.nameStack.has(name)) throw ERR.CIRC;
+      this.nameStack.add(name);
+      try {
+        const text = String(refersTo).replace(/^=/, '');
+        const ast = this.ast('=' + text.replace(/\$/g, ''));
+        return this.evalNode(ast, sheet);
+      } finally { this.nameStack.delete(name); }
     }
     resolveSheet(name, current) {
       if (!name) return current;
@@ -1618,6 +1720,13 @@
         i = j + 1;
         continue;
       }
+      if (ch === '[') { // table references: column names are not cell references
+        let j = i, depth = 0;
+        for (; j < src.length; j++) { if (src[j] === "'") { j++; continue; } if (src[j] === '[') depth++; else if (src[j] === ']' && --depth === 0) break; }
+        out += src.slice(i, j + 1);
+        i = j + 1;
+        continue;
+      }
       const prev = src[i - 1];
       if (/[A-Za-z_$']/.test(ch) && !/[\w.]/.test(prev || '')) {
         refRe.lastIndex = i;
@@ -1672,7 +1781,7 @@
     });
   }
 
-  const api = { Engine, FormulaError, ERR, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
+  const api = { Engine, FormulaError, ERR, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, parseStructured, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Formula = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -34,8 +34,9 @@
   UI.initRibbon();
 
   // ---------- Model ----------
-  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [], pivots: [], dv: [] });
-  let book = { sheets: [newSheet('Sheet1')], active: 0 };
+  const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [], pivots: [], dv: [], tables: [], sparklines: [], slicers: [], queries: [] });
+  let book = { sheets: [newSheet('Sheet1')], active: 0, names: [], scripts: [] };
+  let data = null; // tables, names, what-if, sparklines, slicers, scripts, web data (sheets-data.js)
   const sheet = () => book.sheets[book.active];
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
   const rawAt = (r, c, s = sheet()) => (s.cells[addr(r, c)] || {}).v ?? '';
@@ -46,6 +47,8 @@
       return s ? rawAt(r, c, s) : '';
     },
     sheetNames: () => book.sheets.map(s => s.name),
+    resolveName: name => (data ? data.resolveName(name) : null),
+    tableRef: (spec, sheetName, cur) => (data ? data.resolveTable(spec, sheetName, cur) : null),
     formulasInRange: (name, r1, c1, r2, c2) => {
       const s = book.sheets.find(x => x.name === name);
       if (!s) return [];
@@ -409,6 +412,7 @@
     const st = (cell && cell.s) || {};
     const { text, cls } = cellDisplay(r, c);
     const fmt = cf.format(r, c, valueAt(r, c));
+    const ts = data ? data.tableStyle(r, c) : null; // the table's look, under the cell's own
     t.textContent = '';
     if (text !== '') {
       const d = document.createElement('div');
@@ -423,11 +427,11 @@
     }
     t.className = [cls, st.wrap ? 'wrap' : '', s_fc(c), cell && cell.n ? 'has-note' : ''].filter(Boolean).join(' ');
     const style = t.style;
-    style.fontWeight = st.b ? '700' : '';
+    style.fontWeight = st.b || (st.b === undefined && ts && ts.b) ? '700' : '';
     style.fontStyle = st.i ? 'italic' : '';
     style.textDecoration = st.u ? 'underline' : '';
-    style.color = st.color || '';
-    style.backgroundColor = st.bg || '';
+    style.color = st.color || (ts && ts.color) || '';
+    style.backgroundColor = st.bg || (ts && ts.bg) || '';
     style.textAlign = st.align || '';
     style.verticalAlign = st.valign || '';
     style.fontFamily = st.font || '';
@@ -437,7 +441,20 @@
     style.borderLeft = bd.l ? '1px solid #000' : '';
     style.borderRight = bd.r ? '1px solid #000' : '';
     style.borderBottom = bd.b ? '1px solid #000' : '';
+    if (ts && ts.borderTop && !bd.t) style.borderTop = '2px solid ' + ts.borderTop;
     if (fmt) applyCf(style, fmt);
+    if (ts && ts.header) {
+      const fb = document.createElement('button');
+      fb.className = 'tbl-filter' + (ts.table.filter[c - ts.table.c1] ? ' on' : '');
+      fb.tabIndex = -1;
+      fb.title = 'Sort and filter';
+      fb.textContent = ts.table.filter[c - ts.table.c1] ? '⧩' : '⏷';
+      fb.dataset.c = c;
+      t.appendChild(fb);
+      t.classList.add('tbl-head');
+    }
+    const spark = data && data.sparkAt(r, c);
+    if (spark) t.insertAdjacentHTML('afterbegin', spark);
     if (circleInvalid) { const rule = dv.ruleAt(r, c); if (rule && !dv.check(rule, r, c, valueAt(r, c))) t.classList.add('dv-bad'); }
     const s = sheet();
     if (s.hiddenRows.length && r === 0 && s.filterCol === c) t.firstChild ? (t.firstChild.textContent += ' ⏷') : (t.textContent = '⏷');
@@ -471,6 +488,14 @@
     }
     // Merged cells whose top-left is scrolled away still show their value.
     s.merges.forEach(m => { if (!rowEls.has(m.r1) || !colPos.has(m.c1)) renderCell(m.r1, m.c1); });
+    // Empty cells that tables colour, and sparkline cells.
+    for (const t of s.tables || []) {
+      for (const r of rowEls.keys()) {
+        if (r < t.r1 || r > t.r2) continue;
+        for (const c of colPos.keys()) if (c >= t.c1 && c <= t.c2 && !s.cells[addr(r, c)]) renderCell(r, c);
+      }
+    }
+    if (data) for (const [r, c] of data.sparkCells()) if (rowEls.has(r) && colPos.has(c) && !s.cells[addr(r, c)]) renderCell(r, c);
   }
   function buildGrid() {
     const s = sheet();
@@ -650,6 +675,7 @@
       snapshot();
       setCell(active.r, active.c, { v });
       autoFormat(active.r, active.c, v);
+      if (data && data.afterEdit(active.r, active.c, v, prev ? prev.v : '')) data.applyFilters();
       // A line break typed with Alt+Enter turns on wrapping, as in Excel.
       if (v.includes('\n') && v[0] !== '=') setCell(active.r, active.c, { s: { wrap: true } });
       ensureSize(active.r, active.c);
@@ -713,6 +739,8 @@
     e.preventDefault();
     const [a, b] = nameBox.value.trim().toUpperCase().split(':');
     const p = parseRef(a || ''), q = b ? parseRef(b) : null;
+    // A name (or a new one for the selection), as in Excel.
+    if (!p && !b && data && data.nameBoxGo(nameBox.value)) { wrap.focus(); return; }
     if (!p || p.row >= MAX_ROWS || p.col >= MAX_COLS || (q && (q.row >= MAX_ROWS || q.col >= MAX_COLS))) return UI.toast('Enter a reference like B7 or A1:C5');
     select(p.row, p.col);
     if (q) { anchor = { r: p.row, c: p.col }; active = { r: q.row, c: q.col }; ensureSize(q.row, q.col); drawSelection(); }
@@ -782,6 +810,16 @@
     if (el.dataset.c === undefined) return null;
     return { kind: 'cell', r, c: +el.dataset.c };
   }
+  // A table header's sort and filter button.
+  grid.addEventListener('mousedown', e => {
+    const b = e.target.closest && e.target.closest('.tbl-filter');
+    if (!b || !data) return;
+    e.preventDefault(); e.stopPropagation();
+    commitEdit();
+    const tr = b.closest('tr'), c = +b.dataset.c, r = +tr.dataset.r;
+    const t = data.tableAt(r, c);
+    if (t) data.openFilterMenu(t, c, b);
+  }, true);
   grid.addEventListener('mousedown', e => {
     if (e.button !== 0) return;
     if (e.target.classList.contains('resizer')) return startResize(e);
@@ -1148,9 +1186,11 @@
   }
 
   // ---------- Cells: insert/delete ----------
-  function shiftStructure(axis, index, count) {
-    if (!guardSheet((count > 0 ? 'insert' : 'delete') + (axis === 'row' ? 'Rows' : 'Columns'))) return;
-    snapshot();
+  function shiftStructure(axis, index, count, nested) {
+    if (!nested) {
+      if (!guardSheet((count > 0 ? 'insert' : 'delete') + (axis === 'row' ? 'Rows' : 'Columns'))) return;
+      snapshot();
+    }
     const s = sheet();
     const moved = {};
     Object.entries(s.cells).forEach(([k, cell]) => {
@@ -1190,8 +1230,15 @@
     s.cf = SheetsCF.shift(s.cf, axis, index, count, s.name);
     s.dv = SheetsCF.shift(s.dv, axis, index, count, s.name);
     shiftPivots(s, axis, index, count);
-    buildGrid();
-    state.markDirty();
+    s.tables = SheetsTables.shift(s.tables, axis, index, count);
+    if (data) data.shiftNames(axis, index, count, s.name);
+    // Sparklines: their cells move, and their data ranges follow.
+    s.sparklines = (s.sparklines || []).map(sp => {
+      const cell = F.adjustForInsert('=' + sp.cell, axis, index, count, s.name, s.name).slice(1);
+      const src = F.adjustForInsert('=' + sp.src, axis, index, count, s.name, s.name).slice(1);
+      return cell.includes('#REF!') || src.includes('#REF!') ? null : { ...sp, cell, src };
+    }).filter(Boolean);
+    if (!nested) { buildGrid(); state.markDirty(); }
   }
   document.getElementById('insRow').addEventListener('click', () => { const g = selRange(); shiftStructure('row', g.r1, Math.min(1000, g.r2 - g.r1 + 1)); });
   document.getElementById('insCol').addEventListener('click', () => { const g = selRange(); shiftStructure('col', g.c1, Math.min(100, g.c2 - g.c1 + 1)); });
@@ -1907,7 +1954,7 @@
   }
   document.getElementById('insPivot').addEventListener('click', insertPivot);
   document.getElementById('insPivot2').addEventListener('click', insertPivot);
-  document.getElementById('refreshAll').addEventListener('click', () => { commitEdit(); refreshPivots(false); });
+  document.getElementById('refreshAll').addEventListener('click', async () => { commitEdit(); refreshPivots(false); if (data) await data.refreshQueries(); });
 
   // ---------- Editing group ----------
   function clearRange(what) {
@@ -2456,6 +2503,7 @@
   function renderCharts() {
     const layer = document.getElementById('chartsLayer');
     layer.innerHTML = '';
+    if (data && (sheet().slicers || []).length) { const sl = document.createElement('div'); sl.className = 'slicers-layer'; layer.appendChild(sl); data.renderSlicers(sl); }
     (sheet().charts || []).forEach((ch, i) => {
       const box = document.createElement('div');
       box.className = 'chart';
@@ -2507,6 +2555,32 @@
       });
     });
   }
+
+  // ---------- Tables, names, What-If, sparklines, slicers, scripts, web data ----------
+  data = SheetsData({
+    book: () => book, sheet, engine, rawAt, setCell, snapshot, changed, buildGrid, commitEdit, guard, shiftStructure, rangeBox, colWidth, rowH, zoomLevel, sheetByName, state, cleanStyle,
+    selRange, active: () => active,
+    selectRange: g => { anchor = { r: g.r1, c: g.c1 }; active = { r: g.r2, c: g.c2 }; ensureSize(g.r2, g.c2); scrollIntoView(g.r1, g.c1); drawSelection(); },
+    activateSheet: i => { commitEdit(); book.active = i; buildGrid(); },
+    uniqueName,
+    addSheetNamed: name => { const s = newSheet(uniqueName(cleanSheetName(name) || 'Sheet' + (book.sheets.length + 1))); book.sheets.push(s); book.active = book.sheets.length - 1; active = anchor = { r: 0, c: 0 }; return s; }
+  });
+  const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
+  on('insTableBtn', () => data.insertTable());
+  on('tableDesign', () => data.tableDesign());
+  on('tableToRange', () => data.convertToRange());
+  on('insSlicer', () => data.insertSlicer());
+  on('sparkLine', () => data.insertSparklines('line'));
+  on('sparkColumn', () => data.insertSparklines('column'));
+  on('sparkWinLoss', () => data.insertSparklines('winloss'));
+  on('sparkClear', () => data.clearSparklines());
+  on('nameManager', () => data.nameManager());
+  on('defineName', () => data.defineName());
+  on('goalSeek', () => data.goalSeek());
+  on('solverBtn', () => data.solver());
+  on('fromWeb', () => data.fromWeb());
+  on('scriptsBtn', () => data.scriptsPane());
+  on('newScript', () => data.newScript());
 
   // ---------- File I/O ----------
   /** Styling and charts saved by Isadek inside an .xlsx are untrusted input: keep only known, well-typed values. */
@@ -2573,7 +2647,7 @@
       }));
       const u = usedBounds(s);
       s.rows = Math.max(100, u.r + 20); s.cols = Math.max(26, u.c + 5);
-      return { sheets: [s], active: 0 };
+      return { sheets: [s], active: 0, names: [], scripts: [] };
     }
     const wb = await parseSpreadsheet(bytes);
     let meta = null;
@@ -2667,6 +2741,17 @@
       const prot = ms && ms.name === sn && ms.protect ? SheetsProtect.clean(ms.protect) : ex && ex.protection ? SheetsProtect.fromXml(ex.protection) : null;
       if (prot) s.protect = prot;
       if (!(ms && ms.name === sn) && ex && Array.isArray(ex.unlocked)) ex.unlocked.slice(0, 100000).forEach(k => { if (CELL_KEY.test(k)) s.cells[k] = { v: s.cells[k]?.v ?? '', ...(s.cells[k] || {}), s: { ...((s.cells[k] || {}).s || {}), unlocked: true } }; });
+      // Tables, sparklines, slicers, web queries and the Solver model.
+      if (ms && ms.name === sn && Array.isArray(ms.tables)) s.tables = ms.tables.map(SheetsTables.cleanTable).filter(Boolean).slice(0, 500);
+      else if (ex && Array.isArray(ex.tables)) s.tables = ex.tables.map(x => { try { return SheetsTables.fromXml(x); } catch { return null; } }).filter(Boolean).slice(0, 500);
+      if (ms && ms.name === sn && Array.isArray(ms.sparklines)) s.sparklines = ms.sparklines.map(SheetsSpark.clean).filter(Boolean).slice(0, 10000);
+      else if (ex && typeof ex.spark === 'string' && ex.spark) { try { s.sparklines = SheetsSpark.fromXlsx(ex.spark, sn); } catch (err) { console.info('Sparklines skipped:', err); } }
+      if (ms && ms.name === sn && Array.isArray(ms.slicers)) s.slicers = ms.slicers.map(SheetsTables.cleanSlicer).filter(Boolean).slice(0, 100);
+      if (ms && ms.name === sn && Array.isArray(ms.queries)) s.queries = ms.queries.filter(q => q && typeof q.url === 'string' && /^https?:\/\//.test(q.url)).map(q => ({ url: q.url.slice(0, 2000), table: Math.max(0, +q.table || 0), r: Math.max(0, +q.r || 0), c: Math.max(0, +q.c || 0), h: Math.max(0, +q.h || 0), w: Math.max(0, +q.w || 0) })).slice(0, 50);
+      if (ms && ms.name === sn && ms.solver && typeof ms.solver === 'object') {
+        const v = ms.solver, str = x => (typeof x === 'string' ? x.slice(0, 5000) : '');
+        s.solver = { obj: str(v.obj), goal: ['max', 'min', 'value'].includes(v.goal) ? v.goal : 'max', target: +v.target || 0, vars: str(v.vars), cons: str(v.cons), nonneg: v.nonneg !== false };
+      }
       if (ms && ms.name === sn && Array.isArray(ms.dv)) s.dv = ms.dv.map(SheetsDV.clean).filter(Boolean).slice(0, 500);
       else if (ex && typeof ex.dv === 'string' && ex.dv) {
         try { s.dv = SheetsDV.fromXlsx(ex.dv); } catch (err) { console.info('Data validation skipped:', err); }
@@ -2675,7 +2760,12 @@
     });
     if (!sheets.length) sheets.push(newSheet('Sheet1'));
     const act = meta && Number.isInteger(meta.active) ? meta.active : 0;
-    return { sheets, active: Math.max(0, Math.min(act, sheets.length - 1)) };
+    // Workbook names (Excel's own hidden ones, like print areas, are left out).
+    const names = (Array.isArray(wb.Names) ? wb.Names : []).filter(n => !n.Hidden && !/^_xl|^_FilterDatabase$/i.test(n.Name))
+      .map(n => SheetsTables.cleanName({ name: n.Name, ref: F.fromExcelFormula(String(n.Ref || '')) })).filter(Boolean)
+      .filter((n, i, all) => all.findIndex(x => x.name.toLowerCase() === n.name.toLowerCase()) === i).slice(0, 5000);
+    const scripts = meta && Array.isArray(meta.scripts) ? meta.scripts.filter(x => x && typeof x.name === 'string' && typeof x.code === 'string').map(x => ({ name: x.name.slice(0, 60), code: x.code.slice(0, 200000) })).slice(0, 100) : [];
+    return { sheets, active: Math.max(0, Math.min(act, sheets.length - 1)), names, scripts };
   }
 
   function toWorkbook() {
@@ -2701,7 +2791,7 @@
         const v = engine.value(s.name, p.row, p.col);
         const out = {};
         if (typeof cell.v === 'string' && cell.v[0] === '=') {
-          out.f = F.toExcelFormula(cell.v.slice(1));
+          out.f = F.toExcelFormula(cell.v.slice(1), data ? data.excelFormulaOpts(s, p.row, p.col) : undefined);
           const sp = engine.spillAt(s.name, p.row, p.col);
           // A spilling formula is a dynamic array formula over its range.
           if (sp && sp.row === p.row && sp.col === p.col && (sp.h > 1 || sp.w > 1)) { out.F = `${k}:${addr(p.row + sp.h - 1, p.col + sp.w - 1)}`; out.D = true; }
@@ -2734,8 +2824,15 @@
       if (rows.length) ws['!rows'] = rows;
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
-      meta.sheets.push({ name: s.name, protect: s.protect || null, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [] });
+      meta.sheets.push({ name: s.name, protect: s.protect || null, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [],
+        tables: s.tables || [], sparklines: s.sparklines || [], slicers: s.slicers || [], queries: s.queries || [], solver: s.solver || null });
     });
+    meta.scripts = book.scripts || [];
+    // Workbook names, as Excel's defined names.
+    if ((book.names || []).length) {
+      const opts = data ? data.excelFormulaOpts(book.sheets[0], -1, -1) : undefined;
+      wb.Workbook = { Names: book.names.map(n => ({ Name: n.name, Ref: /^[A-Za-z_'].*!\$?[A-Z]+\$?\d+/.test(n.ref) ? n.ref : F.toExcelFormula(n.ref, opts) })) };
+    }
     // Cell styling and charts live in a custom document property so Isadek can restore them;
     // other apps ignore it and still get values, formulas, number formats, widths and merges.
     wb.Custprops = { AtlasMeta: JSON.stringify(meta) };
@@ -2826,6 +2923,7 @@
       const cellStyles = new Map();
       for (const [k, cell] of Object.entries(s.cells)) if (cell.s) { const i = styleTable.add(cell.s); if (i) cellStyles.set(k, i); }
       return { conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s),
+        tables: data ? data.tablesXml(s, s === book.sheets[0]) : [], extLst: SheetsSpark.toXlsx(s.sparklines, s.name),
         sheetProtection: SheetsProtect.toXml(s.protect), cellStyles,
         freeze: s.freezeRow || s.freezeCol ? { rows: s.freezeRow ? 1 : 0, cols: s.freezeCol ? 1 : 0 } : null };
     });
@@ -3038,6 +3136,8 @@
         out['sh:' + u] = props;
         for (const [ref, cell] of Object.entries(s.cells)) out[`c:${u}:${ref}`] = cell;
       });
+      out['book:names'] = book.names || [];
+      out['book:scripts'] = book.scripts || [];
       return out;
     },
     apply(changes) {
@@ -3058,6 +3158,14 @@
           }
           for (const key of Object.keys(s)) if (!SHEET_LOCAL.has(key)) delete s[key];
           Object.assign(s, JSON.parse(JSON.stringify(v)));
+          s.tables = (s.tables || []).map(SheetsTables.cleanTable).filter(Boolean);
+          s.sparklines = (s.sparklines || []).map(SheetsSpark.clean).filter(Boolean);
+          s.slicers = (s.slicers || []).map(SheetsTables.cleanSlicer).filter(Boolean);
+        } else if (k === 'book:names') {
+          book.names = (Array.isArray(v) ? v : []).map(SheetsTables.cleanName).filter(Boolean);
+        } else if (k === 'book:scripts') {
+          // Scripts from others run only after you confirm (sheets-data.js).
+          book.scripts = (Array.isArray(v) ? v : []).filter(x => x && typeof x.name === 'string' && typeof x.code === 'string').map(x => ({ name: x.name.slice(0, 60), code: x.code.slice(0, 200000) }));
         } else if (k.startsWith('c:')) {
           const i = k.indexOf(':', 2);
           const u = k.slice(2, i), ref = k.slice(i + 1);
@@ -3215,6 +3323,10 @@
     get book() { return book; },
     setCell: (ref, v) => { const p = parseRef(ref); setCell(p.row, p.col, { v }); ensureSize(p.row, p.col); changed(); },
     valueOf: ref => { const p = parseRef(ref); return valueAt(p.row, p.col); },
+    rawOf: ref => { const p = parseRef(ref); return rawAt(p.row, p.col); },
+    bookJson: () => JSON.stringify(book),
+    activeSheetName: () => sheet().name,
+    setSheet: i => { commitEdit(); book.active = i; buildGrid(); },
     domStats: () => ({ rows: tbody.rows.length, cells: grid.querySelectorAll('td').length })
   };
 })();

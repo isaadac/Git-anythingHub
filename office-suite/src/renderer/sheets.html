@@ -29,6 +29,7 @@
   <button data-tab="formulas">Formulas</button>
   <button data-tab="data">Data</button>
   <button data-tab="review">Review</button>
+  <button data-tab="automate">Automate</button>
   <button data-tab="view">View</button>
 </div>
 
@@ -148,7 +149,19 @@
   <div class="ribbon-panel" data-panel="insert">
     <div class="group"><div class="controls">
       <button class="btn big" id="insPivot" title="Summarize data with a PivotTable"><span class="ico">⊞</span>PivotTable</button>
+      <button class="btn big" id="insTableBtn" title="Format the data as a table: filter buttons, banded rows, a total row and names for formulas (Ctrl+T)"><span class="ico">▦</span>Table</button>
+      <div class="controls col">
+        <button class="btn" id="tableDesign" title="Name, size, style and total row of the table at the selection">▤ Table Design</button>
+        <button class="btn" id="tableToRange" title="Turn the table back into a normal range">⇱ Convert to Range</button>
+        <button class="btn" id="insSlicer" title="Buttons that filter a table column">⧉ Slicer</button>
+      </div>
     </div><div class="label">Tables</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="sparkLine" title="A small line chart in a cell"><span class="ico">〰</span>Line</button>
+      <button class="btn big" id="sparkColumn" title="Small columns in a cell"><span class="ico">▁▃▅</span>Column</button>
+      <button class="btn big" id="sparkWinLoss" title="Wins and losses in a cell"><span class="ico">▀▄▀</span>Win/<br>Loss</button>
+      <div class="controls col"><button class="btn" id="sparkClear" title="Remove the sparklines in the selection">✕ Clear</button></div>
+    </div><div class="label">Sparklines</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" data-chart="bar"><span class="ico">📊</span>Column</button>
       <button class="btn big" data-chart="line"><span class="ico">📈</span>Line</button>
@@ -174,13 +187,18 @@
       <button class="btn big" id="showFormulas"><span class="ico">⨍</span>Show<br>Formulas</button>
       <button class="btn big" id="recalc"><span class="ico">⟳</span>Calculate<br>Now</button>
     </div><div class="label">Calculation</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="nameManager" title="Names for ranges and values, to use in formulas"><span class="ico">🏷</span>Name<br>Manager</button>
+      <div class="controls col"><button class="btn" id="defineName" title="Name the selection (or type a name in the Name Box)">＋ Define Name</button></div>
+    </div><div class="label">Defined Names</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="data">
     <div class="group"><div class="controls">
       <button class="btn big" id="insPivot2" title="Summarize data with a PivotTable"><span class="ico">⊞</span>PivotTable</button>
-      <button class="btn big" id="refreshAll" title="Refresh every PivotTable from its source data"><span class="ico">⟳</span>Refresh<br>All</button>
-    </div><div class="label">Data</div></div>
+      <button class="btn big" id="refreshAll" title="Refresh every PivotTable and web query"><span class="ico">⟳</span>Refresh<br>All</button>
+      <button class="btn big" id="fromWeb" title="Get data from a CSV or JSON file, or the tables of a web page"><span class="ico">🌐</span>From<br>Web</button>
+    </div><div class="label">Get &amp; Transform Data</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="sortAsc2"><span class="ico">A↓</span>Sort<br>A to Z</button>
       <button class="btn big" id="sortDesc2"><span class="ico">Z↓</span>Sort<br>Z to A</button>
@@ -193,6 +211,17 @@
       <button class="btn big" id="dataValidation" title="Data Validation: allowed values, dropdown lists, input and error messages"><span class="ico">☑</span>Data<br>Validation</button>
       <button class="btn big" id="circleInvalid" title="Circle cells whose values break their validation rule"><span class="ico">◯</span>Circle<br>Invalid</button>
     </div><div class="label">Data Tools</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="goalSeek" title="Find the input value that makes a formula give the result you want"><span class="ico">🎯</span>Goal<br>Seek</button>
+      <button class="btn big" id="solverBtn" title="Find the best values for several cells, with constraints"><span class="ico">⚙</span>Solver</button>
+    </div><div class="label">What-If Analysis</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="automate">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="scriptsBtn" title="Scripts that change this workbook (JavaScript)"><span class="ico">⌨</span>Scripts</button>
+      <button class="btn big" id="newScript"><span class="ico">＋</span>New<br>Script</button>
+    </div><div class="label">Scripting</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="review">
@@ -315,6 +344,11 @@
 <script src="js/sheets-fill.js"></script>
 <script src="js/sheets-charts.js"></script>
 <script src="js/sheets-protect.js"></script>
+<script src="js/sheets-tables.js"></script>
+<script src="js/sheets-whatif.js"></script>
+<script src="js/sheets-spark.js"></script>
+<script src="js/sheets-web.js"></script>
+<script src="js/sheets-data.js"></script>
 <script src="js/sheets.js"></script>
 </body>
 </html>

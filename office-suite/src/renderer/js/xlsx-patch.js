@@ -68,7 +68,7 @@
   }
 
   /**
-   * patch(bytes, { sheets: [{ conditionalFormatting, …, cellStyles, freeze }], dxfs: [xml], styles: xml })
+   * patch(bytes, { sheets: [{ conditionalFormatting, …, cellStyles, freeze, tables: [xml], extLst }], dxfs: [xml], styles: xml })
    * styles replaces styles.xml; each sheet's cellStyles maps a cell to its index in it.
    */
   async function patch(bytes, { sheets = [], dxfs = [], styles: stylesXml = null } = {}) {
@@ -82,7 +82,7 @@
       if (id && t) target[id] = t.startsWith('/') ? t.slice(1) : 'xl/' + t;
     }
     const paths = [...wbXml.matchAll(/<sheet\b[^>]*>/g)].map(m => target[(m[0].match(/\br:id="([^"]+)"/) || [])[1]]);
-    let drawingN = 0, chartN = 0;
+    let drawingN = 0, chartN = 0, tableN = 0;
     const overrides = [];
     let styles = stylesXml; // styles.xml: given, or loaded when needed
     const xfClones = new Map();
@@ -177,6 +177,23 @@
           : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rel}</Relationships>`);
         if (!/<worksheet\b[^>]*xmlns:r=/.test(xml)) xml = xml.replace(/<worksheet\b/, '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"');
         xml = insertInSheet(xml, 'drawing', '<drawing r:id="rIdAtlasDrawing"/>');
+      }
+      // Tables (Format as Table): one part each, linked from the sheet.
+      if (Array.isArray(add.tables) && add.tables.length) {
+        const relsPath = paths[i].replace(/([^/]+)$/, '_rels/$1.rels');
+        const rels = [], parts = [];
+        for (const tx of add.tables) {
+          const n = ++tableN, tPath = `xl/tables/table${n}.xml`;
+          zip.file(tPath, tx);
+          overrides.push(`<Override PartName="/${tPath}" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>`);
+          rels.push(`<Relationship Id="rIdAtlasTable${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/table" Target="../tables/table${n}.xml"/>`);
+          parts.push(`<tablePart r:id="rIdAtlasTable${n}"/>`);
+        }
+        const existing = zip.file(relsPath) ? await zip.file(relsPath).async('string') : null;
+        zip.file(relsPath, existing ? existing.replace('</Relationships>', rels.join('') + '</Relationships>')
+          : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels.join('')}</Relationships>`);
+        if (!/<worksheet\b[^>]*xmlns:r=/.test(xml)) xml = xml.replace(/<worksheet\b/, '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"');
+        xml = insertInSheet(xml, 'tableParts', `<tableParts count="${parts.length}">${parts.join('')}</tableParts>`);
       }
       zip.file(paths[i], xml);
     }

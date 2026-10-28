@@ -31,6 +31,7 @@ contextBridge.exposeInMainWorld('atlas', {
   cloudOauthBegin: () => ipcRenderer.invoke('cloud:oauth-begin'),
   cloudOauthWait: req => ipcRenderer.invoke('cloud:oauth-wait', req),
   cloudFetch: req => ipcRenderer.invoke('cloud:fetch', req),
+  fetchData: url => ipcRenderer.invoke('net:fetch-data', url),
   cloudBuiltIn: () => ipcRenderer.invoke('cloud:builtin-get'),
   cloudConfigGet: () => ipcRenderer.invoke('cloud:config-get'),
   cloudConfigSet: c => ipcRenderer.invoke('cloud:config-set', c),

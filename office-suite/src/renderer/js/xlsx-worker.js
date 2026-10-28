@@ -25,7 +25,10 @@ self.onmessage = e => {
     }
     const extra = excelExtras(wb);
     const custom = wb.Custprops && typeof wb.Custprops.AtlasMeta === 'string' ? wb.Custprops.AtlasMeta : null;
-    self.postMessage({ ok: true, SheetNames: wb.SheetNames.map(String), Sheets: sheets, AtlasMeta: custom, Extras: extra });
+    // Workbook names (Name Manager), as plain values.
+    const names = (wb.Workbook && Array.isArray(wb.Workbook.Names) ? wb.Workbook.Names : []).slice(0, 5000)
+      .map(n => ({ Name: String(n.Name || ''), Ref: String(n.Ref || ''), Sheet: Number.isInteger(n.Sheet) ? n.Sheet : null, Hidden: !!n.Hidden }));
+    self.postMessage({ ok: true, SheetNames: wb.SheetNames.map(String), Sheets: sheets, AtlasMeta: custom, Extras: extra, Names: names });
   } catch (err) {
     self.postMessage({ ok: false, error: String(err && err.message || err) });
   }
@@ -103,7 +106,9 @@ function excelExtras(wb) {
       protection: (xml.match(/<sheetProtection\b[^>]{0,2000}>/) || [''])[0],
       unlocked: unlockedIn(xml),
       xf: styledCells(xml),
-      freeze: frozen(xml)
+      freeze: frozen(xml),
+      spark: between(xml, '<x14:sparklineGroups', '</x14:sparklineGroups>', false),
+      tables: tablesOf(sheetPath, xml)
     });
   }
   out.dxfs = between(text('xl/styles.xml'), '<dxfs', '</dxfs>', false);
@@ -127,6 +132,13 @@ function excelExtras(wb) {
       map[id] = stack.join('/');
     }
     return map;
+  }
+  /** The sheet's table parts (Format as Table), as text. */
+  function tablesOf(sheetPath, xml) {
+    const ids = [...xml.matchAll(/<tablePart\b[^>]{0,300}?r:id="([^"]{1,200})"/g)].map(m => m[1]).slice(0, 200);
+    if (!ids.length) return [];
+    const rels = relsOf(sheetPath);
+    return ids.map(id => (rels[id] ? text(rels[id]).slice(0, LIMIT) : '')).filter(Boolean);
   }
   function chartsOf(sheetPath) {
     const xml = sheetPath ? text(sheetPath) : '';

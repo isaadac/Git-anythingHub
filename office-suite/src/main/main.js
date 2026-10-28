@@ -259,6 +259,26 @@ ipcMain.handle('app:set-theme', (_e, mode) => {
   return true;
 });
 
+// ---------- Sheets: Get Data from the Web ----------
+// A plain GET (no cookies or custom headers), size- and time-limited; the page only parses the result.
+ipcMain.handle('net:fetch-data', async (_e, url) => {
+  let u;
+  try { u = new URL(String(url)); } catch { return { error: 'Enter a web address such as https://example.com/data.csv' }; }
+  if (!/^https?:$/.test(u.protocol)) return { error: 'Only http and https addresses can be used' };
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 30000);
+  try {
+    const r = await fetch(u, { redirect: 'follow', signal: ctl.signal, headers: { 'User-Agent': 'IsadekOffice/' + app.getVersion() } });
+    if (!r.ok) return { error: `The site answered ${r.status}` };
+    if (+r.headers.get('content-length') > 50e6) return { error: 'That file is too large (over 50 MB)' };
+    const buf = new Uint8Array(await r.arrayBuffer());
+    if (buf.length > 50e6) return { error: 'That file is too large (over 50 MB)' };
+    return { bytes: buf, contentType: r.headers.get('content-type') || '' };
+  } catch (err) {
+    return { error: ctl.signal.aborted ? 'The site took too long to answer' : 'Could not reach the site: ' + (err.message || err) };
+  } finally { clearTimeout(timer); }
+});
+
 // ---------- Proofing languages ----------
 function applySpellLanguages() {
   const want = settings.get('spellLanguages');
