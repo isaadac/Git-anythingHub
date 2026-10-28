@@ -32,6 +32,8 @@ button, input, select { font: inherit; color: inherit; }
 .titlebar .qa button { background: transparent; border: 0; color: #fff; padding: 4px 8px; border-radius: 3px; cursor: pointer; }
 .titlebar .qa button:hover { background: rgba(255,255,255,.18); }
 .titlebar .status-saved { font-size: 12px; opacity: .85; }
+.titlebar .share-btn { background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.45); color: #fff; border-radius: 4px; padding: 3px 12px; cursor: pointer; font-size: 12px; }
+.titlebar .share-btn:hover { background: rgba(255,255,255,.28); }
 
 .titlebar .autosave { display: flex; align-items: center; gap: 4px; font-size: 12px; cursor: pointer; opacity: .95; white-space: nowrap; }
 .titlebar .autosave input { accent-color: #fff; cursor: pointer; }
@@ -121,3 +123,20 @@ input.ctl[type=color] { width: 30px; padding: 1px; }
   .backstage nav { width: 150px; }
   .backstage main { padding: 20px; }
 }
+
+/* Cloud file browser */
+.modal.cloud-browser { width: min(640px, 92vw); }
+.cloud-top { display: flex; gap: 8px; margin-bottom: 8px; }
+.cloud-top select { flex: 1; border: 1px solid var(--border); border-radius: 3px; padding: 5px 6px; }
+.cloud-top button, .cloud-crumbs button { border: 1px solid var(--border); background: #fff; border-radius: 3px; padding: 4px 10px; cursor: pointer; }
+.cloud-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; margin-bottom: 6px; font-size: 12px; }
+.cloud-crumbs button { border-color: transparent; color: var(--accent); padding: 2px 4px; }
+.cloud-list { height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: 3px; margin-bottom: 12px; outline: none; }
+.cloud-list:focus-visible { box-shadow: 0 0 0 2px var(--accent); }
+.cloud-list .empty { padding: 24px; text-align: center; color: var(--muted); }
+.cloud-row { display: grid; grid-template-columns: 24px 1fr 70px 90px; gap: 8px; align-items: center; padding: 6px 10px; cursor: default; border-bottom: 1px solid #f3f2f1; font-size: 13px; }
+.cloud-row:hover { background: #f3f2f1; }
+.cloud-row.sel { background: #deecf9; }
+.cloud-row .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-row .sz, .cloud-row .dt { color: var(--muted); font-size: 12px; text-align: right; }
+.cloud-name { margin-bottom: 14px; }

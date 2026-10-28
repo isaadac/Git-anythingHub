@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Atlas Sheets</title>
 <link rel="stylesheet" href="css/office.css">
 <link rel="stylesheet" href="css/sheets.css">
@@ -18,6 +18,7 @@
   </div>
   <div class="docname"><input value="Book1" aria-label="Workbook name" spellcheck="false"></div>
   <span class="status-saved"></span>
+  <button class="share-btn" data-cmd="share" title="Share with others">Share</button>
 </div>
 
 <div class="ribbon-tabs">
@@ -270,8 +271,11 @@
     <button class="back" title="Back">←</button>
     <button data-cmd="new">New</button>
     <button data-cmd="open">Open</button>
+    <button data-cmd="open-cloud">Open from Cloud</button>
     <button data-cmd="save">Save</button>
     <button data-cmd="save-as">Save As</button>
+    <button data-cmd="save-cloud">Save to Cloud</button>
+    <button data-cmd="share">Share</button>
     <hr>
     <button data-cmd="export-csv">Export sheet to CSV</button>
     <button data-cmd="export-pdf">Export to PDF</button>
@@ -286,6 +290,7 @@
 
 <script src="../../node_modules/xlsx/dist/xlsx.full.min.js"></script>
 <script src="js/platform.js"></script>
+<script src="js/cloud.js"></script>
 <script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="js/formula.js"></script>
 <script src="js/xlsx-patch.js"></script>

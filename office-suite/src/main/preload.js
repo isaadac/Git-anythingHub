@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld('atlas', {
   recent: () => ipcRenderer.invoke('app:recent'),
   clearRecent: () => ipcRenderer.invoke('app:clear-recent'),
   newWindow: appName => ipcRenderer.invoke('app:new-window', appName),
-  openData: (appName, name, data) => ipcRenderer.invoke('app:open-data', { app: appName, name, data }),
+  openData: (appName, name, data, cloudPath) => ipcRenderer.invoke('app:open-data', { app: appName, name, data, cloudPath }),
   openPath: p => ipcRenderer.invoke('app:open-path', p),
   setTitle: t => ipcRenderer.invoke('app:set-title', t),
   closeNow: () => ipcRenderer.invoke('app:close-now'),
@@ -28,5 +28,12 @@ contextBridge.exposeInMainWorld('atlas', {
   showSend: msg => ipcRenderer.invoke('show:send', msg),
   showClose: () => ipcRenderer.invoke('show:close'),
   onShowMessage: cb => ipcRenderer.on('show:message', (_e, msg) => cb(msg)),
+  cloudOauthBegin: () => ipcRenderer.invoke('cloud:oauth-begin'),
+  cloudOauthWait: req => ipcRenderer.invoke('cloud:oauth-wait', req),
+  cloudFetch: req => ipcRenderer.invoke('cloud:fetch', req),
+  cloudConfigGet: () => ipcRenderer.invoke('cloud:config-get'),
+  cloudConfigSet: c => ipcRenderer.invoke('cloud:config-set', c),
+  cloudAccountsGet: () => ipcRenderer.invoke('cloud:accounts-get'),
+  cloudAccountsSet: t => ipcRenderer.invoke('cloud:accounts-set', t),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Atlas Slides</title>
 <link rel="stylesheet" href="css/office.css">
 <link rel="stylesheet" href="css/slides.css">
@@ -19,6 +19,7 @@
   </div>
   <div class="docname"><input value="Presentation1" aria-label="Presentation name" spellcheck="false"></div>
   <span class="status-saved"></span>
+  <button class="share-btn" data-cmd="share" title="Share with others">Share</button>
 </div>
 
 <div class="ribbon-tabs">
@@ -272,8 +273,11 @@
     <button class="back" title="Back">←</button>
     <button data-cmd="new">New</button>
     <button data-cmd="open">Open</button>
+    <button data-cmd="open-cloud">Open from Cloud</button>
     <button data-cmd="save">Save</button>
     <button data-cmd="save-as">Save As</button>
+    <button data-cmd="save-cloud">Save to Cloud</button>
+    <button data-cmd="share">Share</button>
     <hr>
     <button data-cmd="export-pdf">Export to PDF</button>
     <button data-cmd="print">Print</button>
@@ -286,6 +290,7 @@
 <script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="../../node_modules/pptxgenjs/dist/pptxgen.min.js"></script>
 <script src="js/platform.js"></script>
+<script src="js/cloud.js"></script>
 <script src="js/slides-anim.js"></script>
 <script src="js/slides.js"></script>
 </body>

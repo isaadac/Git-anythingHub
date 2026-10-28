@@ -2861,6 +2861,7 @@
   }
   window.addEventListener('beforeprint', printView);
 
+  const CLOUD_EXTS = ['xlsx', 'ods', 'csv'];
   Platform.onMenu(async cmd => {
     switch (cmd) {
       case 'new': Platform.newWindow('sheets'); break;
@@ -2876,6 +2877,9 @@
       }
       case 'save': save(false); break;
       case 'save-as': save(true); break;
+      case 'open-cloud': Cloud.openDialog({ app: 'sheets', load: loadFile, isEmpty: async () => Platform.shouldOpenInPlace(!state.dirty && book.sheets.length === 1 && !Object.keys(sheet().cells).length) && (!state.dirty || UI.confirm('Open file', 'Discard unsaved changes in this workbook?')) }); break;
+      case 'save-cloud': Cloud.saveAsDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEdit() }); break;
+      case 'share': Cloud.shareDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEdit(), save: () => save(false) }); break;
       case 'save-and-close': if (await save(false)) Platform.closeNow(); break;
       case 'export-csv': save(true, 'csv'); break;
       case 'export-pdf': printView(); Platform.exportPdf(Platform.baseName(state.name) + '.pdf', true); break;
@@ -2905,7 +2909,7 @@
     app: 'sheets', state,
     snapshot: () => JSON.stringify(book),
     autosave: () => save(false, null, true),
-    canAutoSave: () => !Platform.desktop ? 'AutoSave needs the desktop app' : !state.path ? 'Save the workbook first to turn on AutoSave'
+    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the workbook first to turn on AutoSave'
       : /\.(xlsx|ods)$/i.test(state.path) ? true : 'AutoSave works with .xlsx and .ods files'
   });
   function loadRecovered(d) {

@@ -2218,6 +2218,7 @@
   }
   window.addEventListener('beforeprint', preparePrint);
 
+  const CLOUD_EXTS = ['pptx', 'aslides'];
   Platform.onMenu(async cmd => {
     switch (cmd) {
       case 'new': Platform.newWindow('slides'); break;
@@ -2233,6 +2234,9 @@
       }
       case 'save': save(false); break;
       case 'save-as': save(true); break;
+      case 'open-cloud': Cloud.openDialog({ app: 'slides', load: loadFile, isEmpty: async () => Platform.shouldOpenInPlace(!state.dirty && pres.slides.length === 1 && !pres.slides[0].elements.some(e => e.html || e.type !== 'text')) && (!state.dirty || UI.confirm('Open file', 'Discard unsaved changes in this presentation?')) }); break;
+      case 'save-cloud': Cloud.saveAsDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEditing() }); break;
+      case 'share': Cloud.shareDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEditing(), save: () => save(false) }); break;
       case 'save-and-close': if (await save(false)) Platform.closeNow(); break;
       case 'export-pdf': commitEditing(); preparePrint(); Platform.exportPdf(Platform.baseName(state.name) + '.pdf', true); break;
       case 'print': commitEditing(); preparePrint(); Platform.print(); break;
@@ -2267,7 +2271,7 @@
     app: 'slides', state,
     snapshot: () => { commitEditingQuietly(); return JSON.stringify(pres); },
     autosave: () => save(false, true),
-    canAutoSave: () => !Platform.desktop ? 'AutoSave needs the desktop app' : !state.path ? 'Save the presentation first to turn on AutoSave'
+    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the presentation first to turn on AutoSave'
       : /\.(pptx|aslides)$/i.test(state.path) ? true : 'AutoSave works with .pptx and .aslides files'
   });
   /** Copies the text being typed into the model without leaving edit mode. */

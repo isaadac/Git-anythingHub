@@ -1158,6 +1158,7 @@ ${rules}</style></head>
   }
 
   // ---------- Commands ----------
+  const CLOUD_EXTS = ['docx', 'html', 'md', 'txt'];
   Platform.onMenu(async cmd => {
     switch (cmd) {
       case 'new': Platform.newWindow('write'); break;
@@ -1173,6 +1174,9 @@ ${rules}</style></head>
       }
       case 'save': save(false); break;
       case 'save-as': save(true); break;
+      case 'open-cloud': Cloud.openDialog({ app: 'write', load: loadFile, isEmpty: async () => Platform.shouldOpenInPlace(!state.dirty && !doc.innerText.trim()) && (!state.dirty || UI.confirm('Open file', 'Discard unsaved changes in this document?')) }); break;
+      case 'save-cloud': Cloud.saveAsDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS }); break;
+      case 'share': Cloud.shareDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, save: () => save(false) }); break;
       case 'save-and-close': if (await save(false)) Platform.closeNow(); break;
       case 'export-pdf': { const restore = layout.forPrint(); try { await Platform.exportPdf(Platform.baseName(state.name) + '.pdf', setup.orientation === 'landscape'); } finally { restore(); } break; }
       case 'export-html': save(true, 'html'); break;
@@ -1207,7 +1211,7 @@ ${rules}</style></head>
     app: 'write', state,
     snapshot: () => toHtml(),
     autosave: () => save(false, null, true),
-    canAutoSave: () => !Platform.desktop ? 'AutoSave needs the desktop app' : !state.path ? 'Save the document first to turn on AutoSave'
+    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the document first to turn on AutoSave'
       : /\.(docx|html?)$/i.test(state.path) ? true : 'AutoSave works with .docx and .html files'
   });
   async function loadRecovered(d) {

@@ -105,7 +105,36 @@
     if (t) WriteTemplates.open(t, !Platform.desktop);
   });
 
+  // Cloud accounts
+  async function renderCloud() {
+    const list = await Cloud.accounts();
+    const box = document.getElementById('cloud');
+    if (!list.length) return;
+    box.innerHTML = '';
+    list.forEach(a => {
+      const p = Cloud.PROVIDERS[a.provider];
+      const row = document.createElement('div');
+      row.className = 'row';
+      row.innerHTML = '<div class="badge"></div><div class="meta"><div class="n"></div><div class="p"></div></div><div class="acts"><button class="primary">Browse</button><button>Disconnect</button></div>';
+      row.querySelector('.badge').textContent = p.badge;
+      row.querySelector('.badge').style.background = p.color;
+      row.querySelector('.n').textContent = p.label;
+      row.querySelector('.p').textContent = a.label;
+      const [browse, remove] = row.querySelectorAll('button');
+      browse.addEventListener('click', () => Cloud.openDialog({}));
+      remove.addEventListener('click', async () => {
+        if (!(await UI.confirm('Disconnect', `Disconnect ${p.label} (${a.label})? Your files stay in the cloud.`))) return;
+        await Cloud.disconnect(a.id);
+        location.reload();
+      });
+      box.appendChild(row);
+    });
+  }
+  document.getElementById('cloudAdd').addEventListener('click', async () => { if (await Cloud.addAccountDialog()) renderCloud(); });
+  document.getElementById('cloudSettings').addEventListener('click', () => Cloud.settingsDialog());
+
   render();
   renderRecovered();
+  renderCloud();
   window.addEventListener('focus', () => { render(); renderRecovered(); });
 })();

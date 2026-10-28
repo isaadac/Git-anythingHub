@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Atlas Office</title>
 <link rel="stylesheet" href="css/office.css">
 <style>
@@ -53,6 +53,8 @@
   <h2>Templates <button class="linkbtn" id="moreTemplates">More templates</button></h2>
   <div class="tpl-grid home-templates" id="templates"></div>
   <button class="open-btn" id="open">Open a file…</button>
+  <h2>Cloud <span><button class="linkbtn" id="cloudSettings">Settings</button> <button class="linkbtn" id="cloudAdd">Add a place</button></span></h2>
+  <div class="recent" id="cloud"><div class="empty">Connect Google Drive, OneDrive, Dropbox or a WebDAV server (Nextcloud, ownCloud) to open and save documents there.</div></div>
   <section id="recoveredBox" hidden>
     <h2>Recovered documents</h2>
     <p class="hint">These had unsaved changes when Atlas Office last closed unexpectedly.</p>
@@ -62,6 +64,7 @@
   <div class="recent" id="recent"><div class="empty">Files you open will show up here.</div></div>
 </main>
 <script src="js/platform.js"></script>
+<script src="js/cloud.js"></script>
 <script src="js/write-templates.js"></script>
 <script src="js/home.js"></script>
 </body>

@@ -7,6 +7,7 @@ const fs = require('fs');
 const settings = require('./settings');
 const updater = require('./updater');
 const recovery = require('./recovery');
+const cloud = require('./cloud');
 
 const APPS = {
   home: { page: 'index.html', title: 'Atlas Office', width: 1100, height: 720 },
@@ -160,7 +161,7 @@ ipcMain.handle('file:pending', e => {
   pendingFiles.delete(e.sender.id);
   if (!p) return null;
   // New, unsaved content (a template, a mail-merge result): no file behind it.
-  if (typeof p === 'object') return { path: null, name: p.name, data: p.data };
+  if (typeof p === 'object') return { path: p.cloudPath || null, name: p.name, data: p.data };
   try {
     addRecent(p);
     return { path: p, name: path.basename(p), data: new Uint8Array(fs.readFileSync(p)) };
@@ -184,10 +185,11 @@ ipcMain.handle('app:print', e => new Promise(resolve => e.sender.print({ printBa
 ipcMain.handle('app:recent', () => readRecent().filter(r => fs.existsSync(r.path)).map(r => ({ ...r, path: approve(r.path) })));
 ipcMain.handle('app:clear-recent', () => { try { fs.unlinkSync(recentPath()); } catch { /* none */ } app.clearRecentDocuments(); return true; });
 ipcMain.handle('app:new-window', (_e, appName) => { createWindow(APPS[appName] ? appName : 'home'); return true; });
-ipcMain.handle('app:open-data', (_e, { app: appName, name, data }) => {
-  if (!APPS[appName] || appName === 'home' || typeof name !== 'string' || !(data instanceof Uint8Array) || data.length > 100e6) return false;
+ipcMain.handle('app:open-data', (_e, { app: appName, name, data, cloudPath }) => {
+  if (!APPS[appName] || appName === 'home' || typeof name !== 'string' || !(data instanceof Uint8Array) || data.length > 300e6) return false;
   const win = createWindow(appName);
-  pendingFiles.set(win.webContents.id, { name: path.basename(name).slice(0, 255), data });
+  // A file from a cloud account keeps its cloud address, so Save writes back to it.
+  pendingFiles.set(win.webContents.id, { name: path.basename(name).slice(0, 255), data, cloudPath: cloud.isCloudPath(cloudPath) ? cloudPath : null });
   return true;
 });
 ipcMain.handle('app:open-path', (_e, p) => {

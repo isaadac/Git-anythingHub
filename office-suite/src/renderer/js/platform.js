@@ -38,6 +38,8 @@
     },
     /** Saves bytes or text. Returns {name, path} or null if cancelled. */
     async save({ data, name, path, filters, saveAs }) {
+      // A document opened from (or saved to) a cloud account goes back there.
+      if (Platform.isCloudPath(path) && window.Cloud) return window.Cloud.saveTo(path, name, data);
       if (desktop) return window.atlas.save({ data, filePath: path, defaultName: name, filters, saveAs });
       let fileName = name;
       if (saveAs || !fileName) {
@@ -59,12 +61,12 @@
       let raw = null;
       try { raw = sessionStorage.getItem('atlas-handoff'); sessionStorage.removeItem('atlas-handoff'); } catch { /* ignore */ }
       if (!raw) return null;
-      const { name, dataUrl } = JSON.parse(raw);
+      const { name, dataUrl, cloudPath } = JSON.parse(raw);
       // Decode directly: fetch() of a data: URL is (rightly) blocked by the pages' CSP.
       const bin = atob(String(dataUrl).slice(String(dataUrl).indexOf(',') + 1));
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      return { name, path: null, data: bytes };
+      return { name, path: Platform.isCloudPath(cloudPath) ? cloudPath : null, data: bytes };
     },
     /** Desktop: asks where to save without writing anything yet. Web: asks for a file name. */
     async chooseSavePath(name, filters) {
@@ -93,10 +95,10 @@
     },
     openPath(p) { return desktop && window.atlas.openPath(p); },
     /** Opens new, unsaved content (bytes) in an app window: a template, a merge result… */
-    async openData(app, name, bytes, sameTab) {
-      if (desktop) return window.atlas.openData(app, name, bytes);
+    async openData(app, name, bytes, sameTab, cloudPath) {
+      if (desktop) return window.atlas.openData(app, name, bytes, cloudPath);
       const dataUrl = await Platform.bytesToDataUrl(bytes, 'application/octet-stream');
-      try { sessionStorage.setItem('atlas-handoff', JSON.stringify({ name, dataUrl })); } catch { UI.toast('Too large to open in a new tab'); return false; }
+      try { sessionStorage.setItem('atlas-handoff', JSON.stringify({ name, dataUrl, cloudPath })); } catch { UI.toast('Too large to open in a new tab'); return false; }
       if (sameTab) location.href = app + '.html'; else window.open(app + '.html', '_blank');
       return true;
     },
@@ -497,6 +499,7 @@
     };
   };
 
+  Platform.isCloudPath = p => typeof p === 'string' && /^cloud:\/\/[\w-]{1,40}\//.test(p);
   Platform.extOf = name => (name.match(/\.([^.]+)$/) || [, ''])[1].toLowerCase();
   Platform.baseName = name => name.replace(/\.[^.]+$/, '');
   Platform.bytesToText = bytes => new TextDecoder().decode(bytes);

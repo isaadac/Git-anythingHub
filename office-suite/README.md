@@ -18,7 +18,8 @@ A free office suite for **Windows, macOS and Linux** (and any modern browser). I
 
 All apps have undo/redo, unsaved-changes prompts, recent files, print and PDF export, plus:
 
-- **AutoSave**: the switch in the title bar saves to the file a few seconds after each change (desktop app; `.docx`/`.html`, `.xlsx`/`.ods`, `.pptx`/`.aslides`).
+- **Cloud storage and sharing**: connect **Google Drive, OneDrive, Dropbox** or a **WebDAV** server (Nextcloud, ownCloud) on Home, then File → Open from Cloud / Save to Cloud. Ctrl+S and AutoSave write straight back to the cloud file, and **Share** (title bar) makes a view or edit link or invites people by email. Google Docs, Sheets and Slides files open as their Office equivalents; saving creates an Office copy beside them. Sign-in uses OAuth with PKCE in your normal browser (desktop) or a pop-up (web); tokens are kept encrypted with the OS keychain on the desktop (in the web version, in the browser's local storage). Each service needs an app registration of your own: put its client ID in Home → Cloud → Settings, with the redirect address shown there.
+- **AutoSave**: the switch in the title bar saves to the file a few seconds after each change (desktop app or cloud documents; `.docx`/`.html`, `.xlsx`/`.ods`, `.pptx`/`.aslides`).
 - **Crash recovery**: unsaved changes are kept as a draft every 30 seconds. If the app crashes or the computer loses power, Home lists the recovered documents next time. If a single window crashes, it offers to reopen with your changes.
 
 ## Install
@@ -71,5 +72,6 @@ To publish a release with installers for all three systems, push a tag such as `
 Atlas Office covers the everyday features of Word, Excel and PowerPoint, not all of them. Some things don't survive a round trip through Office files:
 
 - **Write**: a single table or block taller than a page isn't split across pages, and multi-column layouts flow without page breaks. Complex Word layouts (floating objects, section-specific headers) are simplified when opened.
-- **Sheets**: cell styling and charts are saved inside the `.xlsx` in a form only Atlas reads back. Excel shows the values, formulas, number formats, column widths, row heights and merged cells, but not the colours or charts. Pivot tables, macros and conditional formatting are not supported.
-- **Slides**: imported `.pptx` files keep text, pictures, shapes, tables, backgrounds and notes, but placeholder positions that come only from the slide master use default positions, and animations aren't supported. Save as `.aslides` to keep a presentation exactly as it is.
+- **Sheets**: cell colours and fonts are saved inside the `.xlsx` in a form only Atlas reads back; Excel shows the values, formulas, number formats, charts, conditional formats, column widths, row heights and merged cells. Other apps see a pivot table's values, not a live pivot. Macros are not supported.
+- **Slides**: SmartArt, 3D models, Morph and other effects Atlas doesn't have are dropped when a `.pptx` opens. Save as `.aslides` to keep a presentation exactly as it is.
+- **Cloud**: the web version can only reach WebDAV servers that allow cross-origin requests (Nextcloud needs a CORS app); the desktop app has no such limit. Files over 250 MB can't be saved to OneDrive.
