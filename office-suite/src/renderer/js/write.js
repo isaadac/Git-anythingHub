@@ -1198,8 +1198,8 @@ ${rules}</style></head>
       case 'export-html': save(true, 'html'); break;
       case 'export-txt': save(true, 'txt'); break;
       case 'print': { const restore = layout.forPrint(); try { await Platform.print(); } finally { restore(); } break; }
-      case 'undo': exec('undo'); break;
-      case 'redo': exec('redo'); break;
+      case 'undo': if (!liveUndo('undoLocal')) exec('undo'); break;
+      case 'redo': if (!liveUndo('redoLocal')) exec('redo'); break;
       case 'find': openFind(false); break;
       case 'replace': openFind(true); break;
       case 'home': Platform.desktop ? Platform.newWindow('home') : (location.href = 'index.html'); break;
@@ -1280,7 +1280,7 @@ ${rules}</style></head>
   }
   function liveState() {
     const out = {};
-    const kids = [...doc.children];
+    const kids = [...doc.children].filter(el => !el.classList.contains('endnotes-gen'));
     // Keep each block's position while the order still agrees; new and moved blocks get one between their neighbours.
     const ps = kids.map(el => { let id = blockId.get(el); if (!id || blockById.get(id) !== el) { id = newBlockId(); blockId.set(el, id); blockById.set(id, el); } return blockPos.get(id) || null; });
     let last = '';
@@ -1299,10 +1299,12 @@ ${rules}</style></head>
     for (const id of [...blockById.keys()]) if (!blockById.get(id).isConnected || blockById.get(id).parentNode !== doc) { blockById.delete(id); blockPos.delete(id); }
     HF.forEach((el, i) => { out['hf:' + i] = el.innerHTML; });
     out.setup = { ...setup };
+    out.sources = notes.sources;
     return out;
   }
   function liveApply(changes) {
     const caret = caretInfo();
+    let sourcesChanged = false;
     for (const [k, v] of Object.entries(changes)) {
       if (k.startsWith('b:')) {
         const id = k.slice(2);
@@ -1322,6 +1324,9 @@ ${rules}</style></head>
       } else if (k === 'setup' && v) {
         for (const key of Object.keys(DEFAULT_SETUP)) if (key in v) setup[key] = v[key];
         applySetup();
+      } else if (k === 'sources') {
+        notes.loadSources(v || []);
+        sourcesChanged = true;
       }
     }
     // Put the blocks in position order.
@@ -1337,7 +1342,9 @@ ${rules}</style></head>
       const f = fbl && fbl.isConnected ? pointAt(fbl, caret.fo) : a;
       try { getSelection().setBaseAndExtent(a[0], a[1], f[0], f[1]); } catch { /* ignore */ }
     }
+    if (sourcesChanged) notes.refreshCitations();
     changed();
+    if (!commentsPane.hidden) review.renderPane();
     drawLivePeers();
   }
   const peerLayer = document.createElement('div');
@@ -1375,6 +1382,22 @@ ${rules}</style></head>
     showPeers(list) { livePeers = list; drawLivePeers(); }
   });
   document.addEventListener('selectionchange', () => live.moved());
+  // In a live session the browser's undo would also take back other people's edits
+  // (and lose track of the page); undo then takes back only your own changes.
+  function liveUndo(which) {
+    if (live.status !== 'live') return false;
+    if (!live[which]()) UI.toast(which === 'undoLocal' ? 'Nothing of yours to undo' : 'Nothing to redo');
+    return true;
+  }
+  [doc, ...HF].forEach(el => el.addEventListener('beforeinput', e => {
+    if ((e.inputType === 'historyUndo' || e.inputType === 'historyRedo') && liveUndo(e.inputType === 'historyUndo' ? 'undoLocal' : 'redoLocal')) e.preventDefault();
+  }));
+  [doc, ...HF].forEach(el => el.addEventListener('keydown', e => {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const k = e.key.toLowerCase();
+    const which = k === 'z' ? (e.shiftKey ? 'redoLocal' : 'undoLocal') : k === 'y' && !e.shiftKey ? 'redoLocal' : null;
+    if (which && liveUndo(which)) e.preventDefault();
+  }));
   doc.addEventListener('input', () => setTimeout(drawLivePeers, 0));
 
   // ---------- Accessibility Checker ----------
@@ -1503,5 +1526,5 @@ ${rules}</style></head>
     ]
   });
 
-  window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; } };
+  window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; }, get notes() { return notes; } };
 })();

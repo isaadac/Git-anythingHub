@@ -43,6 +43,7 @@
       known: new Map(),       // key -> JSON everyone has (as far as we know)
       pending: new Map(),     // key -> number of our latest unacknowledged change
       remoteLog: [], remoteCount: 0, // remote changes, for undo
+      undo: [], redo: [], record: true, // your own changes, for undo that leaves others' edits alone
       queue: [], n: 0, timer: null, retry: 0, wantOpen: false, first: true, creating: false
     };
     const listeners = new Set();
@@ -56,10 +57,11 @@
       if (S.status !== 'live') return;
       if (adapter.busy && adapter.busy()) { S.timer = setTimeout(flush, 300); return; }
       const cur = adapter.state();
-      const ops = [];
-      for (const [k, v] of Object.entries(cur)) { const j = enc(v); if (S.known.get(k) !== j) { ops.push({ k, v }); S.known.set(k, j); } }
-      for (const k of [...S.known.keys()]) if (!(k in cur)) { ops.push({ k, v: null }); S.known.delete(k); }
+      const ops = [], log = [];
+      for (const [k, v] of Object.entries(cur)) { const j = enc(v); if (S.known.get(k) !== j) { ops.push({ k, v }); log.push({ k, before: S.known.get(k), after: j }); S.known.set(k, j); } }
+      for (const k of [...S.known.keys()]) if (!(k in cur)) { ops.push({ k, v: null }); log.push({ k, before: S.known.get(k), after: undefined }); S.known.delete(k); }
       if (!ops.length) return;
+      if (S.record) remember(log);
       const n = ++S.n;
       ops.forEach(o => S.pending.set(o.k, n));
       // Big changes (pasting a large table) go in several messages.
@@ -71,6 +73,35 @@
         batch.push(o); size += s;
       }
       out();
+    }
+    /** Keeps your changes for undo; quick successive changes (typing a word) are one step. */
+    function remember(log) {
+      const now = Date.now(), last = S.undo[S.undo.length - 1];
+      S.redo = [];
+      if (last && now - last.at < 1000) {
+        for (const e of log) { const o = last.ops.find(x => x.k === e.k); if (o) o.after = e.after; else last.ops.push(e); }
+        last.at = now;
+      } else S.undo.push({ at: now, ops: log });
+      if (S.undo.length > 200) S.undo.shift();
+    }
+    /** Takes back your last change (or puts it back), leaving keys others have changed since as they are. */
+    function step(from, to) {
+      flush();
+      const entry = from.pop();
+      if (!entry) return false;
+      const changes = {}, inverse = [];
+      for (const o of entry.ops) {
+        if (S.known.get(o.k) !== o.after) continue; // someone else changed it since
+        changes[o.k] = o.before === undefined ? null : JSON.parse(o.before);
+        inverse.push({ k: o.k, before: o.after, after: o.before });
+      }
+      if (inverse.length) to.push({ at: 0, ops: inverse });
+      if (!Object.keys(changes).length) return from.length ? step(from, to) : false;
+      adapter.apply(changes);
+      S.record = false;
+      try { flush(); } finally { S.record = true; }
+      inverse.forEach(o => { o.after = S.known.get(o.k); });
+      return true;
     }
     const schedule = (ms = 150) => { if (!S.timer) S.timer = setTimeout(flush, ms); };
 
@@ -209,12 +240,15 @@
       open({ server, inviteServer, room, create, name, color }) {
         if (S.wantOpen) stop();
         Object.assign(S, { server, inviteServer: inviteServer || null, room: room || newRoom(), creating: !!create, name, color, wantOpen: true, first: !create, retry: 0, error: null, n: 0 });
-        S.pending.clear(); S.known.clear(); S.queue = []; S.remoteLog = []; S.remoteCount = 0;
+        S.pending.clear(); S.known.clear(); S.queue = []; S.remoteLog = []; S.remoteCount = 0; S.undo = []; S.redo = [];
         connect();
       },
       close: stop,
       changed() { if (S.status === 'live') schedule(); else if (S.wantOpen) { /* sent on reconnect */ markOffline(); } sendPresence(); },
       moved() { sendPresence(); },
+      /** Undo and redo of only your own changes, for apps whose undo is the browser's. */
+      undoLocal() { return step(S.undo, S.redo); },
+      redoLocal() { return step(S.redo, S.undo); },
       /** Undo support: a marker for "now", and replay of remote changes made after a marker. */
       mark() { return S.remoteCount; },
       replaySince(mark) {

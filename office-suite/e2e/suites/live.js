@@ -159,6 +159,35 @@ const BASE = process.env.E2E_BASE + '/src/renderer/';
     await b.evaluate(() => { const p = document.createElement('p'); p.innerHTML = 'x<img src=x onerror="window.__pwned=1">'; document.getElementById('doc').appendChild(p); document.getElementById('doc').dispatchEvent(new Event('input')); });
     await sleep(800);
     check('write: scripts in a peer\'s paragraph are removed', await a.evaluate(() => !window.__pwned && !document.querySelector('#doc [onerror]')));
+    const input = () => document.getElementById('doc').dispatchEvent(new Event('input'));
+    // citation sources travel with the document
+    await a.evaluate(input => {
+      AtlasWrite.notes.loadSources([{ id: 'slive01', type: 'book', title: 'Live Book', authors: 'Smith, Jane', year: '2021', publisher: 'Press' }]);
+      const p = document.createElement('p'); p.innerHTML = 'Cited <cite class="citation" data-src="slive01">?</cite>'; document.getElementById('doc').appendChild(p);
+      AtlasWrite.notes.refreshCitations(); (0, eval)(input)();
+    }, input.toString());
+    check('write: citation sources reach the other person', await until(b, () => AtlasWrite.notes.sources.length === 1 && /Smith/.test(document.querySelector('#doc cite.citation')?.textContent || '')), await b.evaluate(() => document.querySelector('#doc cite.citation')?.textContent));
+    // endnotes: the generated list is not sent, each side builds its own
+    await b.evaluate(() => document.getElementById('showComments').click());
+    await a.evaluate(input => {
+      const p = document.createElement('p'); p.innerHTML = 'Noted<sup class="note" data-kind="end" title="An endnote" contenteditable="false">0</sup> and <span class="comment" title="Live comment" data-author="Ada">this</span>';
+      document.getElementById('doc').appendChild(p); (0, eval)(input)();
+    }, input.toString());
+    check('write: endnotes listed once, at the end', await until(b, () => document.querySelectorAll('.endnotes-gen').length === 1 && document.getElementById('doc').lastElementChild.matches('.endnotes-gen') && /An endnote/.test(document.querySelector('.endnotes-gen').textContent)));
+    check('write: comments pane shows a comment someone else added', await until(b, () => /Live comment/.test(document.querySelector('#commentsPane, .comments-pane')?.textContent || '')));
+    // undo takes back only your own typing
+    await b.click('#doc > p:nth-child(1)'); await b.keyboard.press('End'); await b.keyboard.type(' BOBX');
+    await until(a, () => document.querySelector('#doc > p:nth-child(1)').textContent.endsWith('BOBX'));
+    await sleep(1200);
+    await a.click('#doc > p:nth-child(2)'); await a.keyboard.press('End'); await a.keyboard.type(' ADAX');
+    await until(b, () => document.querySelector('#doc > p:nth-child(2)').textContent.endsWith('ADAX'));
+    await sleep(300);
+    await a.keyboard.press('Control+z');
+    check('write: undo takes back my typing', await until(a, () => !document.querySelector('#doc > p:nth-child(2)').textContent.includes('ADAX')), (await paras(a)).join('|'));
+    check('write: undo leaves the other person\'s typing', (await paras(a))[0].endsWith('BOBX'));
+    check('write: the undo reaches them', await until(b, () => !document.querySelector('#doc > p:nth-child(2)').textContent.includes('ADAX') && document.querySelector('#doc > p:nth-child(1)').textContent.endsWith('BOBX')));
+    await a.keyboard.press('Control+y');
+    check('write: redo puts it back', await until(b, () => document.querySelector('#doc > p:nth-child(2)').textContent.endsWith('ADAX')));
     // page setup
     await b.evaluate(() => { document.getElementById('doc').dispatchEvent(new Event('input')); });
     const same = (await paras(a)).join('|') === (await paras(b)).join('|');
