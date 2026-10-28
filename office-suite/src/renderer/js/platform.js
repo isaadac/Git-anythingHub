@@ -308,7 +308,7 @@
    */
   const DROP_TAGS = 'script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,option,base,frame,frameset,noscript,template,svg,math,canvas,audio,video,source,track,portal,applet,dialog,slot,title,head';
   const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'style', 'class', 'id', 'colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'color', 'face', 'size', 'start', 'type', 'dir', 'lang', 'reversed', 'value', 'border', 'cellpadding', 'cellspacing', 'bgcolor', 'span', 'headers', 'scope']);
-  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'toc-title', 'toc-l1', 'toc-l2', 'toc-l3', 'toc-pg', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry', 'mergefield', 'decorative', 'todo', 'done', 'tag-important', 'tag-question', 'tag-idea', 'section-break', 'equation', 'eq-block', 'float-left', 'float-right', 'wrap-block']);
+  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'toc-title', 'toc-l1', 'toc-l2', 'toc-l3', 'toc-pg', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry', 'mergefield', 'decorative', 'todo', 'done', 'tag-important', 'tag-question', 'tag-idea', 'section-break', 'equation', 'eq-block', 'float-left', 'float-right', 'wrap-block', 'attachment', 'audio-note']);
   Platform.sanitizeHtml = function (html) {
     const d = new DOMParser().parseFromString(String(html || ''), 'text/html');
     d.querySelectorAll(DROP_TAGS).forEach(n => n.remove());
@@ -322,6 +322,7 @@
         if (n === 'data-eq' && a.value.length <= 2000) return;                 // equation (drawn by the app from this text)
         if (n === 'data-orient' && ['portrait', 'landscape'].includes(a.value)) return; // section break
         if (n === 'data-cols' && ['1', '2', '3'].includes(a.value)) return;
+        if (n === 'data-att' && /^f[\w]{4,40}$/.test(a.value)) return;        // Notes: an attachment
         if (n === 'data-author' && /^[\w .@'-]{1,64}$/.test(a.value)) return; // review: who made a change/comment
         if ((n === 'data-date' || n === 'datetime') && !isNaN(Date.parse(a.value))) return;
         if (n === 'data-kind' && ['foot', 'end'].includes(a.value)) return;   // footnote / endnote

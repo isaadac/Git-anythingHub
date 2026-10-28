@@ -18,6 +18,8 @@
   </div>
   <div class="docname"><input id="nbName" value="My Notebook" aria-label="Notebook name" spellcheck="false"></div>
   <span class="status-saved" id="savedState"></span>
+  <span class="status-saved" id="syncState"></span>
+  <button class="share-btn" id="syncBtn" title="Keep this notebook in the cloud and in sync on all your devices">⇅ Sync</button>
 </div>
 
 <div class="ribbon-tabs">
@@ -65,6 +67,13 @@
       <button class="btn big" id="insDate"><span class="ico">📅</span>Date &amp;<br>Time</button>
       <button class="btn big" id="insRule"><span class="ico">―</span>Line</button>
     </div><div class="label">Insert</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insFile" title="Attach a file to the page (kept in the notebook)"><span class="ico">📎</span>File<br>Attachment</button>
+      <button class="btn big" id="recAudio" title="Record audio into the page"><span class="ico">🎙</span><span class="lbl">Record Audio</span></button>
+    </div><div class="label">Files &amp; Recording</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="pageTemplate" title="A new page from a template: meeting notes, to-do list, lecture notes…"><span class="ico">🗒</span>Page<br>Templates</button>
+    </div><div class="label">Pages</div></div>
   </div>
   <div class="ribbon-panel" data-panel="draw">
     <div class="group"><div class="controls">
@@ -147,6 +156,8 @@
 <script src="js/mobile.js"></script>
 <script src="js/assistant.js"></script>
 <script src="js/proofing.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/notes-extras.js"></script>
 <script src="js/notes.js"></script>
 </body>
 </html>

@@ -71,3 +71,11 @@ body.full-page .nb-nav { display: none; }
   .nb-nav { display: none !important; }
   .note-canvas { overflow: visible; }
 }
+
+/* Attachments and audio notes */
+.note-body .attachment, .note-body .audio-note { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; margin: 2px 0; border: 1px solid var(--border, #c8c6c4); border-radius: 14px; background: var(--surface-2, #f3f2f1); cursor: pointer; font-size: 13px; user-select: none; }
+.note-body .attachment small { color: #8a8886; }
+.note-body .audio-note.playing { background: #dbe7f7; border-color: #2b579a; }
+.note-body .attachment:hover, .note-body .audio-note:hover { border-color: #7719aa; }
+#recAudio.recording { background: #fde7e9; color: #a4262c; }
+#syncBtn.on { background: #e8f3ea; }
