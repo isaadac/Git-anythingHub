@@ -18,7 +18,7 @@ self.onmessage = e => {
           continue;
         }
         // Plain values only: no prototypes, functions or getters cross back to the app.
-        out[k] = { t: c.t, v: c.v instanceof Date ? c.v.getTime() : c.v, f: c.f, z: c.z, w: c.w, isDate: c.v instanceof Date };
+        out[k] = { t: c.t, v: c.v instanceof Date ? c.v.getTime() : c.v, f: c.f, F: typeof c.F === 'string' ? c.F : undefined, z: c.z, w: c.w, isDate: c.v instanceof Date };
       }
       sheets.push(out);
     }

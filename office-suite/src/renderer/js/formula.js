@@ -29,7 +29,8 @@
   const ERR = {
     DIV0: new FormulaError('#DIV/0!'), VALUE: new FormulaError('#VALUE!'), REF: new FormulaError('#REF!'),
     NAME: new FormulaError('#NAME?'), NA: new FormulaError('#N/A'), NUM: new FormulaError('#NUM!'),
-    CIRC: new FormulaError('#CIRC!'), ERROR: new FormulaError('#ERROR!')
+    CIRC: new FormulaError('#CIRC!'), ERROR: new FormulaError('#ERROR!'), SPILL: new FormulaError('#SPILL!'), CALC: new FormulaError('#CALC!'),
+    NULL: new FormulaError('#NULL!')
   };
   const isErr = v => v instanceof FormulaError;
 
@@ -48,7 +49,11 @@
       pos = TOKEN_RE.lastIndex;
       if (m[1] !== undefined) tokens.push({ t: 'num', v: parseFloat(m[1]) });
       else if (m[2] !== undefined) tokens.push({ t: 'str', v: m[2].slice(1, -1).replace(/""/g, '"') });
-      else if (m[3] !== undefined || m[4] !== undefined) tokens.push({ t: 'ref', v: m[3] || m[4] });
+      else if (m[3] !== undefined || m[4] !== undefined) {
+        // A1# refers to the whole range a formula in A1 spills into.
+        if (src[pos] === '#') { pos++; tokens.push({ t: 'ref', v: m[3] || m[4], spill: true }); }
+        else tokens.push({ t: 'ref', v: m[3] || m[4] });
+      }
       else if (m[5] !== undefined) {
         const up = m[5].toUpperCase();
         if (up === 'TRUE' || up === 'FALSE') tokens.push({ t: 'bool', v: up === 'TRUE' });
@@ -74,7 +79,12 @@
       if (t.t === 'num') return { k: 'num', v: t.v };
       if (t.t === 'str') return { k: 'str', v: t.v };
       if (t.t === 'bool') return { k: 'bool', v: t.v };
-      if (t.t === 'ref') return refNode(t.v);
+      if (t.t === 'ref') {
+        const n = refNode(t.v);
+        if (!t.spill) return n;
+        if (n.k !== 'ref') throw ERR.ERROR;
+        return { ...n, k: 'spill' };
+      }
       if (t.t === 'name') {
         if (peek() && peek().t === 'op' && peek().v === '(') {
           next();
@@ -137,6 +147,33 @@
   class Range {
     constructor(rows) { this.rows = rows; }
     flat() { return this.rows.flat(); }
+    get h() { return this.rows.length; }
+    get w() { return this.rows.length ? this.rows[0].length : 0; }
+  }
+  const isMulti = v => v instanceof Range && (v.rows.length > 1 || (v.rows[0] && v.rows[0].length > 1));
+  /**
+   * Applies f to matching elements of the arguments, as Excel does when a scalar operation gets
+   * arrays: a 1-wide or 1-tall argument is repeated, a missing position is #N/A, and an error
+   * stays in its own element.
+   */
+  function broadcast(args, f) {
+    const dims = args.map(a => (a instanceof Range ? [a.h, a.w] : [1, 1]));
+    const R = Math.max(...dims.map(d => d[0])), C = Math.max(...dims.map(d => d[1]));
+    const pick = (a, d, r, c) => {
+      if (!(a instanceof Range)) return a;
+      const rr = d[0] === 1 ? 0 : r, cc = d[1] === 1 ? 0 : c;
+      return rr < d[0] && cc < d[1] ? a.rows[rr][cc] : ERR.NA;
+    };
+    const rows = [];
+    for (let r = 0; r < R; r++) {
+      const row = [];
+      for (let c = 0; c < C; c++) {
+        const xs = args.map((a, i) => pick(a, dims[i], r, c));
+        try { const v = f(xs); row.push(v instanceof Range ? v.flat()[0] : v); } catch (e) { if (isErr(e)) row.push(e); else throw e; }
+      }
+      rows.push(row);
+    }
+    return new Range(rows);
   }
   const isBlank = v => v === null || v === undefined || v === '';
   function toNum(v) {
@@ -240,7 +277,14 @@
   // ---------- Functions ----------
   // Lazy functions receive (argNodes, evalNode) so they can short-circuit.
   const LAZY = {
-    IF: (a, ev) => (toBool(ev(a[0])) ? (a[1] ? ev(a[1]) : true) : (a[2] ? ev(a[2]) : false)),
+    IF: (a, ev) => {
+      const c = ev(a[0]);
+      if (isMulti(c)) {
+        const t = a[1] && a[1].k !== 'empty' ? ev(a[1]) : a[1] ? 0 : true, f = a[2] && a[2].k !== 'empty' ? ev(a[2]) : a[2] ? 0 : false;
+        return broadcast([c, t, f], ([x, y, z]) => (toBool(x) ? y : z));
+      }
+      return toBool(c) ? (a[1] ? ev(a[1]) : true) : (a[2] ? ev(a[2]) : false);
+    },
     IFERROR: (a, ev) => { try { const v = ev(a[0]); if (isErr(v)) return ev(a[1]); if (v instanceof Range && isErr(v.flat()[0])) return ev(a[1]); return v; } catch (e) { if (isErr(e)) return ev(a[1]); throw e; } },
     IFNA: (a, ev) => { try { const v = ev(a[0]); return v === ERR.NA ? ev(a[1]) : v; } catch (e) { if (e === ERR.NA) return ev(a[1]); throw e; } },
     IFS: (a, ev) => { for (let i = 0; i < a.length; i += 2) if (toBool(ev(a[i]))) return ev(a[i + 1]); throw ERR.NA; },
@@ -423,6 +467,746 @@
     NPV: a => { const r = toNum(a[0]); return nums(a.slice(1)).reduce((s, v, i) => s + v / Math.pow(1 + r, i + 1), 0); }
   };
 
+  // ---------- More functions: dynamic arrays, references, statistics, finance, text, dates ----------
+  const rowsOf = v => (v instanceof Range ? v.rows : [[v]]);
+  const optN = (v, d) => (v === undefined || v === '' || v === null ? d : toNum(v));
+  const optB = (v, d) => (v === undefined || v === '' || v === null ? d : toBool(v));
+  const arrOut = rows => { if (!rows.length || !rows[0].length) throw ERR.CALC; return new Range(rows); };
+  const transpose = rows => (rows.length ? rows[0].map((_, c) => rows.map(r => r[c])) : []);
+  // Excel's sort order: numbers, text (case-insensitive), logicals, errors; blanks last.
+  const rankType = v => (isBlank(v) ? 4 : typeof v === 'number' ? 0 : typeof v === 'string' ? 1 : typeof v === 'boolean' ? 2 : 3);
+  const sortCmp = (a, b) => {
+    const ta = rankType(a), tb = rankType(b);
+    if (ta !== tb) return ta - tb;
+    if (ta === 0) return a - b;
+    if (ta === 1) return a.localeCompare(b, undefined, { sensitivity: 'base' });
+    if (ta === 2) return +a - +b;
+    return 0;
+  };
+  const keyOf = v => (typeof v === 'string' ? 's' + v.toLowerCase() : isErr(v) ? 'e' + v.error : typeof v + ':' + v);
+  const pairs = (xs, ys) => {
+    const a = asRange(xs).flat(), b = asRange(ys).flat();
+    if (a.length !== b.length) throw ERR.NA;
+    const out = [];
+    a.forEach((x, i) => { if (isErr(x)) throw x; if (isErr(b[i])) throw b[i]; if (typeof x === 'number' && typeof b[i] === 'number') out.push([x, b[i]]); });
+    return out;
+  };
+  const mean = n => n.reduce((s, x) => s + x, 0) / n.length;
+  const sqDev = n => { const m = mean(n); return n.reduce((s, x) => s + (x - m) ** 2, 0); };
+  const variance = (n, sample) => { if (n.length < (sample ? 2 : 1)) throw ERR.DIV0; return sqDev(n) / (n.length - (sample ? 1 : 0)); };
+  function percentile(n, p, exc) {
+    n = n.slice().sort((x, y) => x - y);
+    if (!n.length) throw ERR.NUM;
+    let rank;
+    if (exc) { rank = p * (n.length + 1) - 1; if (rank < 0 || rank > n.length - 1) throw ERR.NUM; }
+    else { if (p < 0 || p > 1) throw ERR.NUM; rank = p * (n.length - 1); }
+    const lo = Math.floor(rank), f = rank - lo;
+    return lo + 1 < n.length ? n[lo] + f * (n[lo + 1] - n[lo]) : n[lo];
+  }
+  // Normal distribution: erfc (W. J. Cody's rational approximations, ~1e-15) and Acklam's inverse refined by Newton.
+  function erfc(x) {
+    const z = Math.abs(x), t = 1 / (1 + 0.5 * z);
+    const r = t * Math.exp(-z * z - 1.26551223 + t * (1.00002368 + t * (0.37409196 + t * (0.09678418 + t * (-0.18628806 + t * (0.27886807 + t * (-1.13520398 + t * (1.48851587 + t * (-0.82215223 + t * 0.17087277)))))))));
+    return x >= 0 ? r : 2 - r;
+  }
+  function normCdf(z) {
+    // Series for small |z|, continued fraction tail otherwise: accurate to ~1e-14.
+    if (Math.abs(z) < 3) {
+      let sum = z, term = z;
+      for (let i = 1; i < 200; i++) { term *= z * z / (2 * i + 1); sum += term; if (Math.abs(term) < 1e-17 * Math.abs(sum)) break; }
+      return 0.5 + sum * Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI);
+    }
+    return 0.5 * erfc(-z / Math.SQRT2);
+  }
+  const normPdf = z => Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI);
+  function normInv(p) {
+    if (p <= 0 || p >= 1) throw ERR.NUM;
+    const a = [-39.69683028665376, 220.9460984245205, -275.9285104469687, 138.357751867269, -30.66479806614716, 2.506628277459239];
+    const b = [-54.47609879822406, 161.5858368580409, -155.6989798598866, 66.80131188771972, -13.28068155288572];
+    const c = [-0.007784894002430293, -0.3223964580411365, -2.400758277161838, -2.549732539343734, 4.374664141464968, 2.938163982698783];
+    const d = [0.007784695709041462, 0.3224671290700398, 2.445134137142996, 3.754408661907416];
+    let x;
+    if (p < 0.02425) { const q = Math.sqrt(-2 * Math.log(p)); x = (((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    else if (p > 1 - 0.02425) { const q = Math.sqrt(-2 * Math.log(1 - p)); x = -(((((c[0] * q + c[1]) * q + c[2]) * q + c[3]) * q + c[4]) * q + c[5]) / ((((d[0] * q + d[1]) * q + d[2]) * q + d[3]) * q + 1); }
+    else { const q = p - 0.5, r = q * q; x = (((((a[0] * r + a[1]) * r + a[2]) * r + a[3]) * r + a[4]) * r + a[5]) * q / (((((b[0] * r + b[1]) * r + b[2]) * r + b[3]) * r + b[4]) * r + 1); }
+    for (let i = 0; i < 3; i++) x -= (normCdf(x) - p) / normPdf(x);
+    return x;
+  }
+  function lgamma(x) {
+    const g = [76.18009172947146, -86.50532032941677, 24.01409824083091, -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5];
+    let y = x, tmp = x + 5.5; tmp -= (x + 0.5) * Math.log(tmp);
+    let ser = 1.000000000190015;
+    for (const k of g) ser += k / ++y;
+    return -tmp + Math.log(2.5066282746310005 * ser / x);
+  }
+  const lnComb = (n, k) => lgamma(n + 1) - lgamma(k + 1) - lgamma(n - k + 1);
+  function newton(f, guess) {
+    let x = guess;
+    for (let i = 0; i < 100; i++) {
+      const y = f(x), h = 1e-7 * Math.max(1, Math.abs(x)), d = (f(x + h) - y) / h;
+      if (!isFinite(y) || !isFinite(d) || d === 0) break;
+      const nx = x - y / d;
+      if (Math.abs(nx - x) < 1e-12) return nx;
+      x = nx;
+    }
+    if (Math.abs(f(x)) < 1e-7) return x;
+    throw ERR.NUM;
+  }
+  const ipmt = (rate, per, nper, pv, fv, type) => {
+    const pmt = FN.PMT([rate, nper, pv, fv, type]);
+    let interest;
+    if (per === 1) interest = type === 1 ? 0 : -pv;
+    else interest = type === 1 ? FN.FV([rate, per - 2, pmt, pv, 1]) - pmt : FN.FV([rate, per - 1, pmt, pv, 0]);
+    return interest * rate;
+  };
+  const ymd = s => { const d = serialToDate(s); return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()]; };
+  const isWeekend = (s, mask) => mask[(serialToDate(s).getUTCDay() + 6) % 7] === '1'; // mask: Mon..Sun
+  function weekendMask(w) {
+    if (w === undefined || w === '' || w === null) return '0000011';
+    if (typeof w === 'string' && /^[01]{7}$/.test(w)) return w;
+    const n = toNum(w);
+    const m = { 1: '0000011', 2: '1000001', 3: '1100000', 4: '0110000', 5: '0011000', 6: '0001100', 7: '0000110', 11: '0000001', 12: '1000000', 13: '0100000', 14: '0010000', 15: '0001000', 16: '0000100', 17: '0000010' }[n];
+    if (!m) throw ERR.NUM;
+    return m;
+  }
+  const holidays = h => new Set(h === undefined ? [] : nums([h]).map(Math.floor));
+  function networkdays(start, end, mask, hol) {
+    start = Math.floor(start); end = Math.floor(end);
+    const sign = end < start ? -1 : 1;
+    if (sign < 0) [start, end] = [end, start];
+    let n = 0;
+    for (let s = start; s <= end; s++) if (!isWeekend(s, mask) && !hol.has(s)) n++;
+    return n * sign;
+  }
+  function workday(start, days, mask, hol) {
+    let s = Math.floor(start);
+    const step = days < 0 ? -1 : 1;
+    if (mask === '1111111') throw ERR.VALUE;
+    for (let left = Math.abs(Math.trunc(days)); left > 0;) { s += step; if (!isWeekend(s, mask) && !hol.has(s)) left--; }
+    return s;
+  }
+  const ROMAN = [[1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'], [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I']];
+  function toBase(n, radix, bits, places) {
+    n = Math.trunc(toNum(n));
+    const lim = 2 ** (bits - 1);
+    if (n < -lim || n >= lim) throw ERR.NUM;
+    if (n < 0) return (2 ** bits + n).toString(radix).toUpperCase();
+    const s = n.toString(radix).toUpperCase();
+    if (places === undefined) return s;
+    const p = toNum(places);
+    if (p < s.length) throw ERR.NUM;
+    return s.padStart(p, '0');
+  }
+  function fromBase(text, radix, bits) {
+    const s = toStr(text).trim();
+    if (s.length > 10 || !new RegExp(`^[${'0123456789ABCDEF'.slice(0, radix)}]*$`, 'i').test(s)) throw ERR.NUM;
+    const n = parseInt(s || '0', radix);
+    return s.length === 10 && n >= 2 ** (bits - 1) ? n - 2 ** bits : n;
+  }
+  function textSplitAt(text, delims, instance, caseless, matchEnd) {
+    const t = caseless ? text.toLowerCase() : text;
+    const ds = delims.map(d => (caseless ? d.toLowerCase() : d)).filter(d => d !== '');
+    if (!ds.length) return instance > 0 ? [0, 0] : [text.length, text.length];
+    const hits = [];
+    for (let i = 0; i < t.length; i++) for (const d of ds) if (t.startsWith(d, i)) { hits.push([i, i + d.length]); break; }
+    if (matchEnd) hits.push([t.length, t.length]);
+    const h = instance > 0 ? hits[instance - 1] : hits[hits.length + instance];
+    return h || null;
+  }
+  function xmatch(v, list, mode, search) {
+    v = scalar(v);
+    const idx = [...list.keys()];
+    if (search < 0) idx.reverse();
+    if (mode === 2) { const m = criteria(typeof v === 'string' ? v : toStr(v)); const i = idx.find(k => m(list[k])); if (i === undefined) throw ERR.NA; return i; }
+    let best = -1;
+    for (const k of idx) {
+      const x = list[k];
+      if (isBlank(x) && !isBlank(v)) continue;
+      const c = sortCmp(x, v);
+      if (rankType(x) === rankType(v) && c === 0) return k;
+      if (mode === -1 && rankType(x) === rankType(v) && c < 0 && (best < 0 || sortCmp(x, list[best]) > 0)) best = k;
+      if (mode === 1 && rankType(x) === rankType(v) && c > 0 && (best < 0 || sortCmp(x, list[best]) < 0)) best = k;
+    }
+    if (best < 0) throw ERR.NA;
+    return best;
+  }
+  function minverse(m) {
+    const n = m.length;
+    if (!n || m.some(r => r.length !== n)) throw ERR.VALUE;
+    const a = m.map((r, i) => [...r.map(toNum), ...Array.from({ length: n }, (_, j) => (i === j ? 1 : 0))]);
+    let det = 1;
+    for (let c = 0; c < n; c++) {
+      let p = c;
+      for (let r = c + 1; r < n; r++) if (Math.abs(a[r][c]) > Math.abs(a[p][c])) p = r;
+      if (Math.abs(a[p][c]) < 1e-15) return { inv: null, det: 0 };
+      if (p !== c) { [a[p], a[c]] = [a[c], a[p]]; det = -det; }
+      const pv = a[c][c]; det *= pv;
+      for (let j = 0; j < 2 * n; j++) a[c][j] /= pv;
+      for (let r = 0; r < n; r++) if (r !== c) { const f = a[r][c]; if (f) for (let j = 0; j < 2 * n; j++) a[r][j] -= f * a[c][j]; }
+    }
+    return { inv: a.map(r => r.slice(n)), det };
+  }
+
+  /** Functions that take single values; given arrays they work per element. */
+  const LIFT = new Set(('ABS SQRT POWER EXP LN LOG LOG10 MOD INT TRUNC ROUND ROUNDUP ROUNDDOWN CEILING FLOOR SIGN SIN COS TAN RADIANS DEGREES ' +
+    'LEN LEFT RIGHT MID UPPER LOWER PROPER TRIM REPT SUBSTITUTE REPLACE FIND SEARCH EXACT VALUE CHAR CODE TEXT FIXED DOLLAR T N ' +
+    'DATE TIME YEAR MONTH DAY HOUR MINUTE SECOND WEEKDAY DAYS EDATE EOMONTH DATEVALUE ISBLANK ISNUMBER ISTEXT ISLOGICAL ISEVEN ISODD NOT ' +
+    'MROUND QUOTIENT FACT COMBIN PERMUT ODD EVEN ASIN ACOS ATAN ATAN2 SINH COSH TANH ASINH ACOSH ATANH SQRTPI CEILING.MATH FLOOR.MATH ' +
+    'CEILING.PRECISE FLOOR.PRECISE ROMAN ARABIC BASE DECIMAL DEC2BIN BIN2DEC DEC2HEX HEX2DEC DEC2OCT OCT2DEC CLEAN UNICHAR UNICODE ' +
+    'NUMBERVALUE TEXTBEFORE TEXTAFTER DATEDIF WEEKNUM ISOWEEKNUM YEARFRAC TIMEVALUE ISNONTEXT STANDARDIZE NORM.DIST NORMDIST NORM.S.DIST ' +
+    'NORMSDIST NORM.INV NORMINV NORM.S.INV NORMSINV EXPON.DIST POISSON.DIST BINOM.DIST ADDRESS EFFECT NOMINAL SLN SYD').split(' '));
+  /** Functions whose result can be an array (they spill). */
+  const ARRAY_FNS = new Set(('FILTER SORT SORTBY UNIQUE SEQUENCE RANDARRAY TRANSPOSE TOCOL TOROW VSTACK HSTACK TAKE DROP CHOOSECOLS CHOOSEROWS ' +
+    'WRAPROWS WRAPCOLS EXPAND TEXTSPLIT MMULT MINVERSE FREQUENCY MODE.MULT OFFSET INDIRECT INDEX XLOOKUP ROW COLUMN').split(' '));
+  function maySpill(n) {
+    if (!n || typeof n !== 'object') return false;
+    switch (n.k) {
+      case 'range': case 'spill': return true;
+      case 'bin': return maySpill(n.l) || maySpill(n.r);
+      case 'neg': case 'pct': return maySpill(n.e);
+      case 'fn':
+        if (ARRAY_FNS.has(n.name)) return true;
+        if (LIFT.has(n.name) || LAZY[n.name]) return n.args.some(maySpill);
+        return false;
+    }
+    return false;
+  }
+
+  Object.assign(LAZY, {
+    LET: (a, ev, ctx) => {
+      if (a.length < 3 || a.length % 2 === 0) throw ERR.VALUE;
+      const scope = new Map();
+      ctx.engine.scopes.push(scope);
+      try {
+        for (let i = 0; i < a.length - 1; i += 2) { if (a[i].k !== 'name') throw ERR.VALUE; scope.set(a[i].v, ev(a[i + 1])); }
+        return ev(a[a.length - 1]);
+      } finally { ctx.engine.scopes.pop(); }
+    },
+    INDIRECT: (a, ev, ctx) => {
+      const text = toStr(scalar(ev(a[0]))).trim();
+      if (a[1] && a[1].k !== 'empty' && !toBool(ev(a[1]))) throw ERR.REF; // R1C1 style isn't supported
+      if (!/^(?:(?:'(?:[^']|'')+'|[A-Za-z_][\w.]*)!)?\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?$/.test(text)) throw ERR.REF;
+      return ctx.engine.evalNode(refNode(text.replace(/\$/g, '')), ctx.sheet);
+    },
+    OFFSET: (a, ev, ctx) => {
+      const base = a[0];
+      if (!base || (base.k !== 'ref' && base.k !== 'range')) throw ERR.VALUE;
+      const r1 = base.k === 'ref' ? base.row : base.r1, c1 = base.k === 'ref' ? base.col : base.c1;
+      const h0 = base.k === 'ref' ? 1 : base.r2 - base.r1 + 1, w0 = base.k === 'ref' ? 1 : base.c2 - base.c1 + 1;
+      const dr = toNum(scalar(ev(a[1]))), dc = toNum(scalar(ev(a[2])));
+      const h = a[3] && a[3].k !== 'empty' ? toNum(scalar(ev(a[3]))) : h0, w = a[4] && a[4].k !== 'empty' ? toNum(scalar(ev(a[4]))) : w0;
+      const r = r1 + Math.trunc(dr), c = c1 + Math.trunc(dc);
+      if (r < 0 || c < 0 || h < 1 || w < 1 || r + h > 1048576 || c + w > 16384) throw ERR.REF;
+      const node = h === 1 && w === 1 ? { k: 'ref', sheet: base.sheet, row: r, col: c } : { k: 'range', sheet: base.sheet, r1: r, c1: c, r2: r + Math.trunc(h) - 1, c2: c + Math.trunc(w) - 1 };
+      return ctx.engine.evalNode(node, ctx.sheet);
+    },
+    ROW: (a, ev, ctx) => {
+      const n = a[0];
+      if (!n || n.k === 'empty') { if (!ctx.engine.cur) throw ERR.VALUE; return ctx.engine.cur.row + 1; }
+      if (n.k === 'ref' || n.k === 'spill') return n.row + 1;
+      if (n.k === 'range') return n.r1 === n.r2 ? n.r1 + 1 : new Range(Array.from({ length: n.r2 - n.r1 + 1 }, (_, i) => [n.r1 + i + 1]));
+      throw ERR.VALUE;
+    },
+    COLUMN: (a, ev, ctx) => {
+      const n = a[0];
+      if (!n || n.k === 'empty') { if (!ctx.engine.cur) throw ERR.VALUE; return ctx.engine.cur.col + 1; }
+      if (n.k === 'ref' || n.k === 'spill') return n.col + 1;
+      if (n.k === 'range') return n.c1 === n.c2 ? n.c1 + 1 : new Range([Array.from({ length: n.c2 - n.c1 + 1 }, (_, i) => n.c1 + i + 1)]);
+      throw ERR.VALUE;
+    },
+    ISREF: a => !!a[0] && ['ref', 'range', 'spill'].includes(a[0].k),
+    ISFORMULA: (a, ev, ctx) => {
+      if (!a[0] || a[0].k !== 'ref') throw ERR.VALUE;
+      const raw = ctx.engine.book.getRaw(ctx.engine.resolveSheet(a[0].sheet, ctx.sheet), a[0].row, a[0].col);
+      return typeof raw === 'string' && raw[0] === '=' && raw.length > 1;
+    },
+    FORMULATEXT: (a, ev, ctx) => {
+      if (!a[0] || a[0].k !== 'ref') throw ERR.VALUE;
+      const raw = ctx.engine.book.getRaw(ctx.engine.resolveSheet(a[0].sheet, ctx.sheet), a[0].row, a[0].col);
+      if (typeof raw !== 'string' || raw[0] !== '=') throw ERR.NA;
+      return raw;
+    },
+    'ERROR.TYPE': (a, ev) => {
+      let v;
+      try { v = scalar(ev(a[0])); } catch (e) { if (!isErr(e)) throw e; v = e; }
+      const code = isErr(v) && { '#NULL!': 1, '#DIV/0!': 2, '#VALUE!': 3, '#REF!': 4, '#NAME?': 5, '#NUM!': 6, '#N/A': 7, '#SPILL!': 9, '#CALC!': 14 }[v.error];
+      if (!code) throw ERR.NA;
+      return code;
+    },
+    TYPE: (a, ev) => {
+      let v;
+      try { v = ev(a[0]); } catch (e) { if (isErr(e)) return 16; throw e; }
+      if (isMulti(v)) return 64;
+      v = scalar(v);
+      return isErr(v) ? 16 : typeof v === 'number' || isBlank(v) ? 1 : typeof v === 'string' ? 2 : typeof v === 'boolean' ? 4 : 1;
+    }
+  });
+
+  Object.assign(FN, {
+    // Dynamic arrays
+    FILTER: a => {
+      const rows = rowsOf(a[0]), inc = rowsOf(a[1]);
+      const ok = v => { if (isErr(v)) throw v; return toBool(v); };
+      let out;
+      if (inc.length === rows.length && inc[0].length === 1) out = rows.filter((_, i) => ok(inc[i][0]));
+      else if (inc.length === 1 && inc[0].length === rows[0].length) out = rows.map(r => r.filter((_, j) => ok(inc[0][j])));
+      else throw ERR.VALUE;
+      if (!out.length || !out[0].length) { if (a.length > 2) return a[2]; throw ERR.CALC; }
+      return new Range(out);
+    },
+    SORT: a => {
+      let rows = rowsOf(a[0]);
+      const byCol = optB(a[3], false);
+      if (byCol) rows = transpose(rows);
+      const idx = optN(a[1], 1) - 1, order = optN(a[2], 1);
+      if (idx < 0 || idx >= rows[0].length || (order !== 1 && order !== -1)) throw ERR.VALUE;
+      const sorted = rows.map((r, i) => [r, i]).sort((x, y) => sortCmp(x[0][idx], y[0][idx]) * order || x[1] - y[1]).map(x => x[0]);
+      return new Range(byCol ? transpose(sorted) : sorted);
+    },
+    SORTBY: a => {
+      const rows = rowsOf(a[0]);
+      const keys = [];
+      for (let i = 1; i < a.length; i += 2) {
+        const by = rowsOf(a[i]), order = optN(a[i + 1], 1);
+        if (by.length === rows.length && by[0].length === 1) keys.push({ v: by.map(r => r[0]), order, col: false });
+        else if (by.length === 1 && by[0].length === rows[0].length) keys.push({ v: by[0], order, col: true });
+        else throw ERR.VALUE;
+      }
+      if (!keys.length) throw ERR.VALUE;
+      const byCol = keys[0].col;
+      if (keys.some(k => k.col !== byCol)) throw ERR.VALUE;
+      const items = byCol ? transpose(rows) : rows;
+      const sorted = items.map((r, i) => [r, i]).sort((x, y) => { for (const k of keys) { const d = sortCmp(k.v[x[1]], k.v[y[1]]) * k.order; if (d) return d; } return x[1] - y[1]; }).map(x => x[0]);
+      return new Range(byCol ? transpose(sorted) : sorted);
+    },
+    UNIQUE: a => {
+      const byCol = optB(a[1], false), once = optB(a[2], false);
+      const items = byCol ? transpose(rowsOf(a[0])) : rowsOf(a[0]);
+      const count = new Map();
+      items.forEach(r => { const k = r.map(keyOf).join('\u0001'); count.set(k, (count.get(k) || 0) + 1); });
+      const seen = new Set();
+      const out = items.filter(r => { const k = r.map(keyOf).join('\u0001'); if (seen.has(k)) return false; seen.add(k); return !once || count.get(k) === 1; });
+      if (!out.length) throw ERR.CALC;
+      return new Range(byCol ? transpose(out) : out);
+    },
+    SEQUENCE: a => {
+      const r = Math.trunc(toNum(a[0])), c = Math.trunc(optN(a[1], 1)), start = optN(a[2], 1), step = optN(a[3], 1);
+      if (r < 1 || c < 1) throw ERR.CALC;
+      if (r * c > 1048576) throw ERR.NUM;
+      return new Range(Array.from({ length: r }, (_, i) => Array.from({ length: c }, (_, j) => start + (i * c + j) * step)));
+    },
+    RANDARRAY: a => {
+      const r = Math.trunc(optN(a[0], 1)), c = Math.trunc(optN(a[1], 1)), lo = optN(a[2], 0), hi = optN(a[3], 1), int = optB(a[4], false);
+      if (r < 1 || c < 1) throw ERR.CALC;
+      if (hi < lo) throw ERR.VALUE;
+      return new Range(Array.from({ length: r }, () => Array.from({ length: c }, () => (int ? Math.ceil(lo) + Math.floor(Math.random() * (Math.floor(hi) - Math.ceil(lo) + 1)) : lo + Math.random() * (hi - lo)))));
+    },
+    TRANSPOSE: a => new Range(transpose(rowsOf(a[0]))),
+    TOCOL: a => {
+      const ignore = optN(a[1], 0), byCol = optB(a[2], false);
+      const rows = byCol ? transpose(rowsOf(a[0])) : rowsOf(a[0]);
+      const flat = rows.flat().filter(v => !((ignore & 1) && isBlank(v)) && !((ignore & 2) && isErr(v)));
+      return arrOut(flat.map(v => [v]));
+    },
+    TOROW: a => { const col = FN.TOCOL(a); return new Range([col.flat()]); },
+    VSTACK: a => { const parts = a.map(rowsOf); const w = Math.max(...parts.map(p => p[0].length)); return arrOut(parts.flatMap(p => p.map(r => [...r, ...Array(w - r.length).fill(ERR.NA)]))); },
+    HSTACK: a => { const parts = a.map(rowsOf); const h = Math.max(...parts.map(p => p.length)); return arrOut(Array.from({ length: h }, (_, i) => parts.flatMap(p => p[i] || Array(p[0].length).fill(ERR.NA)))); },
+    TAKE: a => {
+      let rows = rowsOf(a[0]);
+      const r = a[1] === undefined || a[1] === '' ? rows.length : Math.trunc(toNum(a[1])), c = a[2] === undefined || a[2] === '' ? rows[0].length : Math.trunc(toNum(a[2]));
+      rows = r >= 0 ? rows.slice(0, r) : rows.slice(r);
+      return arrOut(rows.map(row => (c >= 0 ? row.slice(0, c) : row.slice(c))));
+    },
+    DROP: a => {
+      let rows = rowsOf(a[0]);
+      const r = Math.trunc(optN(a[1], 0)), c = Math.trunc(optN(a[2], 0));
+      rows = r >= 0 ? rows.slice(r) : rows.slice(0, r);
+      return arrOut(rows.map(row => (c >= 0 ? row.slice(c) : row.slice(0, c))));
+    },
+    CHOOSEROWS: a => { const rows = rowsOf(a[0]); return arrOut(nums(a.slice(1)).map(n => { const i = n > 0 ? n - 1 : rows.length + n; if (!rows[i] || n === 0) throw ERR.VALUE; return rows[i]; })); },
+    CHOOSECOLS: a => { const cols = transpose(rowsOf(a[0])); return arrOut(transpose(nums(a.slice(1)).map(n => { const i = n > 0 ? n - 1 : cols.length + n; if (!cols[i] || n === 0) throw ERR.VALUE; return cols[i]; }))); },
+    WRAPROWS: a => {
+      const v = rowsOf(a[0]); if (v.length > 1 && v[0].length > 1) throw ERR.VALUE;
+      const flat = v.flat(), n = Math.trunc(toNum(a[1])), pad = a.length > 2 ? a[2] : ERR.NA;
+      if (n < 1) throw ERR.NUM;
+      const out = [];
+      for (let i = 0; i < flat.length; i += n) { const row = flat.slice(i, i + n); while (row.length < n) row.push(pad); out.push(row); }
+      return arrOut(out);
+    },
+    WRAPCOLS: a => new Range(transpose(FN.WRAPROWS(a).rows)),
+    EXPAND: a => {
+      const rows = rowsOf(a[0]);
+      const r = a[1] === undefined || a[1] === '' ? rows.length : toNum(a[1]), c = a[2] === undefined || a[2] === '' ? rows[0].length : toNum(a[2]);
+      const pad = a.length > 3 ? a[3] : ERR.NA;
+      if (r < rows.length || c < rows[0].length) throw ERR.VALUE;
+      return new Range(Array.from({ length: r }, (_, i) => Array.from({ length: c }, (_, j) => (rows[i] && j < rows[i].length ? rows[i][j] : pad))));
+    },
+    TEXTSPLIT: a => {
+      const text = toStr(a[0]);
+      const cd = a[1] === undefined || a[1] === '' ? [] : asRange(a[1]).flat().map(toStr);
+      const rd = a[2] === undefined || a[2] === '' ? [] : asRange(a[2]).flat().map(toStr);
+      const ignore = optB(a[3], false), caseless = optN(a[4], 0) === 1, pad = a.length > 5 ? a[5] : ERR.NA;
+      const split = (s, ds) => {
+        if (!ds.length) return [s];
+        const out = []; let cur = '', i = 0;
+        const t = caseless ? s.toLowerCase() : s, dd = ds.map(d => (caseless ? d.toLowerCase() : d)).filter(Boolean);
+        while (i < s.length) { const d = dd.find(x => t.startsWith(x, i)); if (d) { out.push(cur); cur = ''; i += d.length; } else cur += s[i++]; }
+        out.push(cur);
+        return ignore ? out.filter(x => x !== '') : out;
+      };
+      const rows = split(text, rd).map(line => split(line, cd));
+      const w = Math.max(...rows.map(r => r.length));
+      return arrOut(rows.map(r => [...r, ...Array(w - r.length).fill(pad)]));
+    },
+    MMULT: a => {
+      const x = rowsOf(a[0]).map(r => r.map(toNum)), y = rowsOf(a[1]).map(r => r.map(toNum));
+      if (x[0].length !== y.length) throw ERR.VALUE;
+      return new Range(x.map(r => y[0].map((_, j) => r.reduce((s, v, k) => s + v * y[k][j], 0))));
+    },
+    MINVERSE: a => { const { inv } = minverse(rowsOf(a[0])); if (!inv) throw ERR.NUM; return new Range(inv); },
+    MDETERM: a => minverse(rowsOf(a[0])).det,
+    FREQUENCY: a => {
+      const data = nums([a[0]]), bins = nums([a[1]]).sort((x, y) => x - y);
+      const out = new Array(bins.length + 1).fill(0);
+      for (const v of data) { let i = bins.findIndex(b => v <= b); if (i < 0) i = bins.length; out[i]++; }
+      return new Range(out.map(v => [v]));
+    },
+    'MODE.MULT': a => {
+      const c = new Map(); let best = 1;
+      for (const n of nums(a)) { const k = (c.get(n) || 0) + 1; c.set(n, k); best = Math.max(best, k); }
+      const out = [...c].filter(([, k]) => k === best && best > 1).map(([n]) => [n]);
+      if (!out.length) throw ERR.NA;
+      return new Range(out);
+    },
+    XMATCH: a => xmatch(a[0], asRange(a[1]).flat(), optN(a[2], 0), optN(a[3], 1)) + 1,
+    XLOOKUP: a => {
+      const look = asRange(a[1]), ret = asRange(a[2]);
+      const vertical = look.w === 1;
+      let i;
+      try { i = xmatch(a[0], look.flat(), optN(a[4], 0), optN(a[5], 1)); } catch (e) {
+        if (e === ERR.NA && a.length > 3 && a[3] !== undefined && a[3] !== '') return a[3];
+        throw e;
+      }
+      if (vertical) { if (ret.h !== look.h) throw ERR.VALUE; return ret.w === 1 ? ret.rows[i][0] : new Range([ret.rows[i]]); }
+      if (ret.w !== look.w) throw ERR.VALUE;
+      return ret.h === 1 ? ret.rows[0][i] : new Range(ret.rows.map(r => [r[i]]));
+    },
+    INDEX: a => {
+      const r = asRange(a[0]).rows;
+      let row = toNum(a[1]), col = a[2] === undefined ? 1 : toNum(a[2]);
+      if (r.length === 1 && a[2] === undefined) { col = row; row = 1; }
+      if (row < 0 || col < 0 || row > r.length || col > r[0].length) throw ERR.REF;
+      if (row === 0 && col === 0) return new Range(r);
+      if (row === 0) return new Range(r.map(x => [x[col - 1]]));
+      if (col === 0) return new Range([r[row - 1]]);
+      return r[row - 1][col - 1];
+    },
+    LOOKUP: a => {
+      const v = scalar(a[0]), look = asRange(a[1]).flat(), res = a[2] !== undefined ? asRange(a[2]).flat() : look;
+      let hit = -1;
+      look.forEach((x, i) => { if (!isBlank(x) && rankType(x) === rankType(v) && sortCmp(x, v) <= 0) hit = i; });
+      if (hit < 0 || hit >= res.length) throw ERR.NA;
+      return res[hit];
+    },
+    ADDRESS: a => {
+      const r = Math.trunc(toNum(a[0])), c = Math.trunc(toNum(a[1])), abs = optN(a[2], 1), a1 = optB(a[3], true);
+      if (r < 1 || c < 1 || c > 16384 || r > 1048576) throw ERR.VALUE;
+      const sheet = a[4] !== undefined && a[4] !== '' ? toStr(a[4]) : '';
+      const pre = sheet ? (/^[A-Za-z_][\w.]*$/.test(sheet) ? sheet : `'${sheet.replace(/'/g, "''")}'`) + '!' : '';
+      if (!a1) return pre + `R${abs === 1 || abs === 2 ? r : `[${r}]`}C${abs === 1 || abs === 3 ? c : `[${c}]`}`;
+      return pre + (abs === 1 || abs === 3 ? '$' : '') + indexToCol(c - 1) + (abs === 1 || abs === 2 ? '$' : '') + r;
+    },
+    SUBTOTAL: a => {
+      const f = Math.trunc(toNum(a[0])) % 100;
+      const map = { 1: 'AVERAGE', 2: 'COUNT', 3: 'COUNTA', 4: 'MAX', 5: 'MIN', 6: 'PRODUCT', 7: 'STDEV', 8: 'STDEVP', 9: 'SUM', 10: 'VAR', 11: 'VARP' };
+      if (!map[f]) throw ERR.VALUE;
+      return FN[map[f]](a.slice(1));
+    },
+    AGGREGATE: a => {
+      const f = Math.trunc(toNum(a[0])), opt = Math.trunc(toNum(a[1]));
+      const skipErr = [2, 3, 6, 7].includes(opt);
+      const clean = x => (x instanceof Range ? new Range(x.rows.map(r => r.map(v => (skipErr && isErr(v) ? '' : v)))) : x);
+      const names = { 1: 'AVERAGE', 2: 'COUNT', 3: 'COUNTA', 4: 'MAX', 5: 'MIN', 6: 'PRODUCT', 7: 'STDEV.S', 8: 'STDEV.P', 9: 'SUM', 10: 'VAR.S', 11: 'VAR.P', 12: 'MEDIAN', 13: 'MODE.SNGL', 14: 'LARGE', 15: 'SMALL', 16: 'PERCENTILE.INC', 17: 'QUARTILE.INC', 18: 'PERCENTILE.EXC', 19: 'QUARTILE.EXC' };
+      if (!names[f]) throw ERR.VALUE;
+      return f <= 13 ? FN[names[f]](a.slice(2).map(clean)) : FN[names[f]]([clean(a[2]), a[3]]);
+    },
+
+    // Statistics
+    'STDEV.S': a => Math.sqrt(variance(nums(a), true)), 'STDEV.P': a => Math.sqrt(variance(nums(a), false)),
+    'VAR.S': a => variance(nums(a), true), 'VAR.P': a => variance(nums(a), false), VARP: a => variance(nums(a), false),
+    AVERAGEA: a => { const v = flatten(a).filter(x => !isBlank(x)).map(x => (typeof x === 'number' ? x : typeof x === 'boolean' ? +x : 0)); if (!v.length) throw ERR.DIV0; return mean(v); },
+    MAXA: a => { const v = flatten(a).filter(x => !isBlank(x)).map(x => (typeof x === 'number' ? x : typeof x === 'boolean' ? +x : 0)); return v.length ? Math.max(...v) : 0; },
+    MINA: a => { const v = flatten(a).filter(x => !isBlank(x)).map(x => (typeof x === 'number' ? x : typeof x === 'boolean' ? +x : 0)); return v.length ? Math.min(...v) : 0; },
+    'MODE.SNGL': a => FN.MODE(a),
+    'RANK.EQ': a => FN.RANK(a),
+    'RANK.AVG': a => { const v = toNum(a[0]), n = nums([a[1]]), asc = optN(a[2], 0) !== 0; const k = n.filter(x => x === v).length; if (!k) throw ERR.NA; return 1 + n.filter(x => (asc ? x < v : x > v)).length + (k - 1) / 2; },
+    PERCENTILE: a => percentile(nums([a[0]]), toNum(a[1]), false),
+    'PERCENTILE.INC': a => percentile(nums([a[0]]), toNum(a[1]), false),
+    'PERCENTILE.EXC': a => percentile(nums([a[0]]), toNum(a[1]), true),
+    QUARTILE: a => { const q = Math.trunc(toNum(a[1])); if (q < 0 || q > 4) throw ERR.NUM; return percentile(nums([a[0]]), q / 4, false); },
+    'QUARTILE.INC': a => FN.QUARTILE(a),
+    'QUARTILE.EXC': a => { const q = Math.trunc(toNum(a[1])); if (q < 1 || q > 3) throw ERR.NUM; return percentile(nums([a[0]]), q / 4, true); },
+    'PERCENTRANK.INC': a => {
+      const n = nums([a[0]]).sort((x, y) => x - y), x = toNum(a[1]), sig = Math.trunc(optN(a[2], 3));
+      if (!n.length || x < n[0] || x > n[n.length - 1] || sig < 1) throw ERR.NA;
+      let r;
+      const lo = n.filter(v => v < x).length;
+      if (n.includes(x)) r = lo / (n.length - 1);
+      else { const i = lo - 1; r = (i + (x - n[i]) / (n[i + 1] - n[i])) / (n.length - 1); }
+      const f = 10 ** sig;
+      return Math.floor(r * f + 1e-9) / f;
+    },
+    PERCENTRANK: a => FN['PERCENTRANK.INC'](a),
+    GEOMEAN: a => { const n = nums(a); if (!n.length || n.some(x => x <= 0)) throw ERR.NUM; return Math.exp(n.reduce((s, x) => s + Math.log(x), 0) / n.length); },
+    HARMEAN: a => { const n = nums(a); if (!n.length || n.some(x => x <= 0)) throw ERR.NUM; return n.length / n.reduce((s, x) => s + 1 / x, 0); },
+    TRIMMEAN: a => { const n = nums([a[0]]).sort((x, y) => x - y), p = toNum(a[1]); if (p < 0 || p >= 1) throw ERR.NUM; const k = Math.floor(n.length * p / 2); const m = n.slice(k, n.length - k); if (!m.length) throw ERR.NUM; return mean(m); },
+    DEVSQ: a => sqDev(nums(a)),
+    AVEDEV: a => { const n = nums(a); if (!n.length) throw ERR.NUM; const m = mean(n); return mean(n.map(x => Math.abs(x - m))); },
+    SKEW: a => { const n = nums(a), k = n.length; if (k < 3) throw ERR.DIV0; const m = mean(n), s = Math.sqrt(variance(n, true)); if (!s) throw ERR.DIV0; return k / ((k - 1) * (k - 2)) * n.reduce((t, x) => t + ((x - m) / s) ** 3, 0); },
+    KURT: a => { const n = nums(a), k = n.length; if (k < 4) throw ERR.DIV0; const m = mean(n), s = Math.sqrt(variance(n, true)); if (!s) throw ERR.DIV0; return k * (k + 1) / ((k - 1) * (k - 2) * (k - 3)) * n.reduce((t, x) => t + ((x - m) / s) ** 4, 0) - 3 * (k - 1) ** 2 / ((k - 2) * (k - 3)); },
+    CORREL: a => { const p = pairs(a[0], a[1]); if (p.length < 2) throw ERR.DIV0; const mx = mean(p.map(q => q[0])), my = mean(p.map(q => q[1])); let sxy = 0, sxx = 0, syy = 0; for (const [x, y] of p) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; syy += (y - my) ** 2; } if (!sxx || !syy) throw ERR.DIV0; return sxy / Math.sqrt(sxx * syy); },
+    PEARSON: a => FN.CORREL(a),
+    RSQ: a => FN.CORREL(a) ** 2,
+    'COVARIANCE.P': a => { const p = pairs(a[0], a[1]); if (!p.length) throw ERR.DIV0; const mx = mean(p.map(q => q[0])), my = mean(p.map(q => q[1])); return p.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0) / p.length; },
+    'COVARIANCE.S': a => { const p = pairs(a[0], a[1]); if (p.length < 2) throw ERR.DIV0; const mx = mean(p.map(q => q[0])), my = mean(p.map(q => q[1])); return p.reduce((s, [x, y]) => s + (x - mx) * (y - my), 0) / (p.length - 1); },
+    COVAR: a => FN['COVARIANCE.P'](a),
+    SLOPE: a => { const p = pairs(a[1], a[0]); const mx = mean(p.map(q => q[0])), my = mean(p.map(q => q[1])); let sxy = 0, sxx = 0; for (const [x, y] of p) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; } if (!sxx) throw ERR.DIV0; return sxy / sxx; },
+    INTERCEPT: a => { const p = pairs(a[1], a[0]); if (!p.length) throw ERR.DIV0; return mean(p.map(q => q[1])) - FN.SLOPE(a) * mean(p.map(q => q[0])); },
+    FORECAST: a => FN.INTERCEPT([a[1], a[2]]) + FN.SLOPE([a[1], a[2]]) * toNum(a[0]),
+    'FORECAST.LINEAR': a => FN.FORECAST(a),
+    STANDARDIZE: a => { const sd = toNum(a[2]); if (sd <= 0) throw ERR.NUM; return (toNum(a[0]) - toNum(a[1])) / sd; },
+    'NORM.DIST': a => { const x = toNum(a[0]), m = toNum(a[1]), sd = toNum(a[2]); if (sd <= 0) throw ERR.NUM; const z = (x - m) / sd; return toBool(a[3]) ? normCdf(z) : normPdf(z) / sd; },
+    NORMDIST: a => FN['NORM.DIST'](a),
+    'NORM.S.DIST': a => { const z = toNum(a[0]); return a[1] === undefined || toBool(a[1]) ? normCdf(z) : normPdf(z); },
+    NORMSDIST: a => normCdf(toNum(a[0])),
+    'NORM.INV': a => { const sd = toNum(a[2]); if (sd <= 0) throw ERR.NUM; return toNum(a[1]) + sd * normInv(toNum(a[0])); },
+    NORMINV: a => FN['NORM.INV'](a),
+    'NORM.S.INV': a => normInv(toNum(a[0])),
+    NORMSINV: a => normInv(toNum(a[0])),
+    'CONFIDENCE.NORM': a => { const alpha = toNum(a[0]), sd = toNum(a[1]), n = toNum(a[2]); if (alpha <= 0 || alpha >= 1 || sd <= 0 || n < 1) throw ERR.NUM; return normInv(1 - alpha / 2) * sd / Math.sqrt(n); },
+    CONFIDENCE: a => FN['CONFIDENCE.NORM'](a),
+    'EXPON.DIST': a => { const x = toNum(a[0]), l = toNum(a[1]); if (x < 0 || l <= 0) throw ERR.NUM; return toBool(a[2]) ? 1 - Math.exp(-l * x) : l * Math.exp(-l * x); },
+    'POISSON.DIST': a => {
+      const x = Math.trunc(toNum(a[0])), m = toNum(a[1]);
+      if (x < 0 || m < 0) throw ERR.NUM;
+      const pmf = k => Math.exp(k * Math.log(m) - m - lgamma(k + 1));
+      if (!toBool(a[2])) return m === 0 ? (x === 0 ? 1 : 0) : pmf(x);
+      let s = 0; for (let k = 0; k <= x; k++) s += m === 0 ? (k === 0 ? 1 : 0) : pmf(k); return Math.min(1, s);
+    },
+    'BINOM.DIST': a => {
+      const k = Math.trunc(toNum(a[0])), n = Math.trunc(toNum(a[1])), p = toNum(a[2]);
+      if (k < 0 || k > n || p < 0 || p > 1) throw ERR.NUM;
+      const pmf = j => (p === 0 ? (j === 0 ? 1 : 0) : p === 1 ? (j === n ? 1 : 0) : Math.exp(lnComb(n, j) + j * Math.log(p) + (n - j) * Math.log(1 - p)));
+      if (!toBool(a[3])) return pmf(k);
+      let s = 0; for (let j = 0; j <= k; j++) s += pmf(j); return Math.min(1, s);
+    },
+
+    // Finance
+    IRR: a => { const v = nums([a[0]]); if (!v.some(x => x > 0) || !v.some(x => x < 0)) throw ERR.NUM; return newton(r => v.reduce((s, x, i) => s + x / Math.pow(1 + r, i), 0), optN(a[1], 0.1)); },
+    NPER: a => {
+      const r = toNum(a[0]), pmt = toNum(a[1]), pv = toNum(a[2]), fv = optN(a[3], 0), t = optN(a[4], 0);
+      if (r === 0) { if (pmt === 0) throw ERR.NUM; return -(pv + fv) / pmt; }
+      const num = pmt * (1 + r * t) - fv * r, den = pmt * (1 + r * t) + pv * r;
+      if (num / den <= 0) throw ERR.NUM;
+      return Math.log(num / den) / Math.log(1 + r);
+    },
+    RATE: a => {
+      const n = toNum(a[0]), pmt = toNum(a[1]), pv = toNum(a[2]), fv = optN(a[3], 0), t = optN(a[4], 0);
+      return newton(r => (Math.abs(r) < 1e-12 ? pv + pmt * n + fv : pv * Math.pow(1 + r, n) + pmt * (1 + r * t) * (Math.pow(1 + r, n) - 1) / r + fv), optN(a[5], 0.1));
+    },
+    IPMT: a => { const per = toNum(a[1]), n = toNum(a[2]); if (per < 1 || per > n) throw ERR.NUM; return ipmt(toNum(a[0]), per, n, toNum(a[3]), optN(a[4], 0), optN(a[5], 0)); },
+    PPMT: a => { const r = toNum(a[0]), per = toNum(a[1]), n = toNum(a[2]), pv = toNum(a[3]), fv = optN(a[4], 0), t = optN(a[5], 0); if (per < 1 || per > n) throw ERR.NUM; return FN.PMT([r, n, pv, fv, t]) - ipmt(r, per, n, pv, fv, t); },
+    CUMIPMT: a => { const [r, n, pv, s, e, t] = a.map(toNum); if (r <= 0 || n <= 0 || pv <= 0 || s < 1 || e < s || e > n || (t !== 0 && t !== 1)) throw ERR.NUM; let sum = 0; for (let p = Math.ceil(s); p <= Math.floor(e); p++) sum += ipmt(r, p, n, pv, 0, t); return sum; },
+    CUMPRINC: a => { const [r, n, pv, s, e, t] = a.map(toNum); if (r <= 0 || n <= 0 || pv <= 0 || s < 1 || e < s || e > n || (t !== 0 && t !== 1)) throw ERR.NUM; const pmt = FN.PMT([r, n, pv, 0, t]); let sum = 0; for (let p = Math.ceil(s); p <= Math.floor(e); p++) sum += pmt - ipmt(r, p, n, pv, 0, t); return sum; },
+    XNPV: a => { const r = toNum(a[0]), v = nums([a[1]]), d = nums([a[2]]); if (v.length !== d.length) throw ERR.NUM; return v.reduce((s, x, i) => s + x / Math.pow(1 + r, (d[i] - d[0]) / 365), 0); },
+    XIRR: a => { const v = nums([a[0]]), d = nums([a[1]]); if (v.length !== d.length || !v.some(x => x > 0) || !v.some(x => x < 0)) throw ERR.NUM; return newton(r => v.reduce((s, x, i) => s + x / Math.pow(1 + r, (d[i] - d[0]) / 365), 0), optN(a[2], 0.1)); },
+    SLN: a => { const life = toNum(a[2]); if (!life) throw ERR.DIV0; return (toNum(a[0]) - toNum(a[1])) / life; },
+    SYD: a => { const [cost, salv, life, per] = a.map(toNum); if (life <= 0 || per < 1 || per > life) throw ERR.NUM; return (cost - salv) * (life - per + 1) * 2 / (life * (life + 1)); },
+    DDB: a => {
+      const cost = toNum(a[0]), salv = toNum(a[1]), life = toNum(a[2]), per = toNum(a[3]), f = optN(a[4], 2);
+      if (life <= 0 || per <= 0 || per > life || f <= 0 || cost < 0 || salv < 0) throw ERR.NUM;
+      let acc = 0, dep = 0;
+      for (let p = 1; p <= per; p++) { dep = Math.max(0, Math.min((cost - acc) * f / life, cost - salv - acc)); acc += dep; }
+      return dep;
+    },
+    EFFECT: a => { const r = toNum(a[0]), n = Math.trunc(toNum(a[1])); if (r <= 0 || n < 1) throw ERR.NUM; return Math.pow(1 + r / n, n) - 1; },
+    NOMINAL: a => { const r = toNum(a[0]), n = Math.trunc(toNum(a[1])); if (r <= 0 || n < 1) throw ERR.NUM; return n * (Math.pow(1 + r, 1 / n) - 1); },
+
+    // Math
+    SUMSQ: a => nums(a).reduce((s, x) => s + x * x, 0),
+    MROUND: a => { const n = toNum(a[0]), m = toNum(a[1]); if (m === 0) return 0; if (Math.sign(n) * Math.sign(m) < 0) throw ERR.NUM; return roundTo(Math.round(n / m + Number.EPSILON * Math.sign(n / m)) * m, 10); },
+    QUOTIENT: a => { const d = toNum(a[1]); if (d === 0) throw ERR.DIV0; return Math.trunc(toNum(a[0]) / d); },
+    GCD: a => { const n = nums(a).map(Math.trunc); if (n.some(x => x < 0)) throw ERR.NUM; const g = (x, y) => (y ? g(y, x % y) : x); return n.reduce(g, 0); },
+    LCM: a => { const n = nums(a).map(Math.trunc); if (n.some(x => x < 0)) throw ERR.NUM; const g = (x, y) => (y ? g(y, x % y) : x); return n.reduce((l, x) => (l === 0 || x === 0 ? 0 : l / g(l, x) * x), 1); },
+    FACT: a => { const n = Math.trunc(toNum(a[0])); if (n < 0) throw ERR.NUM; if (n > 170) throw ERR.NUM; let f = 1; for (let i = 2; i <= n; i++) f *= i; return f; },
+    COMBIN: a => { const n = Math.trunc(toNum(a[0])), k = Math.trunc(toNum(a[1])); if (n < 0 || k < 0 || k > n) throw ERR.NUM; return Math.round(Math.exp(lnComb(n, k))); },
+    PERMUT: a => { const n = Math.trunc(toNum(a[0])), k = Math.trunc(toNum(a[1])); if (n < 0 || k < 0 || k > n) throw ERR.NUM; let p = 1; for (let i = 0; i < k; i++) p *= n - i; return p; },
+    ODD: a => { const n = toNum(a[0]), s = n < 0 ? -1 : 1; let v = Math.ceil(Math.abs(n)); if (v % 2 === 0) v++; return s * v; },
+    EVEN: a => { const n = toNum(a[0]), s = n < 0 ? -1 : 1; let v = Math.ceil(Math.abs(n)); if (v % 2) v++; return s * v; },
+    ASIN: a => { const x = toNum(a[0]); if (x < -1 || x > 1) throw ERR.NUM; return Math.asin(x); },
+    ACOS: a => { const x = toNum(a[0]); if (x < -1 || x > 1) throw ERR.NUM; return Math.acos(x); },
+    ATAN: a => Math.atan(toNum(a[0])),
+    ATAN2: a => { const x = toNum(a[0]), y = toNum(a[1]); if (!x && !y) throw ERR.DIV0; return Math.atan2(y, x); },
+    SINH: a => Math.sinh(toNum(a[0])), COSH: a => Math.cosh(toNum(a[0])), TANH: a => Math.tanh(toNum(a[0])),
+    ASINH: a => Math.asinh(toNum(a[0])), ACOSH: a => { const x = toNum(a[0]); if (x < 1) throw ERR.NUM; return Math.acosh(x); }, ATANH: a => { const x = toNum(a[0]); if (Math.abs(x) >= 1) throw ERR.NUM; return Math.atanh(x); },
+    SQRTPI: a => { const x = toNum(a[0]); if (x < 0) throw ERR.NUM; return Math.sqrt(x * Math.PI); },
+    'CEILING.MATH': a => { const n = toNum(a[0]), s = Math.abs(optN(a[1], 1)), m = optN(a[2], 0); if (!s) return 0; return n >= 0 || !m ? Math.ceil(n / s) * s : -Math.ceil(-n / s) * s; },
+    'FLOOR.MATH': a => { const n = toNum(a[0]), s = Math.abs(optN(a[1], 1)), m = optN(a[2], 0); if (!s) return 0; return n >= 0 || !m ? Math.floor(n / s) * s : -Math.floor(-n / s) * s; },
+    'CEILING.PRECISE': a => { const s = Math.abs(optN(a[1], 1)); return s ? Math.ceil(toNum(a[0]) / s) * s : 0; },
+    'FLOOR.PRECISE': a => { const s = Math.abs(optN(a[1], 1)); return s ? Math.floor(toNum(a[0]) / s) * s : 0; },
+    ROMAN: a => { let n = Math.trunc(toNum(a[0])); if (n < 0 || n > 3999) throw ERR.VALUE; let s = ''; for (const [v, r] of ROMAN) while (n >= v) { s += r; n -= v; } return s; },
+    ARABIC: a => {
+      const s = toStr(a[0]).trim().toUpperCase(), neg = s[0] === '-', t = neg ? s.slice(1) : s;
+      if (!/^[MDCLXVI]*$/.test(t)) throw ERR.VALUE;
+      const val = { M: 1000, D: 500, C: 100, L: 50, X: 10, V: 5, I: 1 };
+      let n = 0; for (let i = 0; i < t.length; i++) { const v = val[t[i]], nx = val[t[i + 1]] || 0; n += v < nx ? -v : v; }
+      return neg ? -n : n;
+    },
+    BASE: a => { const n = Math.trunc(toNum(a[0])), r = Math.trunc(toNum(a[1])); if (n < 0 || r < 2 || r > 36) throw ERR.NUM; return n.toString(r).toUpperCase().padStart(Math.trunc(optN(a[2], 0)), '0'); },
+    DECIMAL: a => { const r = Math.trunc(toNum(a[1])), s = toStr(a[0]).trim(); if (r < 2 || r > 36 || !s) throw ERR.NUM; const n = parseInt(s, r); if (isNaN(n) || n.toString(r).toUpperCase() !== s.toUpperCase().replace(/^0+(?=.)/, '')) throw ERR.NUM; return n; },
+    DEC2BIN: a => toBase(a[0], 2, 10, a[1]), DEC2OCT: a => toBase(a[0], 8, 30, a[1]), DEC2HEX: a => toBase(a[0], 16, 40, a[1]),
+    BIN2DEC: a => fromBase(a[0], 2, 10), OCT2DEC: a => fromBase(a[0], 8, 30), HEX2DEC: a => fromBase(a[0], 16, 40),
+
+    // Text
+    TEXTBEFORE: a => {
+      const t = toStr(a[0]), ds = asRange(a[1]).flat().map(toStr), inst = Math.trunc(optN(a[2], 1));
+      if (inst === 0 || Math.abs(inst) > t.length + 1) throw ERR.VALUE;
+      const h = textSplitAt(t, ds, inst, optN(a[3], 0) === 1, optN(a[4], 0) === 1);
+      if (!h) { if (a.length > 5) return a[5]; throw ERR.NA; }
+      return t.slice(0, h[0]);
+    },
+    TEXTAFTER: a => {
+      const t = toStr(a[0]), ds = asRange(a[1]).flat().map(toStr), inst = Math.trunc(optN(a[2], 1));
+      if (inst === 0 || Math.abs(inst) > t.length + 1) throw ERR.VALUE;
+      const h = textSplitAt(t, ds, inst, optN(a[3], 0) === 1, optN(a[4], 0) === 1);
+      if (!h) { if (a.length > 5) return a[5]; throw ERR.NA; }
+      return t.slice(h[1]);
+    },
+    CLEAN: a => toStr(a[0]).replace(/[\u0000-\u001f]/g, ''),
+    UNICHAR: a => { const n = Math.trunc(toNum(a[0])); if (n < 1 || n > 0x10ffff) throw ERR.VALUE; return String.fromCodePoint(n); },
+    UNICODE: a => { const s = toStr(a[0]); if (!s) throw ERR.VALUE; return s.codePointAt(0); },
+    NUMBERVALUE: a => {
+      const dec = a[1] === undefined ? '.' : toStr(a[1])[0] || '.', grp = a[2] === undefined ? ',' : toStr(a[2])[0] || ',';
+      let s = toStr(a[0]).replace(/\s/g, '');
+      if (!s) return 0;
+      const pct = (s.match(/%+$/) || [''])[0].length;
+      s = s.replace(/%+$/, '').split(grp).join('').replace(dec, '.');
+      const n = Number(s);
+      if (s === '' || isNaN(n)) throw ERR.VALUE;
+      return n / 100 ** pct;
+    },
+
+    // Date & time
+    NETWORKDAYS: a => networkdays(toNum(a[0]), toNum(a[1]), '0000011', holidays(a[2])),
+    'NETWORKDAYS.INTL': a => networkdays(toNum(a[0]), toNum(a[1]), weekendMask(a[2]), holidays(a[3])),
+    WORKDAY: a => workday(toNum(a[0]), toNum(a[1]), '0000011', holidays(a[2])),
+    'WORKDAY.INTL': a => workday(toNum(a[0]), toNum(a[1]), weekendMask(a[2]), holidays(a[3])),
+    DATEDIF: a => {
+      const s = Math.floor(toNum(a[0])), e = Math.floor(toNum(a[1])), u = toStr(a[2]).toUpperCase();
+      if (s > e) throw ERR.NUM;
+      const [y1, m1, d1] = ymd(s), [y2, m2, d2] = ymd(e);
+      let months = (y2 - y1) * 12 + (m2 - m1); if (d2 < d1) months--;
+      switch (u) {
+        case 'D': return e - s;
+        case 'M': return months;
+        case 'Y': return Math.floor(months / 12);
+        case 'YM': return months % 12;
+        case 'MD': { if (d2 >= d1) return d2 - d1; const prevMonthDays = new Date(Date.UTC(y2, m2 - 1, 0)).getUTCDate(); return prevMonthDays - d1 + d2; }
+        case 'YD': { let start = Date.UTC(y2, m1 - 1, d1); if (start > Date.UTC(y2, m2 - 1, d2)) start = Date.UTC(y2 - 1, m1 - 1, d1); return Math.round((Date.UTC(y2, m2 - 1, d2) - start) / 86400000); }
+      }
+      throw ERR.NUM;
+    },
+    WEEKNUM: a => {
+      const s = Math.floor(toNum(a[0])), t = optN(a[1], 1);
+      if (t === 21) return FN.ISOWEEKNUM([s]);
+      const start = { 1: 0, 17: 0, 2: 1, 11: 1, 12: 2, 13: 3, 14: 4, 15: 5, 16: 6 }[t];
+      if (start === undefined) throw ERR.NUM;
+      const [y] = ymd(s);
+      const jan1 = Math.round((Date.UTC(y, 0, 1) - EPOCH) / 86400000);
+      const off = (serialToDate(jan1).getUTCDay() - start + 7) % 7;
+      return Math.floor((s - jan1 + off) / 7) + 1;
+    },
+    ISOWEEKNUM: a => {
+      const d = serialToDate(Math.floor(toNum(a[0])));
+      const t = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+      t.setUTCDate(t.getUTCDate() + 4 - (t.getUTCDay() || 7));
+      return Math.ceil(((t - Date.UTC(t.getUTCFullYear(), 0, 1)) / 86400000 + 1) / 7);
+    },
+    YEARFRAC: a => {
+      let s = Math.floor(toNum(a[0])), e = Math.floor(toNum(a[1]));
+      const basis = Math.trunc(optN(a[2], 0));
+      if (s > e) [s, e] = [e, s];
+      let [y1, m1, d1] = ymd(s), [y2, m2, d2] = ymd(e);
+      switch (basis) {
+        case 0: { // US (NASD) 30/360
+          const lastFeb = (y, m, d) => m === 2 && d === new Date(Date.UTC(y, 2, 0)).getUTCDate();
+          if (lastFeb(y1, m1, d1) && lastFeb(y2, m2, d2)) d2 = 30;
+          if (lastFeb(y1, m1, d1)) d1 = 30;
+          if (d2 === 31 && d1 >= 30) d2 = 30;
+          if (d1 === 31) d1 = 30;
+          return ((y2 - y1) * 360 + (m2 - m1) * 30 + (d2 - d1)) / 360;
+        }
+        case 1: {
+          const leap = y => (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+          if (y1 === y2) return (e - s) / (leap(y1) ? 366 : 365);
+          const oneYear = y2 === y1 + 1 && (m2 < m1 || (m2 === m1 && d2 <= d1));
+          if (oneYear) { const feb29 = (leap(y1) && (m1 < 3)) || (leap(y2) && (m2 > 2 || (m2 === 2 && d2 === 29))); return (e - s) / (feb29 ? 366 : 365); }
+          let days = 0; for (let y = y1; y <= y2; y++) days += leap(y) ? 366 : 365;
+          return (e - s) / (days / (y2 - y1 + 1));
+        }
+        case 2: return (e - s) / 360;
+        case 3: return (e - s) / 365;
+        case 4: { if (d1 === 31) d1 = 30; if (d2 === 31) d2 = 30; return ((y2 - y1) * 360 + (m2 - m1) * 30 + (d2 - d1)) / 360; }
+      }
+      throw ERR.NUM;
+    },
+    TIMEVALUE: a => {
+      const m = /^\s*(\d{1,2}):(\d{2})(?::(\d{2}(?:\.\d+)?))?\s*(am|pm)?\s*$/i.exec(toStr(a[0]));
+      if (!m) throw ERR.VALUE;
+      let h = +m[1];
+      if (m[4]) { if (h > 12) throw ERR.VALUE; h = h % 12 + (m[4].toLowerCase() === 'pm' ? 12 : 0); }
+      return ((h * 3600 + +m[2] * 60 + +(m[3] || 0)) / 86400) % 1;
+    },
+    ISNONTEXT: a => typeof scalar(a[0]) !== 'string' || scalar(a[0]) === '',
+    HYPERLINK: a => (a[1] !== undefined ? scalar(a[1]) : toStr(a[0]))
+  });
+
+  // ---------- Excel file names for newer functions ----------
+  // Functions added after Excel 2007 are stored with an _xlfn. prefix (FILTER and SORT also
+  // _xlws.), and LET's names with _xlpm.; without them Excel shows #NAME?.
+  const XLFN = new Set(('AGGREGATE ARABIC BASE BITAND BITLSHIFT BITOR BITRSHIFT BITXOR CEILING.MATH CEILING.PRECISE CHOOSECOLS CHOOSEROWS COMBINA ' +
+    'CONCAT CONFIDENCE.NORM CONFIDENCE.T COT COTH COVARIANCE.P COVARIANCE.S CSC CSCH DAYS DECIMAL DROP ERF.PRECISE ERFC.PRECISE EXPAND EXPON.DIST ' +
+    'FILTER FLOOR.MATH FLOOR.PRECISE FORECAST.LINEAR FORMULATEXT HSTACK IFNA IFS ISFORMULA ISOWEEKNUM LET MAXIFS MINIFS MODE.MULT MODE.SNGL ' +
+    'NETWORKDAYS.INTL NORM.DIST NORM.INV NORM.S.DIST NORM.S.INV NUMBERVALUE PERCENTILE.EXC PERCENTILE.INC PERCENTRANK.INC POISSON.DIST QUARTILE.EXC ' +
+    'QUARTILE.INC RANDARRAY RANK.AVG RANK.EQ SEC SECH SEQUENCE SHEET SHEETS SORT SORTBY STDEV.P STDEV.S SWITCH TAKE TEXTAFTER TEXTBEFORE TEXTJOIN ' +
+    'TEXTSPLIT TOCOL TOROW UNICHAR UNICODE UNIQUE VAR.P VAR.S VSTACK WORKDAY.INTL WRAPCOLS WRAPROWS XLOOKUP XMATCH XOR BINOM.DIST').split(' '));
+  const XLWS = new Set(['FILTER', 'SORT']);
+  /** Rewrites the identifiers of a formula (without '='), leaving strings and quoted sheet names alone. */
+  function mapIdentifiers(f, fn) {
+    let out = '', i = 0;
+    while (i < f.length) {
+      const ch = f[i];
+      if (ch === '"' || ch === "'") { let j = i + 1; while (j < f.length && !(f[j] === ch && f[j + 1] !== ch)) j += f[j] === ch ? 2 : 1; out += f.slice(i, j + 1); i = j + 1; continue; }
+      const m = /^[A-Za-z_][\w.]*/.exec(f.slice(i));
+      if (m && !/[\w.$]/.test(f[i - 1] || '')) {
+        const rest = f.slice(i + m[0].length);
+        const kind = /^\s*\(/.test(rest) ? 'fn' : /^!/.test(rest) ? 'sheet' : /^[A-Za-z]{1,3}\d+$/.test(m[0]) || /^\$?\d/.test(rest) || /^(TRUE|FALSE)$/i.test(m[0]) ? 'other' : 'name';
+        out += fn(m[0], kind);
+        i += m[0].length;
+        continue;
+      }
+      out += ch; i++;
+    }
+    return out;
+  }
+  const toExcelFormula = f => mapIdentifiers(f, (id, kind) => {
+    const up = id.toUpperCase();
+    if (kind === 'fn' && XLFN.has(up)) return '_xlfn.' + (XLWS.has(up) ? '_xlws.' : '') + id;
+    if (kind === 'name') return '_xlpm.' + id;
+    return id;
+  });
+  const fromExcelFormula = f => mapIdentifiers(f, id => id.replace(/^_xlfn\./i, '').replace(/^_xlws\./i, '').replace(/^_xlpm\./i, ''));
+
   function lookup(a, horizontal) {
     const v = scalar(a[0]);
     let rows = asRange(a[1]).rows;
@@ -525,8 +1309,79 @@
       this.cache = new Map();
       this.astCache = new Map();
       this.stack = new Set();
+      this.scopes = [];             // LET names
+      this.cur = null;              // the cell being computed, for ROW() and COLUMN()
+      this.spills = new Map();      // anchor key -> { sheet, row, col, rows }
+      this.cover = new Map();       // spilled cell key -> anchor key
+      this.cands = new Map();       // sheet -> formula cells that may spill
+      this.maySpillCache = new Map();
     }
-    invalidate() { this.cache.clear(); }
+    invalidate() { this.cache.clear(); this.spills.clear(); this.cover.clear(); this.cands.clear(); }
+    ast(raw) {
+      let ast = this.astCache.get(raw);
+      if (!ast) { ast = parse(raw.slice(1)); this.astCache.set(raw, ast); }
+      return ast;
+    }
+    /** Formula cells on a sheet whose result could be an array that spills. */
+    candidates(sheet) {
+      let list = this.cands.get(sheet);
+      if (list) return list;
+      list = [];
+      const cells = this.book.formulasInRange ? this.book.formulasInRange(sheet, 0, 0, 1048575, 16383) : [];
+      for (const [r, c] of cells) {
+        const raw = this.book.getRaw(sheet, r, c);
+        let may = this.maySpillCache.get(raw);
+        if (may === undefined) { try { may = maySpill(this.ast(raw)); } catch { may = false; } this.maySpillCache.set(raw, may); }
+        if (may) list.push([r, c]);
+      }
+      this.cands.set(sheet, list);
+      return list;
+    }
+    /** If (row, col) is empty, computes the formulas that could spill into it. */
+    spillLookup(sheet, row, col) {
+      const key = sheet + '\u0000' + row + ',' + col;
+      for (const [r, c] of this.candidates(sheet)) {
+        if (r > row || c > col || (r === row && c === col)) continue;
+        if (this.stack.has(sheet + '\u0000' + r + ',' + c)) continue;
+        this.value(sheet, r, c);
+        if (this.cache.has(key)) return;
+      }
+    }
+    /** Writes an array result over the cells below and right of its formula, or #SPILL! if they aren't free. */
+    spill(sheet, row, col, range) {
+      const rows = range.rows, h = rows.length, w = h ? rows[0].length : 0;
+      if (!h || !w) return ERR.CALC;
+      if (row + h > 1048576 || col + w > 16384) return ERR.SPILL;
+      const anchor = sheet + '\u0000' + row + ',' + col;
+      const norm = v => (v === undefined || v === null ? '' : v);
+      for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) {
+        if (!i && !j) continue;
+        const raw = this.book.getRaw(sheet, row + i, col + j);
+        if (raw !== '' && raw !== undefined && raw !== null) return ERR.SPILL;
+        const k = sheet + '\u0000' + (row + i) + ',' + (col + j);
+        if (this.cover.has(k) && this.cover.get(k) !== anchor) return ERR.SPILL;
+      }
+      for (let i = 0; i < h; i++) for (let j = 0; j < w; j++) {
+        if (!i && !j) continue;
+        const k = sheet + '\u0000' + (row + i) + ',' + (col + j);
+        this.cover.set(k, anchor);
+        this.cache.set(k, norm(rows[i][j]));
+      }
+      this.spills.set(anchor, { sheet, row, col, rows });
+      return norm(rows[0][0]);
+    }
+    /** The spill range that (row, col) belongs to: { row, col, h, w } of its anchor, or null. */
+    spillAt(sheet, row, col) {
+      this.value(sheet, row, col);
+      const key = sheet + '\u0000' + row + ',' + col;
+      const a = this.spills.get(key) || this.spills.get(this.cover.get(key));
+      return a ? { row: a.row, col: a.col, h: a.rows.length, w: a.rows[0].length } : null;
+    }
+    /** Every spill range on a sheet (computing the formulas that may spill). */
+    spillsOn(sheet) {
+      for (const [r, c] of this.candidates(sheet)) this.value(sheet, r, c);
+      return [...this.spills.values()].filter(s => s.sheet === sheet).map(s => ({ row: s.row, col: s.col, h: s.rows.length, w: s.rows[0].length }));
+    }
     /** Returns the computed value of a cell: number | string | boolean | FormulaError | ''. */
     value(sheet, row, col) {
       const key = sheet + '\u0000' + row + ',' + col;
@@ -534,9 +1389,17 @@
       if (this.stack.has(key)) return ERR.CIRC;
       if (!this.stack.size) this.warm(sheet, row, col);
       if (this.cache.has(key)) return this.cache.get(key);
+      const raw = this.book.getRaw(sheet, row, col);
+      if (raw === '' || raw === undefined || raw === null) {
+        this.spillLookup(sheet, row, col);
+        if (this.cache.has(key)) return this.cache.get(key);
+        this.cache.set(key, '');
+        return '';
+      }
       this.stack.add(key);
       let v;
-      try { v = this.compute(sheet, this.book.getRaw(sheet, row, col)); } finally { this.stack.delete(key); }
+      try { v = this.compute(sheet, raw, { row, col, spill: true }); } finally { this.stack.delete(key); }
+      if (v instanceof Range) v = this.spill(sheet, row, col, v);
       this.cache.set(key, v);
       return v;
     }
@@ -577,10 +1440,10 @@
       const out = [];
       const visit = n => {
         if (!n || typeof n !== 'object') return;
-        if (n.k === 'ref' || n.k === 'range') {
+        if (n.k === 'ref' || n.k === 'range' || n.k === 'spill') {
           let s;
           try { s = this.resolveSheet(n.sheet, sheet); } catch { return; }
-          if (n.k === 'ref') { out.push([s, n.row, n.col]); return; }
+          if (n.k === 'ref' || n.k === 'spill') { out.push([s, n.row, n.col]); return; }
           if (this.book.formulasInRange) {
             for (const [r, c] of this.book.formulasInRange(s, n.r1, n.c1, n.r2, n.c2)) out.push([s, r, c]);
             return;
@@ -601,15 +1464,23 @@
       visit(ast);
       return out;
     }
-    compute(sheet, raw) {
+    /**
+     * Evaluates raw cell input. `at` is the cell it is for ({ row, col }), which ROW() and COLUMN()
+     * use; with at.spill an array result is returned whole so the caller can spill it.
+     */
+    compute(sheet, raw, at) {
       if (raw === null || raw === undefined || raw === '') return '';
       if (typeof raw !== 'string') return raw;
       if (raw[0] === '=' && raw.length > 1) {
+        const prev = this.cur;
+        this.cur = at ? { sheet, row: at.row, col: at.col } : null;
         try {
-          let ast = this.astCache.get(raw);
-          if (!ast) { ast = parse(raw.slice(1)); this.astCache.set(raw, ast); }
+          const ast = this.ast(raw);
           let v = this.evalNode(ast, sheet);
-          if (v instanceof Range) v = v.flat()[0];
+          if (v instanceof Range) {
+            if (at && at.spill && isMulti(v)) return v;
+            v = v.flat()[0];
+          }
           if (typeof v === 'number' && !isFinite(v)) return ERR.NUM;
           // Like Excel, =A1 pointing at an empty cell shows 0.
           if (v === undefined || v === null || (v === '' && (ast.k === 'ref' || ast.k === 'range'))) return 0;
@@ -617,7 +1488,7 @@
         } catch (e) {
           if (isErr(e)) return e;
           return ERR.ERROR;
-        }
+        } finally { this.cur = prev; }
       }
       return parseLiteral(raw);
     }
@@ -625,7 +1496,18 @@
       switch (n.k) {
         case 'num': case 'str': case 'bool': return n.v;
         case 'empty': return '';
-        case 'name': throw ERR.NAME;
+        case 'name': {
+          for (let i = this.scopes.length - 1; i >= 0; i--) if (this.scopes[i].has(n.v)) return this.scopes[i].get(n.v);
+          throw ERR.NAME;
+        }
+        case 'spill': {
+          const s = this.resolveSheet(n.sheet, sheet);
+          const v = this.value(s, n.row, n.col);
+          const sp = this.spills.get(s + '\u0000' + n.row + ',' + n.col);
+          if (sp) return new Range(sp.rows);
+          if (isErr(v)) throw v;
+          throw ERR.REF;
+        }
         case 'ref': {
           const s = this.resolveSheet(n.sheet, sheet);
           const v = this.value(s, n.row, n.col);
@@ -641,16 +1523,26 @@
           }
           return new Range(rows);
         }
-        case 'neg': { const v = toNum(this.evalNode(n.e, sheet)); return n.sign === '-' ? -v : v; }
-        case 'pct': return toNum(this.evalNode(n.e, sheet)) / 100;
+        case 'neg': {
+          const x = this.evalNode(n.e, sheet);
+          if (isMulti(x)) return broadcast([x], ([v]) => (n.sign === '-' ? -toNum(v) : toNum(v)));
+          const v = toNum(x); return n.sign === '-' ? -v : v;
+        }
+        case 'pct': {
+          const x = this.evalNode(n.e, sheet);
+          if (isMulti(x)) return broadcast([x], ([v]) => toNum(v) / 100);
+          return toNum(x) / 100;
+        }
         case 'bin': return this.binary(n.op, this.evalNode(n.l, sheet), this.evalNode(n.r, sheet));
         case 'fn': {
-          if (LAZY[n.name]) return LAZY[n.name](n.args, a => this.evalNode(a, sheet));
+          if (LAZY[n.name]) return LAZY[n.name](n.args, a => this.evalNode(a, sheet), { engine: this, sheet });
           const fn = FN[n.name];
           if (!fn) throw ERR.NAME;
           const args = n.args.map(a => this.evalNode(a, sheet));
           // Errors in direct (non-range) arguments propagate.
           for (const a of args) if (isErr(a)) throw a;
+          // A function of single values given arrays works element by element (and spills).
+          if (LIFT.has(n.name) && args.some(isMulti)) return broadcast(args, xs => { for (const x of xs) if (isErr(x)) throw x; return fn(xs); });
           const v = fn(args);
           if (isErr(v)) throw v;
           return v;
@@ -665,6 +1557,7 @@
       return found;
     }
     binary(op, l, r) {
+      if (isMulti(l) || isMulti(r)) return broadcast([l, r], ([a, b]) => this.binary(op, a, b));
       l = scalar(l); r = scalar(r);
       if (isErr(l)) throw l;
       if (isErr(r)) throw r;
@@ -779,7 +1672,7 @@
     });
   }
 
-  const api = { Engine, FormulaError, ERR, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, dateToSerial, serialToDate, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
+  const api = { Engine, FormulaError, ERR, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Formula = api;
 })(typeof window !== 'undefined' ? window : globalThis);

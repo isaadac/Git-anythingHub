@@ -205,11 +205,26 @@
   function drawSelection() {
     paintSelection();
     nameBox.value = rangeText(selRange());
-    if (document.activeElement !== fx) fx.value = rawAt(active.r, active.c);
+    const sp = !cellAt(active.r, active.c) && spillBoxes.find(b => active.r >= b.row && active.r < b.row + b.h && active.c >= b.col && active.c < b.col + b.w);
+    if (document.activeElement !== fx) fx.value = sp ? rawAt(sp.row, sp.col) : rawAt(active.r, active.c);
+    fx.classList.toggle('ghost', !!sp);
+    drawSpillBox();
     syncToolbar();
     updateAggregate();
     updatePivotPane();
     updateDvUi();
+  }
+  /** Excel's blue outline around the spill range of the selected cell. */
+  const spillBox = document.createElement('div');
+  spillBox.className = 'spill-box';
+  spillBox.hidden = true;
+  document.getElementById('gridInner').appendChild(spillBox);
+  function drawSpillBox() {
+    const sp = spillBoxes.find(b => active.r >= b.row && active.r < b.row + b.h && active.c >= b.col && active.c < b.col + b.w);
+    spillBox.hidden = !sp;
+    if (!sp) return;
+    const b = rangeBox({ r1: sp.row, c1: sp.col, r2: sp.row + sp.h - 1, c2: sp.col + sp.w - 1 });
+    Object.assign(spillBox.style, { left: b.x + 'px', top: b.y + 'px', width: b.w + 'px', height: b.h + 'px' });
   }
   function scrollIntoView(r, c) {
     const z = zoomLevel();
@@ -323,7 +338,15 @@
   /** The text and alignment class a cell shows. */
   function cellDisplay(r, c, s = sheet()) {
     const cell = cellAt(r, c, s);
-    if (!cell) return { text: '', cls: '' };
+    if (!cell) {
+      // Part of a formula's spilled result?
+      const v = engine.value(s.name, r, c);
+      if (v === '') return { text: '', cls: '' };
+      if (v instanceof F.FormulaError) return { text: v.error, cls: 'err' };
+      if (typeof v === 'number') return { text: F.formatValue(v, 'General'), cls: 'num' };
+      if (typeof v === 'boolean') return { text: v ? 'TRUE' : 'FALSE', cls: 'bool' };
+      return { text: String(v), cls: '' };
+    }
     const st = cell.s || {};
     const v = s === sheet() ? valueAt(r, c) : engine.value(s.name, r, c);
     if (showFormulas && typeof cell.v === 'string' && cell.v[0] === '=') return { text: cell.v, cls: '' };
@@ -333,6 +356,7 @@
     return { text: String(v), cls: '' };
   }
   let paintedCells = [];
+  let spillBoxes = [];
   function renderCell(r, c) {
     const m = mergeAt(r, c);
     let t;
@@ -396,6 +420,14 @@
     const s = sheet();
     for (const r of rowEls.keys()) {
       for (const c of colPos.keys()) if (s.cells[addr(r, c)]) renderCell(r, c);
+    }
+    // Cells that formulas spill into.
+    spillBoxes = engine.spillsOn(s.name);
+    for (const sp of spillBoxes) {
+      for (let r = sp.row; r < sp.row + sp.h; r++) {
+        if (!rowEls.has(r)) continue;
+        for (let c = sp.col; c < sp.col + sp.w; c++) if ((r !== sp.row || c !== sp.col) && colPos.has(c)) renderCell(r, c);
+      }
     }
     // Merged cells whose top-left is scrolled away still show their value.
     s.merges.forEach(m => { if (!rowEls.has(m.r1) || !colPos.has(m.c1)) renderCell(m.r1, m.c1); });
@@ -2180,7 +2212,9 @@
         const p = parseRef(k);
         if (!p || !cell || p.row >= MAX_ROWS || p.col >= MAX_COLS) continue;
         let v;
-        if (cell.f) v = '=' + cell.f;
+        // Cells inside another cell's array formula hold its results, which spill again here.
+        if (cell.F && String(cell.F).split(':')[0].toUpperCase() !== k.toUpperCase()) v = '';
+        else if (cell.f) v = '=' + F.fromExcelFormula(cell.f);
         else if (cell.t === 'n') v = String(cell.v);
         else if (cell.t === 'b') v = cell.v ? 'TRUE' : 'FALSE';
         else if (cell.t === 'e') v = cell.w || '#N/A';
@@ -2256,7 +2290,12 @@
         maxR = Math.max(maxR, p.row); maxC = Math.max(maxC, p.col);
         const v = engine.value(s.name, p.row, p.col);
         const out = {};
-        if (typeof cell.v === 'string' && cell.v[0] === '=') out.f = cell.v.slice(1);
+        if (typeof cell.v === 'string' && cell.v[0] === '=') {
+          out.f = F.toExcelFormula(cell.v.slice(1));
+          const sp = engine.spillAt(s.name, p.row, p.col);
+          // A spilling formula is a dynamic array formula over its range.
+          if (sp && sp.row === p.row && sp.col === p.col && (sp.h > 1 || sp.w > 1)) { out.F = `${k}:${addr(p.row + sp.h - 1, p.col + sp.w - 1)}`; out.D = true; }
+        }
         if (v instanceof F.FormulaError) { out.t = 'e'; out.v = { '#NULL!': 0, '#DIV/0!': 7, '#VALUE!': 15, '#REF!': 23, '#NAME?': 29, '#NUM!': 36, '#N/A': 42 }[v.error] ?? 15; out.w = v.error; }
         else if (typeof v === 'number') { out.t = 'n'; out.v = v; }
         else if (typeof v === 'boolean') { out.t = 'b'; out.v = v; }
@@ -2264,6 +2303,16 @@
         if (st.fmt) out.z = st.fmt;
         ws[k] = out;
       });
+      // Values a formula spilled into are stored too, as Excel does.
+      for (const sp of engine.spillsOn(s.name)) {
+        for (let r = sp.row; r < sp.row + sp.h; r++) for (let c = sp.col; c < sp.col + sp.w; c++) {
+          if (r === sp.row && c === sp.col) continue;
+          const v = engine.value(s.name, r, c), k = addr(r, c);
+          if (v === '' || ws[k]) continue;
+          ws[k] = v instanceof F.FormulaError ? { t: 'e', v: 15, w: v.error } : typeof v === 'number' ? { t: 'n', v } : typeof v === 'boolean' ? { t: 'b', v } : { t: 's', v: String(v) };
+          maxR = Math.max(maxR, r); maxC = Math.max(maxC, c);
+        }
+      }
       ws['!ref'] = XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: maxR, c: maxC } });
       const cols = [];
       Object.entries(s.colWidths).forEach(([c, w]) => { cols[+c] = { wpx: w }; });

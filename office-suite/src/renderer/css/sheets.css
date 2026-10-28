@@ -118,3 +118,8 @@ body.no-grid .grid td { border-color: transparent; }
 .dv-dialog input:not([type=checkbox]), .dv-dialog select, .dv-dialog textarea { height: 28px; border: 1px solid var(--border); padding: 0 6px; font: inherit; }
 .dv-dialog textarea { height: 60px; padding: 4px 6px; resize: vertical; }
 .dv-dialog .actions .left { margin-right: auto; }
+
+/* Dynamic arrays */
+.spill-box { position: absolute; border: 1px dashed #2b88d8; pointer-events: none; z-index: 3; }
+.spill-box[hidden] { display: none; }
+.fx-input.ghost { color: #8a8886; }
