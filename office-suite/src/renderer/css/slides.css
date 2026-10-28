@@ -103,3 +103,17 @@ body.hide-notes .notes { display: none; }
 .pv-notes.empty { color: #8a8886; }
 body.audience .titlebar, body.audience .ribbon-tabs, body.audience .ribbon, body.audience .workspace, body.audience .statusbar, body.audience .backstage { display: none !important; }
 body.audience .present-hint { display: none; }
+
+/* Slide Master view */
+.el.master-el { pointer-events: none; }
+.thumb .thumb-name { font-size: 11px; color: var(--muted); margin-top: 2px; text-align: center; }
+.thumb.master-thumb .frame { width: 170px; height: 95.6px; }
+.thumb.master-thumb .frame .slide { transform: scale(calc(170 / 960)); }
+.thumb.layout-thumb { padding-left: 18px; flex-direction: column; align-items: flex-start; }
+.thumb.layout-thumb .frame { width: 140px; height: 78.75px; }
+.thumb.layout-thumb .frame .slide { transform: scale(calc(140 / 960)); }
+.thumb.master-thumb { flex-direction: column; align-items: flex-start; }
+body.master-view .notes { display: none; }
+body.master-view .stage-wrap { background: #dfe7f0; }
+.ribbon-tabs button.contextual { color: #c55a11; font-weight: 600; }
+.ribbon-tabs button[hidden] { display: none; }

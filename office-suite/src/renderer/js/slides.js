@@ -25,16 +25,37 @@
   // ---------- Model ----------
   let uid = 1;
   const newId = () => 'e' + Date.now().toString(36) + (uid++);
-  let pres = { theme: 'office', slides: [] };
+  let pres = { theme: 'office', slides: [], master: null, layouts: {} };
   let current = 0;
   let selectedId = null;
   let editingId = null;
-  const theme = () => THEMES[pres.theme] || THEMES.office;
+  const theme = () => (pres.theme === 'custom' && pres.customTheme) || THEMES[pres.theme] || THEMES.office;
   // The audience window of Presenter View runs this page with ?audience=1 and only shows slides.
   const AUDIENCE = new URLSearchParams(location.search).get('audience') === '1';
-  const slide = () => pres.slides[current];
+  // In Slide Master view the "slide" being edited is the master or one of the layouts.
+  let masterTarget = null;
+  const slide = () => (masterTarget ? masterObj(masterTarget) : pres.slides[current]);
   const elById = id => slide().elements.find(e => e.id === id);
 
+  const BUILTIN_LAYOUTS = { title: 'Title Slide', content: 'Title and Content', section: 'Section Header', two: 'Two Content', titleonly: 'Title Only', blank: 'Blank' };
+  const layoutKeys = () => [...Object.keys(BUILTIN_LAYOUTS), ...Object.keys(pres.layouts || {}).filter(k => !BUILTIN_LAYOUTS[k])];
+  const layoutName = k => (pres.layouts && pres.layouts[k] && pres.layouts[k].name) || BUILTIN_LAYOUTS[k] || 'Layout';
+  /** A layout's placeholders for a new slide: the edited layout if there is one, else the built-in. */
+  function layoutFor(kind) {
+    const L = pres && pres.layouts && pres.layouts[kind];
+    if (!L) return makeLayout(kind);
+    return L.elements.map(el => ({ ...JSON.parse(JSON.stringify(el)), id: newId(), ...(el.ph ? { html: '' } : {}) }));
+  }
+  function defaultMaster() {
+    const f = (ph, x, align) => ({ id: newId(), type: 'text', ph, html: '', x, y: 498, w: ph === 'footer' ? 360 : 240, h: 30, size: 12, align, valign: 'middle' });
+    return { id: 'master', elements: [f('dt', 40, 'left'), f('footer', 300, 'center'), f('sldNum', 680, 'right')], bg: null, bgImage: null, footer: { text: '', number: false, date: false, skipTitle: true } };
+  }
+  function masterObj(t) {
+    if (t === 'master') return pres.master;
+    if (!pres.layouts[t]) pres.layouts[t] = { name: layoutName(t), elements: makeLayout(t) };
+    const L = pres.layouts[t];
+    return Object.assign(L, { id: 'layout-' + t, isLayout: true, bg: L.bg || null, bgImage: L.bgImage || null, notes: '' });
+  }
   function makeLayout(kind) {
     const T = (o) => ({ id: newId(), type: 'text', html: '', align: 'left', valign: 'top', ...o });
     const title = o => T({ ph: 'title', size: 40, valign: 'middle', ...o });
@@ -45,7 +66,9 @@
       case 'two': return [title({ x: 60, y: 28, w: 840, h: 90 }), body({ x: 60, y: 130, w: 410, h: 370 }), body({ x: 490, y: 130, w: 410, h: 370 })];
       case 'titleonly': return [title({ x: 60, y: 28, w: 840, h: 90 })];
       case 'blank': return [];
-      default: return [title({ x: 60, y: 28, w: 840, h: 90 }), body({ x: 60, y: 130, w: 840, h: 370 })];
+      case 'content': return [title({ x: 60, y: 28, w: 840, h: 90 }), body({ x: 60, y: 130, w: 840, h: 370 })];
+      default:
+        if (pres && pres.layouts && pres.layouts[kind]) return layoutFor(kind); return [title({ x: 60, y: 28, w: 840, h: 90 }), body({ x: 60, y: 130, w: 840, h: 370 })];
     }
   }
   /**
@@ -62,40 +85,70 @@
     const slides = p.slides.slice(0, 2000).map(sl => {
       const s = newSlide('blank');
       if (!sl || typeof sl !== 'object') return s;
-      s.layout = oneOf(sl.layout, ['title', 'content', 'section', 'two', 'titleonly', 'blank'], 'blank');
+      s.layout = typeof sl.layout === 'string' && (BUILTIN_LAYOUTS[sl.layout] || (p.layouts && Object.hasOwn(p.layouts, sl.layout))) ? sl.layout : 'blank';
       s.bg = color(sl.bg);
       s.bgImage = imageUrl(sl.bgImage);
       s.transition = oneOf(sl.transition, SlidesAnim.TRANSITIONS, 'none');
       s.transDur = num(sl.transDur, 1, 0.1, 30);
       s.advance = typeof sl.advance === 'number' && isFinite(sl.advance) ? Math.max(0, Math.min(3600, sl.advance)) : null;
       s.notes = typeof sl.notes === 'string' ? sl.notes.slice(0, 100000) : '';
-      s.elements = (Array.isArray(sl.elements) ? sl.elements : []).slice(0, 500).map(el => {
-        if (!el || typeof el !== 'object') return null;
-        const type = oneOf(el.type, ['text', 'shape', 'image', 'table'], null);
-        if (!type) return null;
-        const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
-        if (el.rot) out.rot = num(el.rot, 0, -360, 360);
-        const anim = SlidesAnim.clean(el.anim);
-        if (anim) out.anim = anim;
-        if (type === 'image') { out.src = imageUrl(el.src); return out.src ? out : null; }
-        out.html = Platform.sanitizeHtml(el.html);
-        out.size = num(el.size, 18, 4, 400);
-        out.align = oneOf(el.align, ['left', 'center', 'right'], 'left');
-        out.valign = oneOf(el.valign, ['top', 'middle', 'bottom'], 'top');
-        if (typeof el.font === 'string' && /^[\w .-]{1,64}$/.test(el.font)) out.font = el.font;
-        if (color(el.color)) out.color = el.color;
-        if (['title', 'subtitle', 'body'].includes(el.ph)) out.ph = el.ph;
-        if (el.bold === false) out.bold = false;
-        if (type === 'shape') { out.shape = oneOf(el.shape, SHAPE_NAMES, 'rect'); out.fill = color(el.fill); out.line = color(el.line); }
-        return out;
-      }).filter(Boolean);
+      s.elements = cleanElements(sl.elements);
+      if (sl.hideMaster === true) s.hideMaster = true;
       return s;
     });
     if (!slides.length) slides.push(newSlide('title'));
-    return { theme: Object.prototype.hasOwnProperty.call(THEMES, p.theme) ? p.theme : 'office', slides };
+    const out = { theme: Object.prototype.hasOwnProperty.call(THEMES, p.theme) || p.theme === 'custom' ? p.theme : 'office', slides };
+    const ct = p.customTheme;
+    if (out.theme === 'custom') {
+      const fontOk = f => (typeof f === 'string' && /^[\w .-]{1,64}$/.test(f) ? f : null);
+      if (ct && typeof ct === 'object' && color(ct.bg) && color(ct.title) && color(ct.text) && color(ct.accent)) out.customTheme = { name: 'Custom', bg: ct.bg, title: ct.title, text: ct.text, accent: ct.accent, font: fontOk(ct.font) || 'Calibri', titleFont: fontOk(ct.titleFont) || 'Calibri Light' };
+      else out.theme = 'office';
+    }
+    const m = p.master && typeof p.master === 'object' ? p.master : null;
+    out.master = defaultMaster();
+    if (m) {
+      out.master.elements = cleanElements(m.elements, ['footer', 'sldNum', 'dt']);
+      out.master.bg = color(m.bg); out.master.bgImage = imageUrl(m.bgImage);
+      const f = m.footer || {};
+      out.master.footer = { text: typeof f.text === 'string' ? f.text.slice(0, 500) : '', number: f.number === true, date: f.date === true, skipTitle: f.skipTitle !== false };
+    }
+    out.layouts = {};
+    if (p.layouts && typeof p.layouts === 'object') {
+      Object.keys(p.layouts).slice(0, 100).forEach(k => {
+        if (!/^[\w-]{1,40}$/.test(k)) return;
+        const L = p.layouts[k];
+        if (!L || typeof L !== 'object') return;
+        out.layouts[k] = { name: typeof L.name === 'string' ? L.name.slice(0, 100) : layoutName(k), elements: cleanElements(L.elements), bg: color(L.bg), bgImage: imageUrl(L.bgImage) };
+        if (L.custom === true || !BUILTIN_LAYOUTS[k]) out.layouts[k].custom = true;
+      });
+    }
+    return out;
   }
-  const newSlide = kind => ({ id: newId(), layout: kind, bg: null, bgImage: null, transition: 'none', transDur: 1, advance: null, notes: '', elements: makeLayout(kind) });
-  const PLACEHOLDER = { title: 'Click to add title', subtitle: 'Click to add subtitle', body: 'Click to add text' };
+  /** Elements from a file, rebuilt from known fields (phs: extra placeholder kinds allowed, e.g. footers on the master). */
+  function cleanElements(list, phs = []) {
+    return (Array.isArray(list) ? list : []).slice(0, 500).map(el => {
+      if (!el || typeof el !== 'object') return null;
+      const type = oneOf(el.type, ['text', 'shape', 'image', 'table'], null);
+      if (!type) return null;
+      const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
+      if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+      const anim = SlidesAnim.clean(el.anim);
+      if (anim) out.anim = anim;
+      if (type === 'image') { out.src = imageUrl(el.src); return out.src ? out : null; }
+      out.html = Platform.sanitizeHtml(el.html);
+      out.size = num(el.size, 18, 4, 400);
+      out.align = oneOf(el.align, ['left', 'center', 'right'], 'left');
+      out.valign = oneOf(el.valign, ['top', 'middle', 'bottom'], 'top');
+      if (typeof el.font === 'string' && /^[\w .-]{1,64}$/.test(el.font)) out.font = el.font;
+      if (color(el.color)) out.color = el.color;
+      if (['title', 'subtitle', 'body', ...phs].includes(el.ph)) out.ph = el.ph;
+      if (el.bold === false) out.bold = false;
+      if (type === 'shape') { out.shape = oneOf(el.shape, SHAPE_NAMES, 'rect'); out.fill = color(el.fill); out.line = color(el.line); }
+      return out;
+    }).filter(Boolean);
+  }
+  const newSlide = kind => ({ id: newId(), layout: kind, bg: null, bgImage: null, transition: 'none', transDur: 1, advance: null, notes: '', elements: layoutFor(kind) });
+  const PLACEHOLDER = { title: 'Click to add title', subtitle: 'Click to add subtitle', body: 'Click to add text', footer: 'Footer', sldNum: '‹#›', dt: 'Date' };
 
   // ---------- Undo ----------
   const undoStack = [], redoStack = [];
@@ -128,15 +181,38 @@
   function textColor(el) { return el.color || (el.ph === 'title' ? theme().title : theme().text); }
   function fontOf(el) { return el.font || (el.ph === 'title' ? theme().titleFont : theme().font); }
 
+  /** The master's shapes and visible footers as they appear on slide s (none on the master itself). */
+  function masterItems(s) {
+    const M = pres.master, out = [];
+    if (!M || s === M || s.hideMaster) return out;
+    const n = pres.slides.indexOf(s) + 1, f = M.footer;
+    const showFooters = !s.isLayout && !(f.skipTitle && s.layout === 'title');
+    M.elements.forEach(el => {
+      if (el.ph === 'footer' || el.ph === 'sldNum' || el.ph === 'dt') {
+        if (!showFooters) return;
+        const text = el.ph === 'footer' ? (f.text && escapeHtml(f.text)) : el.ph === 'sldNum' ? (f.number && String(n)) : (f.date && escapeHtml(new Date().toLocaleDateString()));
+        if (text) out.push({ ...el, html: `<div>${text}</div>`, master: true });
+        return;
+      }
+      out.push({ ...el, master: true });
+    });
+    return out;
+  }
   /** Builds the DOM for one slide. interactive=false for thumbnails, print and the show. */
   function renderSlide(s, container, interactive) {
     container.innerHTML = '';
-    container.style.backgroundColor = s.bg || theme().bg;
-    container.style.backgroundImage = imageUrl(s.bgImage) ? `url("${s.bgImage}")` : '';
-    s.elements.forEach(el => {
+    const M = pres.master;
+    const isMaster = s === M;
+    // Backgrounds come from the slide, else its layout, else the master, else the theme.
+    const L = !isMaster && !s.isLayout && pres.layouts && pres.layouts[s.layout];
+    const bgFrom = [s, L, !isMaster && M].find(x => x && (x.bg || x.bgImage)) || {};
+    container.style.backgroundColor = bgFrom.bg || theme().bg;
+    container.style.backgroundImage = imageUrl(bgFrom.bgImage) ? `url("${bgFrom.bgImage}")` : '';
+    const list = [...masterItems(s), ...s.elements];
+    list.forEach(el => {
       const div = document.createElement('div');
-      div.className = 'el ' + el.type;
-      div.dataset.id = el.id;
+      div.className = 'el ' + el.type + (el.master ? ' master-el' : '');
+      if (el.master) div.dataset.masterId = el.id; else div.dataset.id = el.id;
       Object.assign(div.style, { left: el.x + 'px', top: el.y + 'px', width: el.w + 'px', height: el.h + 'px', transform: el.rot ? `rotate(${el.rot}deg)` : '' });
       if (el.type === 'image') {
         const img = document.createElement('img');
@@ -157,11 +233,11 @@
         Object.assign(c.style, { fontSize: el.size + 'pt', color: textColor(el), textAlign: el.align || 'left', fontFamily: fontOf(el) });
         if (el.ph === 'title') c.style.fontWeight = el.bold === false ? '400' : '';
         if (el.type === 'table') div.style.setProperty('--tbl-accent', theme().accent);
-        if (interactive && el.type === 'text' && el.ph) c.dataset.placeholder = PLACEHOLDER[el.ph];
+        if ((interactive || s.isLayout || s === pres.master) && el.type === 'text' && el.ph && !el.master) c.dataset.placeholder = PLACEHOLDER[el.ph];
         else if (interactive && el.type === 'text') c.dataset.placeholder = 'Type here';
         div.appendChild(c);
       }
-      if (interactive && el.anim && document.body.classList.contains('show-anims')) {
+      if (interactive && !el.master && el.anim && document.body.classList.contains('show-anims')) {
         const b = document.createElement('span');
         b.className = 'anim-badge';
         b.textContent = animNumber(s, el);
@@ -183,11 +259,13 @@
       if (c) c.contentEditable = 'true';
     }
     notes.value = slide().notes || '';
-    document.getElementById('stSlide').textContent = `Slide ${current + 1} of ${pres.slides.length}`;
+    document.getElementById('stSlide').textContent = masterTarget ? (masterTarget === 'master' ? 'Slide Master' : 'Layout: ' + layoutName(masterTarget)) : `Slide ${current + 1} of ${pres.slides.length}`;
+    document.getElementById('hideMaster').classList.toggle('on', !masterTarget && !!slide().hideMaster);
     syncToolbar();
   }
   function renderThumbs() {
     thumbs.innerHTML = '';
+    if (masterTarget) return renderMasterThumbs();
     pres.slides.forEach((s, i) => {
       const t = document.createElement('div');
       t.className = 'thumb' + (i === current ? ' active' : '');
@@ -213,11 +291,109 @@
     });
     thumbs.querySelector('.thumb.active')?.scrollIntoView({ block: 'nearest' });
   }
+  function renderMasterThumbs() {
+    [['master', 'Slide Master'], ...layoutKeys().map(k => [k, layoutName(k)])].forEach(([key, name]) => {
+      const t = document.createElement('div');
+      t.className = 'thumb' + (key === 'master' ? ' master-thumb' : ' layout-thumb') + (key === masterTarget ? ' active' : '');
+      t.title = name;
+      t.innerHTML = '<div class="num"></div><div class="frame"><div class="slide"></div></div><div class="thumb-name"></div>';
+      t.querySelector('.thumb-name').textContent = name;
+      renderSlide(masterObj(key), t.querySelector('.slide'), false);
+      t.addEventListener('click', () => { commitEditing(); masterTarget = key; selectedId = null; renderAll(); });
+      thumbs.appendChild(t);
+    });
+    thumbs.querySelector('.thumb.active')?.scrollIntoView({ block: 'nearest' });
+  }
+  function setMasterView(on) {
+    commitEditing();
+    masterTarget = on ? 'master' : null;
+    selectedId = editingId = null;
+    document.body.classList.toggle('master-view', on);
+    const tab = document.querySelector('.ribbon-tabs [data-tab="master"]');
+    tab.hidden = !on;
+    (on ? tab : document.querySelector('.ribbon-tabs [data-tab="home"]')).click();
+    renderAll();
+  }
+  document.getElementById('masterView').addEventListener('click', () => setMasterView(true));
+  document.getElementById('masterView2').addEventListener('click', () => setMasterView(true));
+  document.getElementById('closeMaster').addEventListener('click', () => setMasterView(false));
+  document.getElementById('insLayout').addEventListener('click', async () => {
+    const r = await UI.form('Insert Layout', [{ name: 'name', label: 'Layout name', value: 'Custom Layout' }, { name: 'from', label: 'Start from', type: 'select', options: layoutKeys().map(k => ({ value: k, label: layoutName(k) })) }], 'Insert');
+    if (!r) return;
+    snapshot();
+    const key = 'L' + Date.now().toString(36);
+    pres.layouts[key] = { name: r.name.trim().slice(0, 100) || 'Custom Layout', custom: true, elements: JSON.parse(JSON.stringify(masterObj(r.from).elements)).map(el => ({ ...el, id: newId() })) };
+    masterTarget = key;
+    renderAll(); state.markDirty();
+  });
+  document.getElementById('renameLayout').addEventListener('click', async () => {
+    if (!masterTarget || masterTarget === 'master') return UI.toast('Select a layout first');
+    const name = await UI.prompt('Rename Layout', 'Layout name', layoutName(masterTarget));
+    if (!name) return;
+    snapshot(); masterObj(masterTarget).name = name.slice(0, 100); renderAll(); state.markDirty();
+  });
+  document.getElementById('delLayout').addEventListener('click', async () => {
+    const k = masterTarget;
+    if (!k || k === 'master' || BUILTIN_LAYOUTS[k]) return UI.toast('Only custom layouts can be deleted (built-in ones can be edited)');
+    if (pres.slides.some(sl => sl.layout === k) && !(await UI.confirm('Delete Layout', 'Slides use this layout. They will keep their content and become Blank-layout slides.'))) return;
+    snapshot();
+    pres.slides.forEach(sl => { if (sl.layout === k) sl.layout = 'blank'; });
+    delete pres.layouts[k];
+    masterTarget = 'master';
+    renderAll(); state.markDirty();
+  });
+  document.getElementById('insPlaceholder').addEventListener('change', e => {
+    const kind = e.target.value; e.target.value = '';
+    if (!kind || !masterTarget || masterTarget === 'master') { if (kind) UI.toast('Placeholders go on layouts: select a layout first'); return; }
+    snapshot();
+    const base = { id: newId(), type: 'text', html: '', align: 'left', valign: 'top', ph: kind };
+    slide().elements.push(kind === 'title' ? { ...base, x: 60, y: 28, w: 840, h: 90, size: 40, valign: 'middle' } : kind === 'subtitle' ? { ...base, x: 120, y: 300, w: 720, h: 80, size: 24, align: 'center' } : { ...base, x: 100, y: 150, w: 400, h: 250, size: 24 });
+    selectedId = slide().elements[slide().elements.length - 1].id;
+    renderAll(); state.markDirty();
+  });
+  document.getElementById('resetSlide').addEventListener('click', () => {
+    // Put the slide's placeholders back where its layout has them, as PowerPoint's Reset does.
+    snapshot();
+    const s = slide(), fresh = layoutFor(s.layout);
+    s.elements.filter(el => el.ph).forEach(el => {
+      const f = fresh.find(x => x.ph === el.ph && !x._used);
+      if (f) { f._used = true; Object.assign(el, { x: f.x, y: f.y, w: f.w, h: f.h, size: f.size, align: f.align, valign: f.valign }); }
+    });
+    renderAll(); state.markDirty();
+  });
+  document.getElementById('headerFooter').addEventListener('click', async () => {
+    const f = pres.master.footer, yn = [{ value: '1', label: 'Yes' }, { value: '', label: 'No' }], ny = [{ value: '', label: 'No' }, { value: '1', label: 'Yes' }];
+    const r = await UI.form('Header and Footer', [
+      { name: 'date', label: 'Date', type: 'select', options: f.date ? yn : ny },
+      { name: 'number', label: 'Slide number', type: 'select', options: f.number ? yn : ny },
+      { name: 'text', label: 'Footer text', value: f.text },
+      { name: 'skip', label: 'Don\'t show on title slide', type: 'select', options: f.skipTitle ? yn : ny }
+    ], 'Apply to All');
+    if (!r) return;
+    snapshot();
+    pres.master.footer = { text: r.text.slice(0, 500), number: !!r.number, date: !!r.date, skipTitle: !!r.skip };
+    if (r.text && !pres.master.elements.some(el => el.ph === 'footer')) pres.master.elements.push(...defaultMaster().elements.filter(el => el.ph === 'footer'));
+    if (r.number && !pres.master.elements.some(el => el.ph === 'sldNum')) pres.master.elements.push(...defaultMaster().elements.filter(el => el.ph === 'sldNum'));
+    if (r.date && !pres.master.elements.some(el => el.ph === 'dt')) pres.master.elements.push(...defaultMaster().elements.filter(el => el.ph === 'dt'));
+    renderAll(); state.markDirty();
+  });
+  document.getElementById('headerFooter2').addEventListener('click', () => document.getElementById('headerFooter').click());
+  document.getElementById('hideMaster').addEventListener('click', e => {
+    if (masterTarget) return;
+    snapshot(); slide().hideMaster = !slide().hideMaster; e.currentTarget.classList.toggle('on', !!slide().hideMaster); renderAll(); state.markDirty();
+  });
+  function fillLayoutSelect() {
+    const sel = document.getElementById('layout');
+    const keys = layoutKeys();
+    if (sel.options.length === keys.length && keys.every((k, i) => sel.options[i].value === k && sel.options[i].textContent === layoutName(k))) return;
+    sel.textContent = '';
+    keys.forEach(k => { const o = document.createElement('option'); o.value = k; o.textContent = layoutName(k); sel.appendChild(o); });
+  }
   let thumbTimer;
   function refreshThumbSoon() {
     clearTimeout(thumbTimer);
     thumbTimer = setTimeout(() => {
-      const frame = thumbs.children[current]?.querySelector('.slide');
+      const frame = (masterTarget ? thumbs.querySelector('.thumb.active') : thumbs.children[current])?.querySelector('.slide');
       if (frame) renderSlide(slide(), frame, false);
     }, 250);
   }
@@ -233,6 +409,7 @@
 
   function goTo(i) {
     commitEditing();
+    if (masterTarget) setMasterView(false);
     current = Math.max(0, Math.min(pres.slides.length - 1, i));
     selectedId = null;
     renderAll();
@@ -241,6 +418,7 @@
   // ---------- Slide operations ----------
   function addSlide(kind) {
     commitEditing();
+    if (masterTarget) return UI.toast('Close Master View to add slides');
     snapshot();
     // Like PowerPoint: after a title slide comes "Title and Content", otherwise repeat the current layout.
     const cur = slide() && slide().layout;
@@ -257,7 +435,7 @@
     snapshot();
     const s = slide();
     const old = s.elements.filter(el => el.ph);
-    const fresh = makeLayout(e.target.value);
+    const fresh = layoutFor(e.target.value);
     fresh.forEach(f => { const match = old.find(o => o.ph === f.ph && !o._used); if (match) { f.html = match.html; match._used = true; } });
     s.elements = [...fresh, ...s.elements.filter(el => !el.ph)];
     s.layout = e.target.value;
@@ -275,6 +453,7 @@
     state.markDirty();
   });
   function deleteSlide() {
+    if (masterTarget) return;
     if (pres.slides.length === 1) return UI.toast('A presentation needs at least one slide');
     snapshot();
     pres.slides.splice(current, 1);
@@ -668,7 +847,8 @@
     document.getElementById('animEffect').value = a ? a.effect : '';
     ['animDir', 'animStart', 'animDur', 'animDelay', 'animEarlier', 'animLater'].forEach(id => { document.getElementById(id).disabled = !a; });
     if (a) { document.getElementById('animDir').value = a.dir; document.getElementById('animStart').value = a.start; document.getElementById('animDur').value = a.dur; document.getElementById('animDelay').value = a.delay; document.getElementById('animDir').disabled = !SlidesAnim.EFFECTS[a.effect].dirs; }
-    document.getElementById('layout').value = slide().layout && makeLayout(slide().layout) ? slide().layout : 'content';
+    fillLayoutSelect();
+    document.getElementById('layout').value = layoutKeys().includes(slide().layout) ? slide().layout : 'content';
   }
 
   // ---------- Design ----------
@@ -778,6 +958,7 @@
   let showIndex = 0, cursorTimer;
   function present(from) {
     commitEditing();
+    if (masterTarget) setMasterView(false);
     showIndex = from;
     presenter.hidden = false;
     presenter.classList.remove('black');
@@ -1119,10 +1300,12 @@
     pptx.company = 'Atlas Office';
     for (const s of pres.slides) {
       const ps = pptx.addSlide();
-      if (s.bgImage) ps.background = { data: s.bgImage };
-      else ps.background = { color: hex(s.bg || theme().bg) };
-      for (const el of s.elements) {
-        const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: 'atlas-' + el.id };
+      const L = pres.layouts[s.layout];
+      const bgFrom = [s, L, !s.hideMaster && pres.master].find(x => x && (x.bg || x.bgImage)) || {};
+      if (bgFrom.bgImage) ps.background = { data: bgFrom.bgImage };
+      else ps.background = { color: hex(bgFrom.bg || theme().bg) };
+      for (const el of [...masterItems(s), ...s.elements]) {
+        const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: (el.master ? 'atlas-master-' : 'atlas-') + el.id };
         if (el.type === 'image') { ps.addImage({ data: el.src, ...box }); continue; }
         if (el.type === 'table') {
           const tmp = document.createElement('div'); tmp.innerHTML = el.html;
@@ -1156,8 +1339,15 @@
   }
   /** PptxGenJS doesn't write transitions or animations: add them to each slide's XML. */
   async function addTimingToPptx(bytes) {
-    if (!pres.slides.some(s => (s.transition && s.transition !== 'none') || typeof s.advance === 'number' || s.elements.some(e => e.anim))) return bytes;
     const zip = await JSZip.loadAsync(bytes);
+    // The master, layouts and theme go in a custom document property so Atlas can restore them exactly.
+    const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({ layout: sl.layout, hideMaster: !!sl.hideMaster })) });
+    const xmlEsc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    zip.file('docProps/custom.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="AtlasSlidesMeta"><vt:lpwstr>${xmlEsc(meta)}</vt:lpwstr></property></Properties>`);
+    const ct = await zip.file('[Content_Types].xml').async('string');
+    if (!ct.includes('/docProps/custom.xml')) zip.file('[Content_Types].xml', ct.replace('</Types>', '<Override PartName="/docProps/custom.xml" ContentType="application/vnd.openxmlformats-officedocument.custom-properties+xml"/></Types>'));
+    const rels = await zip.file('_rels/.rels').async('string');
+    if (!rels.includes('docProps/custom.xml')) zip.file('_rels/.rels', rels.replace('</Relationships>', '<Relationship Id="rIdAtlasCustom" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/custom-properties" Target="docProps/custom.xml"/></Relationships>'));
     for (let i = 0; i < pres.slides.length; i++) {
       const path = `ppt/slides/slide${i + 1}.xml`;
       const f = zip.file(path);
@@ -1194,7 +1384,8 @@
     const themeXml = parse((await read('ppt/theme/theme1.xml')) || '<a/>');
     const scheme = {};
     const cs = themeXml.getElementsByTagNameNS(A, 'clrScheme')[0];
-    if (cs) [...cs.children].forEach(c => { const v = c.firstElementChild; if (v) scheme[c.localName] = v.getAttribute('val') || v.getAttribute('lastClr'); });
+    // System colours (windowText, window) carry their RGB in lastClr.
+    if (cs) [...cs.children].forEach(c => { const v = c.firstElementChild; if (v) scheme[c.localName] = v.localName === 'sysClr' ? v.getAttribute('lastClr') : v.getAttribute('val'); });
     scheme.tx1 = scheme.tx1 || scheme.dk1; scheme.bg1 = scheme.bg1 || scheme.lt1; scheme.tx2 = scheme.tx2 || scheme.dk2; scheme.bg2 = scheme.bg2 || scheme.lt2;
     const colorOf = node => {
       if (!node) return null;
@@ -1205,30 +1396,115 @@
       return null;
     };
     const slides = [];
+    const imported = {}; // master, layouts and theme read from PowerPoint's own parts
     let spids = new Map(); // PowerPoint shape id -> imported element, for animations
-    const ids = [...presXml.getElementsByTagNameNS(P, 'sldId')];
-    for (const sid of ids) {
+    const docs = new Map();
+    const loadPart = async p => { if (!docs.has(p)) docs.set(p, { xml: parse((await read(p)) || '<x/>'), rels: relMap(parse((await read(p.replace(/([^/]+)$/, '_rels/$1.rels'))) || '<Relationships/>')) }); return docs.get(p); };
+    const resolve = (from, target) => (target.startsWith('/') ? target.slice(1) : from.replace(/[^/]+$/, '') + target).split('/').reduce((a, x) => { if (x === '..') a.pop(); else if (x !== '.') a.push(x); return a; }, []).join('/');
+    const partRelsTyped = async p => {
+      const raw = parse((await read(p.replace(/([^/]+)$/, '_rels/$1.rels'))) || '<Relationships/>');
+      return [...raw.getElementsByTagName('Relationship')].map(r => ({ id: r.getAttribute('Id'), type: (r.getAttribute('Type') || '').split('/').pop(), target: resolve(p, r.getAttribute('Target') || '') }));
+    };
+    // Theme fonts and colours become the presentation's theme.
+    const fontScheme = themeXml.getElementsByTagNameNS(A, 'fontScheme')[0];
+    const typeface = tag => { const f = fontScheme && fontScheme.getElementsByTagNameNS(A, tag)[0]; const l = f && f.getElementsByTagNameNS(A, 'latin')[0]; const t = l && l.getAttribute('typeface'); return t && /^[\w .-]{1,64}$/.test(t) ? t : null; };
+    if (scheme.dk1 && scheme.lt1) {
+      imported.theme = 'custom';
+      imported.customTheme = { bg: '#' + (scheme.bg1 || scheme.lt1), title: '#' + (scheme.tx1 || scheme.dk1), text: '#' + (scheme.tx1 || scheme.dk1), accent: '#' + (scheme.accent1 || '4472C4'), font: typeface('minorFont') || 'Calibri', titleFont: typeface('majorFont') || 'Calibri Light' };
+    }
+    const phOf = node => { const ph = node.getElementsByTagNameNS(P, 'ph')[0]; return ph ? { type: ph.getAttribute('type') || 'body', idx: ph.getAttribute('idx') } : null; };
+    const shapesOf = doc => { const t = doc.getElementsByTagNameNS(P, 'spTree')[0]; return t ? [...t.children] : []; };
+    // PowerPoint matches a placeholder to its layout by idx, else by type (title/ctrTitle and body/obj alike).
+    const sameKind = (a, b) => a === b || (/title/i.test(a) && /title/i.test(b)) || (['body', 'obj', 'subTitle'].includes(a) && ['body', 'obj'].includes(b));
+    function findPh(doc, type, idx) {
+      const list = shapesOf(doc).map(n => ({ n, ph: phOf(n) })).filter(x => x.ph);
+      return (idx != null && list.find(x => x.ph.idx === idx && sameKind(type, x.ph.type))) || (idx != null && list.find(x => x.ph.idx === idx)) || list.find(x => x.ph.type === type) || list.find(x => sameKind(type, x.ph.type));
+    }
+    const xfrmBox = node => {
+      const x = [...node.getElementsByTagNameNS(A, 'xfrm')].find(e => e.parentNode && /spPr|grpSpPr/.test(e.parentNode.localName)) || node.getElementsByTagNameNS(P, 'xfrm')[0] || node.getElementsByTagNameNS(A, 'xfrm')[0];
+      const off = x && x.getElementsByTagNameNS(A, 'off')[0], ext = x && x.getElementsByTagNameNS(A, 'ext')[0];
+      return off && ext ? { x: +off.getAttribute('x'), y: +off.getAttribute('y'), w: +ext.getAttribute('cx'), h: +ext.getAttribute('cy'), rot: (+x.getAttribute('rot') || 0) / 60000 } : null;
+    };
+    const lvl1Size = el => { const d = el && [...el.getElementsByTagNameNS(A, 'lvl1pPr')].map(l => l.getElementsByTagNameNS(A, 'defRPr')[0]).find(Boolean); return d && d.getAttribute('sz') ? +d.getAttribute('sz') / 100 : null; };
+    /** Inheritance context for a slide (or the master/layout itself): where placeholders sit and their text size. */
+    function inheritance(layoutDoc, masterDoc) {
+      const txStyles = masterDoc && masterDoc.getElementsByTagNameNS(P, 'txStyles')[0];
+      const styleSize = phType => {
+        if (!txStyles) return null;
+        const tag = phType !== 'subTitle' && /title/i.test(phType) ? 'titleStyle' : ['body', 'obj', 'subTitle'].includes(phType) ? 'bodyStyle' : 'otherStyle';
+        return lvl1Size(txStyles.getElementsByTagNameNS(P, tag)[0]);
+      };
+      return {
+        phBox(type, idx) {
+          for (const d of [layoutDoc, masterDoc]) { if (!d) continue; const f = findPh(d, type, idx); const b = f && xfrmBox(f.n); if (b) return b; }
+          return null;
+        },
+        inheritSize(type, idx) {
+          if (!type) return null;
+          for (const d of [layoutDoc, masterDoc]) { if (!d) continue; const f = findPh(d, type, idx); const sz = f && lvl1Size(f.n.getElementsByTagNameNS(A, 'lstStyle')[0]); if (sz) return sz; }
+          return styleSize(type);
+        }
+      };
+    }
+    const bgOf = async (doc, docPath, docRels) => {
+      const bg = doc.getElementsByTagNameNS(P, 'bg')[0];
+      if (!bg) return null;
+      const blip = bg.getElementsByTagNameNS(A, 'blip')[0];
+      if (blip) { const src = await mediaUrl(zip, docPath, docRels[blip.getAttributeNS(R, 'embed')]); return src ? { bgImage: src } : null; }
+      const c = colorOf(bg);
+      return c ? { bg: c } : null;
+    };
+    const masters = new Map(), layoutsSeen = new Map();
+    let masterParsed = null;
+    for (const sid of ids_()) {
       const target = pr[sid.getAttributeNS(R, 'id') || sid.getAttribute('r:id')];
       if (!target) continue;
       const path = 'ppt/' + target.replace(/^\/?ppt\//, '').replace(/^\.\.\//, '');
       const xml = parse(await read(path));
       const relsPath = path.replace(/slides\/(slide\d+\.xml)$/, 'slides/_rels/$1.rels');
       const rels = relMap(parse((await read(relsPath)) || '<Relationships/>'));
+      // The slide's layout and master.
+      const layoutRel = (await partRelsTyped(path)).find(r => r.type === 'slideLayout');
+      const layoutPath = layoutRel ? layoutRel.target : null;
+      const layout = layoutPath ? await loadPart(layoutPath) : null;
+      const masterRel = layoutPath ? (await partRelsTyped(layoutPath)).find(r => r.type === 'slideMaster') : null;
+      const masterPath = masterRel ? masterRel.target : null;
+      const master = masterPath ? await loadPart(masterPath) : null;
+      if (master && !masters.has(masterPath)) masters.set(masterPath, master);
       const s = newSlide('blank');
       s.layout = 'blank';
-      const bg = xml.getElementsByTagNameNS(P, 'bg')[0];
-      if (bg) {
-        const blip = bg.getElementsByTagNameNS(A, 'blip')[0];
-        if (blip) s.bgImage = await mediaUrl(zip, path, rels[blip.getAttributeNS(R, 'embed')]);
-        else s.bg = colorOf(bg);
-      }
-      const spTree = xml.getElementsByTagNameNS(P, 'spTree')[0];
+      const ctx = { ...inheritance(layout && layout.xml, master && master.xml), tf: b => b };
+      // Background: the slide's, else the layout's (the master's is the master background).
+      Object.assign(s, (await bgOf(xml, path, rels)) || (layout && await bgOf(layout.xml, layoutPath, layout.rels)) || {});
+      const hidden = attrIs(xml.documentElement, 'showMasterSp', '0') || (layout && attrIs(layout.xml.documentElement, 'showMasterSp', '0'));
+      if (hidden) s.hideMaster = true;
       spids = new Map();
-      if (spTree) {
-        for (const node of [...spTree.children]) {
-          const el = await importShape(node, zip, path, rels);
-          if (el) slide_push(s, el);
+      // Shapes the layout draws (not placeholders) appear behind the slide's own.
+      if (layout && !attrIs(xml.documentElement, 'showMasterSp', '0')) {
+        for (const node of shapesOf(layout.xml)) { if (phOf(node)) continue; const el = await importShape(node, zip, layoutPath, layout.rels, { ...inheritance(null, master && master.xml), tf: b => b }); if (el) slide_push(s, el); }
+      }
+      for (const node of shapesOf(xml)) {
+        const el = await importShape(node, zip, path, rels, ctx);
+        if (el) slide_push(s, el);
+      }
+      // The layout as an Atlas layout, so new slides can use it.
+      if (layoutPath) {
+        if (!layoutsSeen.has(layoutPath)) {
+          const key = 'L' + (layoutsSeen.size + 1);
+          layoutsSeen.set(layoutPath, key);
+          const lctx = { ...inheritance(layout.xml, master && master.xml), tf: b => b };
+          const els = [];
+          for (const node of shapesOf(layout.xml)) {
+            const ph = phOf(node);
+            if (!ph || !['title', 'ctrTitle', 'body', 'obj', 'subTitle'].includes(ph.type)) continue;
+            const el = await importShape(node, zip, layoutPath, layout.rels, lctx, true);
+            if (el) { el.html = ''; els.push(el); }
+          }
+          const cSld = layout.xml.getElementsByTagNameNS(P, 'cSld')[0];
+          imported.layouts = imported.layouts || {};
+          imported.layouts[key] = { name: (cSld && cSld.getAttribute('name')) || 'Layout ' + (layoutsSeen.size), custom: true, elements: els, ...((await bgOf(layout.xml, layoutPath, layout.rels)) || {}) };
         }
+        s.layout = layoutsSeen.get(layoutPath);
       }
       // Transition and animations
       Object.assign(s, SlidesAnim.fromTransition(xml.getElementsByTagNameNS(P, 'transition')[0]) || {});
@@ -1241,31 +1517,64 @@
         s.notes = bodies.map(b => [...b.getElementsByTagNameNS(A, 'p')].map(p => [...p.getElementsByTagNameNS(A, 't')].map(t => t.textContent).join('')).join('\n')).join('\n').trim();
       }
       slides.push(s);
+      if (!masterParsed && master) masterParsed = { master, masterPath };
     }
+    // The (first) master: its background, its shapes and where its footers go.
+    if (masterParsed) {
+      const { master, masterPath } = masterParsed;
+      const mctx = { ...inheritance(null, master.xml), tf: b => b };
+      const els = [];
+      for (const node of shapesOf(master.xml)) {
+        const ph = phOf(node);
+        if (ph && !['dt', 'ftr', 'sldNum'].includes(ph.type)) continue;
+        const el = await importShape(node, zip, masterPath, master.rels, mctx, true);
+        if (!el) continue;
+        if (ph) { el.ph = { dt: 'dt', ftr: 'footer', sldNum: 'sldNum' }[ph.type]; el.html = ''; el.type = 'text'; delete el.shape; delete el.fill; delete el.line; }
+        els.push(el);
+      }
+      imported.master = { elements: els, ...((await bgOf(master.xml, masterPath, master.rels)) || {}), footer: { text: '', number: false, date: false, skipTitle: true } };
+    }
+    function attrIs(el, name, v) { return !!el && el.getAttribute(name) === v; }
+    function ids_() { return [...presXml.getElementsByTagNameNS(P, 'sldId')]; }
     function slide_push(s, el) { if (Array.isArray(el)) s.elements.push(...el); else s.elements.push(el); }
-    async function importShape(node, zipF, path, rels) {
+    /**
+     * One shape as Atlas elements. ctx.tf maps a box from the shape's coordinates (inside groups)
+     * to the slide's; ctx gives inherited placeholder positions and sizes. keepEmpty keeps empty
+     * placeholders (for layouts and the master).
+     */
+    async function importShape(node, zipF, path, rels, ctx, keepEmpty) {
       const ln = node.localName;
       if (ln === 'grpSp') {
+        // Children use the group's child coordinate space (chOff/chExt), scaled into its box.
+        const gx = [...node.children].find(c => c.localName === 'grpSpPr');
+        const x = gx && gx.getElementsByTagNameNS(A, 'xfrm')[0];
+        const g = (tag, a) => { const e = x && x.getElementsByTagNameNS(A, tag)[0]; return e ? +e.getAttribute(a) : 0; };
+        const off = { x: g('off', 'x'), y: g('off', 'y') }, ext = { w: g('ext', 'cx'), h: g('ext', 'cy') }, chOff = { x: g('chOff', 'x'), y: g('chOff', 'y') }, chExt = { w: g('chExt', 'cx') || ext.w, h: g('chExt', 'cy') || ext.h };
+        const kx = chExt.w ? ext.w / chExt.w : 1, ky = chExt.h ? ext.h / chExt.h : 1;
+        const tf = b => ctx.tf({ x: off.x + (b.x - chOff.x) * kx, y: off.y + (b.y - chOff.y) * ky, w: b.w * kx, h: b.h * ky, rot: b.rot });
         const out = [];
-        for (const child of [...node.children]) { const e = await importShape(child, zipF, path, rels); if (e) out.push(...[].concat(e)); }
+        for (const child of [...node.children]) { const e = await importShape(child, zipF, path, rels, { ...ctx, tf }, keepEmpty); if (e) out.push(...[].concat(e)); }
         return out;
       }
-      const xfrm = node.getElementsByTagNameNS(A, 'xfrm')[0];
-      const ph = node.getElementsByTagNameNS(P, 'ph')[0];
-      const phType = ph ? (ph.getAttribute('type') || 'body') : null;
-      let box;
-      if (xfrm && xfrm.getElementsByTagNameNS(A, 'off')[0]) {
-        const off = xfrm.getElementsByTagNameNS(A, 'off')[0], ext = xfrm.getElementsByTagNameNS(A, 'ext')[0];
-        box = { x: Math.round(+off.getAttribute('x') / EMU * sx), y: Math.round(+off.getAttribute('y') / EMU * sy), w: Math.round(+ext.getAttribute('cx') / EMU * sx), h: Math.round(+ext.getAttribute('cy') / EMU * sy) };
-        const rot = +xfrm.getAttribute('rot') || 0;
-        if (rot) box.rot = rot / 60000;
-      } else if (phType) {
-        // Placeholder positions come from the layout; use sensible defaults.
-        box = /title/i.test(phType) ? (phType === 'ctrTitle' ? { x: 80, y: 140, w: 800, h: 150 } : { x: 60, y: 28, w: 840, h: 90 }) : phType === 'subTitle' ? { x: 120, y: 305, w: 720, h: 80 } : { x: 60, y: 130, w: 840, h: 370 };
-      } else return null;
+      if (!['sp', 'cxnSp', 'pic', 'graphicFrame'].includes(ln)) return null;
       const nv = node.getElementsByTagNameNS(P, 'cNvPr')[0];
       const spid = nv ? nv.getAttribute('id') : null;
+      if (nv && /^atlas-master-/.test(nv.getAttribute('name') || '')) return null; // drawn from the master Atlas saved
       const tag = el => { if (el && spid) spids.set(spid, el); return el; };
+      const phInfo = phOf(node);
+      let phType = phInfo ? phInfo.type : null;
+      const phIdx = phInfo ? phInfo.idx : null;
+      // Footer placeholders on a slide are ordinary text there.
+      if (['dt', 'ftr', 'sldNum', 'hdr'].includes(phType) && !keepEmpty) phType = null;
+      let raw = xfrmBox(node) || (phInfo && ctx.phBox(phInfo.type, phIdx));
+      let box;
+      if (raw) {
+        raw = ctx.tf(raw);
+        box = { x: Math.round(raw.x / EMU * sx), y: Math.round(raw.y / EMU * sy), w: Math.round(raw.w / EMU * sx), h: Math.round(raw.h / EMU * sy) };
+        if (raw.rot) box.rot = raw.rot;
+      } else if (phType) {
+        box = phType === 'subTitle' ? { x: 120, y: 305, w: 720, h: 80 } : /title/i.test(phType) ? (phType === 'ctrTitle' ? { x: 80, y: 140, w: 800, h: 150 } : { x: 60, y: 28, w: 840, h: 90 }) : { x: 60, y: 130, w: 840, h: 370 };
+      } else return null;
       if (ln === 'pic') {
         const blip = node.getElementsByTagNameNS(A, 'blip')[0];
         const src = blip && await mediaUrl(zipF, path, rels[blip.getAttributeNS(R, 'embed')]);
@@ -1277,7 +1586,6 @@
         const html = '<table>' + [...tbl.getElementsByTagNameNS(A, 'tr')].map(tr => '<tr>' + [...tr.getElementsByTagNameNS(A, 'tc')].map(tc => `<td>${escapeHtml([...tc.getElementsByTagNameNS(A, 't')].map(t => t.textContent).join(' '))}</td>`).join('') + '</tr>').join('') + '</table>';
         return tag({ id: newId(), type: 'table', html, size: 14, align: 'left', valign: 'top', ...box });
       }
-      if (ln !== 'sp' && ln !== 'cxnSp') return null;
       const spPr = node.getElementsByTagNameNS(P, 'spPr')[0];
       const geom = spPr && spPr.getElementsByTagNameNS(A, 'prstGeom')[0];
       const prst = geom ? geom.getAttribute('prst') : null;
@@ -1286,7 +1594,7 @@
       const fill = fillNode ? colorOf(fillNode) : null;
       const line = lnNode && !lnNode.getElementsByTagNameNS(A, 'noFill')[0] ? colorOf(lnNode) : null;
       const txBody = node.getElementsByTagNameNS(P, 'txBody')[0];
-      let html = '', size = phType && /title/i.test(phType) ? 40 : 18, align = 'left', valign = 'top';
+      let html = '', size = ctx.inheritSize(phType, phIdx) || (phType && /title/i.test(phType) ? 40 : 18), align = 'left', valign = 'top';
       if (txBody) {
         const bodyPr = txBody.getElementsByTagNameNS(A, 'bodyPr')[0];
         const anchor = bodyPr && bodyPr.getAttribute('anchor');
@@ -1333,10 +1641,10 @@
           html = html.replace(new RegExp(`font-size:${common}pt;?`, 'g'), '').replace(/ style=""/g, '');
         }
       }
-      if (!html && !fill && !line && !prst) return null;
+      if (!html && !fill && !line && !prst && !(keepEmpty && phType)) return null;
       const isShape = (fill || line || (prst && prst !== 'rect')) && !phType;
       const el = { id: newId(), type: isShape ? 'shape' : 'text', html, size, align, valign, ...box };
-      if (phType) el.ph = /title/i.test(phType) ? 'title' : phType === 'subTitle' ? 'subtitle' : 'body';
+      if (phType) el.ph = phType === 'subTitle' ? 'subtitle' : /title/i.test(phType) ? 'title' : 'body';
       tag(el);
       if (isShape) { el.shape = { rect: 'rect', roundRect: 'roundRect', ellipse: 'ellipse', triangle: 'triangle', rightArrow: 'rightArrow', line: 'line', star5: 'star5', diamond: 'diamond', straightConnector1: 'line' }[prst] || 'rect'; el.fill = fill; el.line = line; }
       return el;
@@ -1353,7 +1661,17 @@
       return 'data:' + mime + ';base64,' + await f.async('base64');
     }
     if (!slides.length) slides.push(newSlide('title'));
-    return cleanPres({ theme: 'office', slides });
+    let meta = null;
+    const custom = await read('docProps/custom.xml');
+    if (custom) {
+      const prop = [...parse(custom).getElementsByTagName('*')].find(e => e.localName === 'property' && e.getAttribute('name') === 'AtlasSlidesMeta');
+      try { meta = prop ? JSON.parse(prop.textContent) : null; } catch { meta = null; }
+    }
+    if (meta && typeof meta === 'object') {
+      (Array.isArray(meta.slides) ? meta.slides : []).forEach((m, i) => { if (slides[i] && m) { slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true; } });
+      return cleanPres({ theme: meta.theme, customTheme: meta.customTheme, master: meta.master, layouts: meta.layouts, slides });
+    }
+    return cleanPres({ theme: 'office', slides, ...imported });
   }
 
   // ---------- Files ----------
@@ -1442,6 +1760,7 @@
       audience.toPresenter({ cmd: 'ready' });
       return;
     }
+    pres.master = defaultMaster();
     pres.slides = [newSlide('title')];
     renderAll();
     const f = await Platform.pending();

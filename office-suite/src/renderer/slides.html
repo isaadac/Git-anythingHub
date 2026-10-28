@@ -30,6 +30,8 @@
   <button data-tab="animations">Animations</button>
   <button data-tab="arrange">Arrange</button>
   <button data-tab="show">Slide Show</button>
+  <button data-tab="viewtab">View</button>
+  <button data-tab="master" class="contextual" hidden>Slide Master</button>
 </div>
 
 <div class="ribbon">
@@ -41,6 +43,7 @@
           <option value="title">Title Slide</option><option value="content" selected>Title and Content</option>
           <option value="section">Section Header</option><option value="two">Two Content</option><option value="titleonly">Title Only</option><option value="blank">Blank</option>
         </select>
+        <button class="btn" id="resetSlide" title="Put placeholders back where the layout has them">↺ Reset</button>
         <button class="btn" id="dupSlide">⧉ Duplicate</button>
         <button class="btn" id="delSlide">🗑 Delete</button>
       </div>
@@ -92,6 +95,9 @@
       <button class="btn big" id="insTable"><span class="ico">▦</span>Table</button>
     </div><div class="label">Content</div></div>
     <div class="group"><div class="controls">
+      <button class="btn big" id="headerFooter"><span class="ico">▁</span>Header &amp;<br>Footer</button>
+    </div><div class="label">Text</div></div>
+    <div class="group"><div class="controls">
       <button class="btn" data-shape="rect" title="Rectangle">▭</button>
       <button class="btn" data-shape="roundRect" title="Rounded rectangle">▢</button>
       <button class="btn" data-shape="ellipse" title="Oval">◯</button>
@@ -109,7 +115,32 @@
       <label class="row">Background <input type="color" class="ctl" id="slideBg" value="#ffffff"></label>
       <button class="btn" id="bgAll">Apply to all slides</button>
       <button class="btn" id="bgImage">🖼 Background picture</button>
+      <button class="btn" id="hideMaster" title="Hide the master's shapes, footers and slide number on this slide">⊘ Hide background graphics</button>
     </div><div class="label">Customize</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="masterView2"><span class="ico">▤</span>Slide<br>Master</button>
+    </div><div class="label">Master</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="viewtab">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="masterView" title="Edit the master and layouts: shapes, backgrounds and placeholders shared by slides"><span class="ico">▤</span>Slide<br>Master</button>
+    </div><div class="label">Master Views</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="master">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insLayout"><span class="ico">▭＋</span>Insert<br>Layout</button>
+      <div class="controls col">
+        <button class="btn" id="renameLayout">✎ Rename</button>
+        <button class="btn" id="delLayout">🗑 Delete</button>
+        <select class="ctl" id="insPlaceholder" title="Insert Placeholder"><option value="">Insert Placeholder…</option><option value="title">Title</option><option value="subtitle">Subtitle</option><option value="body">Content</option></select>
+      </div>
+    </div><div class="label">Edit Master</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="headerFooter2"><span class="ico">▁</span>Header &amp;<br>Footer</button>
+      <button class="btn big" id="closeMaster"><span class="ico">✕</span>Close<br>Master View</button>
+    </div><div class="label">Close</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="transitions">
