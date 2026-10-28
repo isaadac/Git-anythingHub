@@ -1,0 +1,64 @@
+const { chromium } = require('playwright');
+const JSZip = require('/home/user/Git-anythingHub/office-suite/node_modules/jszip');
+const SP = process.env.E2E_WORK;
+(async () => {
+  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1400, height: 900 } }); const p = await ctx.newPage();
+  const errors = []; const watch = pg => { pg.on('pageerror', e => errors.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); };
+  watch(p);
+  const check = (n, c, x = '') => console.log((c ? 'PASS ' : 'FAIL ') + n + (x !== '' ? ' :: ' + x : ''));
+  // Home → template
+  await p.goto(process.env.E2E_BASE + '/src/renderer/index.html');
+  const cards = await p.$$eval('#templates .tpl b', bs => bs.map(b => b.textContent));
+  check('Home shows Write templates', cards.length === 6 && cards.includes('Resume'), cards.join(', '));
+  await p.click('#templates .tpl >> text=Resume');
+  await p.waitForURL('**/write.html'); await p.waitForTimeout(500);
+  const resume = await p.evaluate(() => ({ title: document.querySelector('#doc h1.title') && document.querySelector('#doc h1.title').textContent, name: document.querySelector('.titlebar .docname input').value, sections: [...document.querySelectorAll('#doc h2')].map(h => h.textContent).join(',') }));
+  check('Resume template opens as a new .docx document', resume.title === '[Your Name]' && resume.name === 'Resume.docx' && resume.sections === 'Summary,Experience,Education,Skills', JSON.stringify(resume));
+  // File → New gallery in a blank window fills it in place
+  await p.evaluate(() => { window.__atlasDirty = false; });
+  await p.goto(process.env.E2E_BASE + '/src/renderer/write.html');
+  await p.click('.ribbon-tabs .file-tab');
+  await p.click('.backstage nav button[data-cmd="new-template"]');
+  const n = await p.$$eval('.template-gallery .tpl', t => t.length);
+  await p.click('.template-gallery .tpl >> text=Report');
+  await p.waitForTimeout(500);
+  const report = await p.evaluate(() => ({ diff: document.getElementById('differentFirst').checked, pages: document.querySelectorAll('.page-bg').length, footer: document.getElementById('pageFooter').textContent }));
+  check('gallery lists all templates and Report fills the blank window', n === 10 && report.diff && report.pages >= 2 && /Page 2 of/.test(report.footer || ''), JSON.stringify({ n, ...report }));
+  // Mail merge
+  await p.evaluate(() => { window.__atlasDirty = false; });
+  await p.goto(process.env.E2E_BASE + '/src/renderer/write.html');
+  await p.evaluate(() => { document.getElementById('doc').innerHTML = '<p>Dear </p><p>We look forward to seeing you in .</p>'; });
+  await p.click('[data-tab="mailings"]');
+  const [chooser] = await Promise.all([p.waitForEvent('filechooser'), p.click('#mmRecipients')]);
+  await chooser.setFiles(SP + '/files/people.csv');
+  await p.waitForTimeout(300);
+  const opts = await p.$$eval('#mmField option', o => o.map(x => x.textContent));
+  check('recipient list loaded and fields offered', /3 recipients/.test(await p.textContent('#mmSource')) && opts.includes('First Name') && opts.includes('City'), opts.join('|'));
+  const caret = sel => p.evaluate(sel => { const [i, off] = sel; const t = document.querySelectorAll('#doc p')[i].firstChild; const r = document.createRange(); r.setStart(t, off); r.collapse(true); getSelection().removeAllRanges(); getSelection().addRange(r); document.getElementById('doc').focus(); }, sel);
+  await caret([0, 5]); await p.selectOption('#mmField', 'First Name');
+  await caret([1, 33]); await p.selectOption('#mmField', 'City');
+  const fields = await p.$$eval('#doc span.mergefield', s => s.map(x => x.textContent));
+  check('merge fields inserted', fields.join() === '«First Name»,«City»', fields.join());
+  await p.click('#mmPreview');
+  const prev1 = await p.evaluate(() => document.getElementById('doc').innerText.replace(/​/g, '').replace(/\s+/g, ' ').trim());
+  await p.click('#mmNext');
+  const prev2 = await p.evaluate(() => document.getElementById('doc').innerText.replace(/​/g, '').replace(/\s+/g, ' ').trim());
+  check('preview shows each recipient', prev1 === 'Dear Ada We look forward to seeing you in London.' && prev2 === 'Dear Alan We look forward to seeing you in Manchester.' && (await p.textContent('#mmIndex')) === '2 of 3', prev1 + ' / ' + prev2);
+  const saved = await p.evaluate(() => AtlasWrite.serialize('html'));
+  check('saving while previewing keeps the fields, not the values', /«First Name»/.test(saved) && !/>Alan</.test(saved));
+  const [merged] = await Promise.all([ctx.waitForEvent('page'), p.click('#mmFinish')]);
+  watch(merged);
+  await merged.waitForLoadState('load'); await merged.waitForTimeout(800);
+  const res = await merged.evaluate(() => ({ text: document.getElementById('doc').innerText.replace(/​/g, '').replace(/\s+/g, ' ').trim(), pages: document.querySelectorAll('.page-bg').length, name: document.querySelector('.titlebar .docname input').value }));
+  check('Finish & Merge opens one page per recipient', res.pages === 3 && /Dear Ada .* London\. Dear Alan .* Manchester\. Dear Grace .* New York\./.test(res.text) && /^Merged .*\.docx$/.test(res.name), JSON.stringify(res));
+  // Word MERGEFIELD round trip
+  await p.click('#mmPreview');
+  const bytes = await p.evaluate(async () => Array.from(await AtlasWrite.serialize('docx')));
+  const d = await (await JSZip.loadAsync(Buffer.from(bytes))).file('word/document.xml').async('string');
+  check('docx: fields are Word MERGEFIELDs', /<w:fldSimple w:instr=" MERGEFIELD &quot;First Name&quot; ">/.test(d) && /<w:fldSimple w:instr=" MERGEFIELD City ">/.test(d), (d.match(/<w:fldSimple[^>]*>/g) || []).join(' '));
+  await p.evaluate(async b => { await AtlasWrite.loadFile({ name: 'm.docx', path: null, data: new Uint8Array(b) }); }, bytes);
+  const back = await p.$$eval('#doc span.mergefield', s => s.map(x => x.dataset.field + '=' + x.textContent));
+  check('docx import restores merge fields', back.join() === 'First Name=«First Name»,City=«City»', back.join());
+  check('no page errors', errors.length === 0, errors.join(' | '));
+  await b.close();
+})().then(() => process.exit(process.exitCode || 0)).catch(e => { console.error('CRASH', e); process.exit(1); });

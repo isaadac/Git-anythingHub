@@ -31,6 +31,28 @@ jobs:
       - run: npm ci
       - run: npm test
 
+  e2e:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: office-suite/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Browser and tools for the end-to-end tests
+        run: |
+          npx playwright install --with-deps chromium
+          pip install openpyxl python-pptx
+      - name: End-to-end tests (web pages and the desktop app)
+        run: xvfb-run -a npm run e2e
+
   build:
     needs: test
     strategy:

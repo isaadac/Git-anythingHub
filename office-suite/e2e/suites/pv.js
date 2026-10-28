@@ -1,0 +1,45 @@
+const { chromium } = require('playwright');
+(async () => {
+  const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1400, height: 900 } }); const p = await ctx.newPage();
+  const errors = []; const watch = pg => { pg.on('pageerror', e => errors.push(e.message)); pg.on('console', m => { if (m.type() === 'error') errors.push(m.text()); }); };
+  watch(p);
+  const check = (n, c, x = '') => console.log((c ? 'PASS ' : 'FAIL ') + n + (x !== '' ? ' :: ' + x : ''));
+  await p.goto(process.env.E2E_BASE + '/src/renderer/slides.html'); await p.waitForTimeout(300);
+  await p.evaluate(() => {
+    const s0 = AtlasSlides.pres.slides[0];
+    s0.elements = [{ id: 'a', type: 'text', html: '<div>One</div>', x: 80, y: 60, w: 800, h: 100, size: 40, align: 'left', valign: 'top' },
+      { id: 'b', type: 'text', html: '<div>Point</div>', x: 80, y: 200, w: 800, h: 100, size: 24, align: 'left', valign: 'top', anim: { effect: 'fade', dir: 'bottom', start: 'click', dur: 0.2, delay: 0, order: 0 } }];
+    s0.notes = 'Say hello';
+    AtlasSlides.addSlide('content'); AtlasSlides.pres.slides[1].elements[0].html = '<div>Two</div>'; AtlasSlides.pres.slides[1].notes = 'Second notes';
+    AtlasSlides.goTo(0);
+  });
+  await p.click('[data-tab="show"]');
+  const [pop] = await Promise.all([ctx.waitForEvent('page'), p.click('[data-cmd="presenter-view"]')]);
+  watch(pop);
+  await pop.waitForLoadState(); await p.waitForTimeout(700);
+  const pvState = () => p.evaluate(() => ({ count: document.getElementById('pvCount').textContent, notes: document.getElementById('pvNotes').textContent, next: document.getElementById('pvNextLabel').textContent, curB: getComputedStyle(document.querySelector('#pvCurrent [data-id]:nth-child(2)')).visibility }));
+  const audState = () => pop.evaluate(() => ({ shown: !document.getElementById('presenter').hidden, text: [...document.querySelectorAll('#presentSlide .el')].filter(n => getComputedStyle(n).visibility !== 'hidden').map(n => n.textContent).join('|'), editor: getComputedStyle(document.querySelector('.ribbon')).display }));
+  const s0 = await pvState(), a0 = await audState();
+  check('presenter view: slide 1 of 2 with notes, next build, build hidden', s0.count === 'Slide 1 of 2' && s0.notes === 'Say hello' && s0.next === 'Next: animation' && s0.curB === 'hidden', JSON.stringify(s0));
+  check('audience window shows only the slide, in sync', a0.shown && a0.text === 'One' && a0.editor === 'none', JSON.stringify(a0));
+  await p.keyboard.press('ArrowRight'); await p.waitForTimeout(500);
+  const a1 = await audState(), s1 = await pvState();
+  check('next plays the build in both windows', a1.text === 'One|Point' && s1.curB === 'visible' && s1.next === 'Next slide', JSON.stringify({ a1, s1 }));
+  await pop.keyboard.press('ArrowRight'); await p.waitForTimeout(500);
+  const s2 = await pvState(), a2 = await audState();
+  check('a key in the audience window advances the presenter', s2.count === 'Slide 2 of 2' && s2.notes === 'Second notes' && /Two/.test(a2.text), JSON.stringify({ s2, a2 }));
+  await p.keyboard.press('ArrowLeft'); await p.waitForTimeout(400);
+  const a3 = await audState();
+  check('back returns to slide 1 fully built', a3.text === 'One|Point', JSON.stringify(a3));
+  await p.click('#pvBlack'); await p.waitForTimeout(200);
+  check('black screen reaches the audience', await pop.evaluate(() => document.getElementById('presenter').classList.contains('black')));
+  await p.click('#pvBlack');
+  const t1 = await p.evaluate(() => document.getElementById('pvTimer').textContent);
+  check('timer runs', /^0:00:0[0-9]$/.test(t1), t1);
+  const closed = pop.waitForEvent('close');
+  await p.keyboard.press('Escape');
+  await closed;
+  check('Esc ends the show and closes the audience window', await p.evaluate(() => document.getElementById('presenterView').hidden));
+  check('no page errors', errors.length === 0, errors.join(' | '));
+  await b.close();
+})();
