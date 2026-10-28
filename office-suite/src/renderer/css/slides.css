@@ -1,16 +1,16 @@
 /* Atlas Slides */
-.thumbs { width: 190px; flex: none; overflow-y: auto; background: #f3f2f1; border-right: 1px solid var(--border); padding: 10px 10px 40px 4px; }
+.thumbs { width: 190px; flex: none; overflow-y: auto; background: var(--surface-2); border-right: 1px solid var(--border); padding: 10px 10px 40px 4px; }
 .thumb { display: flex; gap: 6px; margin-bottom: 12px; cursor: pointer; align-items: flex-start; }
 .thumb .num { width: 18px; text-align: right; color: var(--muted); font-size: 12px; padding-top: 2px; }
-.thumb .frame { width: 160px; height: 90px; overflow: hidden; border: 2px solid transparent; border-radius: 2px; box-shadow: 0 0 0 1px #c8c6c4; position: relative; background: #fff; }
+.thumb .frame { width: 160px; height: 90px; overflow: hidden; border: 2px solid transparent; border-radius: 2px; box-shadow: 0 0 0 1px #c8c6c4; position: relative; background: var(--surface); }
 .thumb.active .frame { border-color: var(--accent); box-shadow: none; }
 .thumb:hover .frame { box-shadow: 0 0 0 1px var(--accent); }
 .thumb .frame .slide { transform: scale(calc(160 / 960)); transform-origin: 0 0; pointer-events: none; position: absolute; left: 0; top: 0; }
 .thumb.drag-over .frame { border-top: 3px solid var(--accent); }
 
 .editor-col { flex: 1; display: flex; flex-direction: column; min-width: 0; }
-.stage-wrap { flex: 1; display: grid; place-items: center; overflow: hidden; background: #e9e8e7; position: relative; }
-.notes { height: 90px; flex: none; border-top: 1px solid var(--border); background: #fff; }
+.stage-wrap { flex: 1; display: grid; place-items: center; overflow: hidden; background: var(--canvas); position: relative; }
+.notes { height: 90px; flex: none; border-top: 1px solid var(--border); background: var(--surface); }
 .notes textarea { width: 100%; height: 100%; border: 0; resize: none; padding: 8px 14px; font: 13px var(--font); outline: none; }
 body.hide-notes .notes { display: none; }
 
@@ -39,7 +39,7 @@ body.hide-notes .notes { display: none; }
 #stage .el.selected { outline: 1px solid #5b9bd5; }
 #stage .el.editing { cursor: text; }
 #stage .el.editing .content { cursor: text; user-select: text; }
-.handle { position: absolute; width: 10px; height: 10px; background: #fff; border: 1px solid #5b9bd5; border-radius: 50%; z-index: 5; }
+.handle { position: absolute; width: 10px; height: 10px; background: var(--surface); border: 1px solid #5b9bd5; border-radius: 50%; z-index: 5; }
 .handle.nw { left: -5px; top: -5px; cursor: nwse-resize; } .handle.ne { right: -5px; top: -5px; cursor: nesw-resize; }
 .handle.sw { left: -5px; bottom: -5px; cursor: nesw-resize; } .handle.se { right: -5px; bottom: -5px; cursor: nwse-resize; }
 .handle.n { left: calc(50% - 5px); top: -5px; cursor: ns-resize; } .handle.s { left: calc(50% - 5px); bottom: -5px; cursor: ns-resize; }
@@ -80,7 +80,7 @@ body.hide-notes .notes { display: none; }
 }
 
 /* Animation order badges (Animations tab) */
-.anim-badge { position: absolute; left: -22px; top: -2px; min-width: 18px; height: 18px; padding: 0 4px; background: #f3f2f1; border: 1px solid #a19f9d; color: #323130; font: 11px/16px var(--font); text-align: center; z-index: 4; pointer-events: none; }
+.anim-badge { position: absolute; left: -22px; top: -2px; min-width: 18px; height: 18px; padding: 0 4px; background: var(--surface-2); border: 1px solid var(--border); color: #323130; font: 11px/16px var(--font); text-align: center; z-index: 4; pointer-events: none; }
 
 /* Presenter View */
 .presenter-view { position: fixed; inset: 0; z-index: 310; background: #1b1b1b; color: #f3f2f1; display: grid; grid-template-rows: 44px 1fr 52px; font: 14px var(--font); }
@@ -126,7 +126,7 @@ body.master-view .stage-wrap { background: #dfe7f0; }
 .presenter .el.media { cursor: pointer; }
 
 /* Rotation handle, groups and connectors */
-.handle.rot { left: calc(50% - 6px); top: -30px; width: 12px; height: 12px; border-radius: 50%; background: #fff; cursor: grab; }
+.handle.rot { left: calc(50% - 6px); top: -30px; width: 12px; height: 12px; border-radius: 50%; background: var(--surface); cursor: grab; }
 .handle.rot::after { content: ''; position: absolute; left: 5px; top: 12px; width: 1px; height: 16px; background: #5b9bd5; }
 .el.group > .el { pointer-events: none; }
 .el.connector { pointer-events: none; overflow: visible; }

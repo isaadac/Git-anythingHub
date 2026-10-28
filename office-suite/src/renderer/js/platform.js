@@ -123,6 +123,8 @@
   function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
   function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
 
+  // File → Office Theme in every app.
+  Platform.onMenu(cmd => { if (cmd === 'theme' && window.Theme) Theme.choose(); });
   if (desktop) {
     window.atlas.onMenu(cmd => Platform.emit(cmd));
   } else {

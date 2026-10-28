@@ -1,7 +1,7 @@
 'use strict';
 // Atlas Office — Electron main process.
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
-const { app, BrowserWindow, Menu, dialog, ipcMain, screen, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, screen, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const settings = require('./settings');
@@ -54,7 +54,7 @@ function createWindow(appName = 'home', filePath = null) {
     minWidth: 760,
     minHeight: 500,
     title: cfg.title,
-    backgroundColor: '#f3f2f1',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#292929' : '#f3f2f1',
     icon: path.join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -241,6 +241,22 @@ ipcMain.handle('collab:join', (_e, appName, link) => {
   return true;
 });
 ipcMain.handle('collab:pending', e => { const l = pendingCollab.get(e.sender.id) || null; pendingCollab.delete(e.sender.id); return l; });
+// ---------- Theme ----------
+// The pages keep the choice in their shared storage; this side makes native menus, dialogs and
+// window backgrounds match it.
+function applyTheme(mode) {
+  nativeTheme.themeSource = ['light', 'dark'].includes(mode) ? mode : 'system';
+  const bg = nativeTheme.shouldUseDarkColors ? '#292929' : '#f3f2f1';
+  BrowserWindow.getAllWindows().forEach(w => { if (!w.isDestroyed()) w.setBackgroundColor(bg); });
+}
+app.whenReady().then(() => applyTheme(settings.get('theme')));
+ipcMain.handle('app:set-theme', (_e, mode) => {
+  if (!['system', 'light', 'dark'].includes(mode)) return false;
+  settings.set('theme', mode);
+  applyTheme(mode);
+  return true;
+});
+
 // ---------- Proofing languages ----------
 function applySpellLanguages() {
   const want = settings.get('spellLanguages');

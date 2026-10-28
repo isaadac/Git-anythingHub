@@ -133,6 +133,8 @@
   document.getElementById('cloudAdd').addEventListener('click', async () => { if (await Cloud.addAccountDialog()) renderCloud(); });
   document.getElementById('cloudSettings').addEventListener('click', () => Cloud.settingsDialog());
 
+  document.getElementById('themeBtn').addEventListener('click', () => Theme.choose());
+
   render();
   renderRecovered();
   renderCloud();

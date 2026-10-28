@@ -49,5 +49,6 @@ contextBridge.exposeInMainWorld('atlas', {
   spellLanguages: () => ipcRenderer.invoke('spell:languages'),
   spellSetLanguages: l => ipcRenderer.invoke('spell:set-languages', l),
   spellAddWord: w => ipcRenderer.invoke('spell:add-word', w),
+  setTheme: mode => ipcRenderer.invoke('app:set-theme', mode),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });
