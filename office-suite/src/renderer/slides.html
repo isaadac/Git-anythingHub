@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Atlas Slides</title>
 <link rel="stylesheet" href="css/office.css">
 <link rel="stylesheet" href="css/slides.css">
@@ -94,6 +94,16 @@
       <button class="btn big" id="insImage"><span class="ico">🖼</span>Picture</button>
       <button class="btn big" id="insTable"><span class="ico">▦</span>Table</button>
     </div><div class="label">Content</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insVideo"><span class="ico">🎬</span>Video</button>
+      <button class="btn big" id="insAudio"><span class="ico">🔊</span>Audio</button>
+      <div class="controls col">
+        <label class="row" title="Play when the slide appears (else on click)"><input type="checkbox" id="mediaAuto"> Start automatically</label>
+        <label class="row"><input type="checkbox" id="mediaLoop"> Loop until stopped</label>
+        <label class="row"><input type="checkbox" id="mediaHide"> Hide icon during show</label>
+      </div>
+      <button class="btn big" id="mediaPlay"><span class="ico">⏯</span>Play</button>
+    </div><div class="label">Media</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="headerFooter"><span class="ico">▁</span>Header &amp;<br>Footer</button>
     </div><div class="label">Text</div></div>

@@ -79,6 +79,8 @@
   const num = (v, d, lo = -5000, hi = 5000) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
   const color = v => (Platform.isColor(v) ? v : null);
   const imageUrl = v => (typeof v === 'string' && /^data:image\/(png|jpe?g|gif|webp|bmp|svg\+xml)[;,]/i.test(v) ? v : null);
+  const MEDIA_TYPES = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg', mov: 'video/quicktime', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', aac: 'audio/aac', flac: 'audio/flac' };
+  const mediaUrl = v => (typeof v === 'string' && /^data:(video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp3|mp4|x-m4a|wav|x-wav|ogg|aac|flac));base64,/i.test(v) ? v : null);
   const oneOf = (v, list, d) => (list.includes(v) ? v : d);
   function cleanPres(p) {
     if (!p || !Array.isArray(p.slides)) throw new Error('Not a presentation');
@@ -128,9 +130,20 @@
   function cleanElements(list, phs = []) {
     return (Array.isArray(list) ? list : []).slice(0, 500).map(el => {
       if (!el || typeof el !== 'object') return null;
-      const type = oneOf(el.type, ['text', 'shape', 'image', 'table'], null);
+      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media'], null);
       if (!type) return null;
       const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
+      if (type === 'media') {
+        out.src = mediaUrl(el.src);
+        if (!out.src) return null;
+        out.kind = /^data:audio/i.test(out.src) ? 'audio' : 'video';
+        if (imageUrl(el.poster)) out.poster = el.poster;
+        ['autoplay', 'loop', 'hideIcon'].forEach(k => { if (el[k] === true) out[k] = true; });
+        if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+        const anim = SlidesAnim.clean(el.anim);
+        if (anim) out.anim = anim;
+        return out;
+      }
       if (el.rot) out.rot = num(el.rot, 0, -360, 360);
       const anim = SlidesAnim.clean(el.anim);
       if (anim) out.anim = anim;
@@ -214,7 +227,25 @@
       div.className = 'el ' + el.type + (el.master ? ' master-el' : '');
       if (el.master) div.dataset.masterId = el.id; else div.dataset.id = el.id;
       Object.assign(div.style, { left: el.x + 'px', top: el.y + 'px', width: el.w + 'px', height: el.h + 'px', transform: el.rot ? `rotate(${el.rot}deg)` : '' });
-      if (el.type === 'image') {
+      if (el.type === 'media') {
+        if (el.kind === 'video') {
+          const v = document.createElement('video');
+          v.src = el.src; v.preload = 'metadata'; v.playsInline = true;
+          if (el.poster) v.poster = el.poster;
+          v.loop = !!el.loop;
+          v.className = 'media-video';
+          div.appendChild(v);
+        } else {
+          const a = document.createElement('audio');
+          a.src = el.src; a.preload = 'metadata'; a.loop = !!el.loop;
+          div.appendChild(a);
+          const icon = document.createElement('div');
+          icon.className = 'media-audio-icon';
+          icon.textContent = '🔊';
+          div.appendChild(icon);
+        }
+        if (interactive) { const tag = document.createElement('div'); tag.className = 'media-badge'; tag.textContent = (el.kind === 'video' ? '▶ Video' : '♪ Audio') + (el.autoplay ? ' · auto' : ''); div.appendChild(tag); }
+      } else if (el.type === 'image') {
         const img = document.createElement('img');
         img.src = el.src;
         img.alt = '';
@@ -732,6 +763,62 @@
     return Platform.bytesToDataUrl(f.data, ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' ? 'image/jpeg' : 'image/' + ext);
   }
   document.getElementById('insImage').addEventListener('click', async () => { const src = await pickImage(); if (src) addImage(src); });
+  // ---------- Video and audio ----------
+  /** The first frame of a video (at 0.5 s), as a JPEG data URL for its poster. */
+  function videoPoster(url) {
+    return new Promise(resolve => {
+      const v = document.createElement('video');
+      v.muted = true; v.preload = 'auto'; v.src = url;
+      const done = x => { v.removeAttribute('src'); v.load(); resolve(x); };
+      v.addEventListener('loadeddata', () => { v.currentTime = Math.min(0.5, (v.duration || 1) / 2); }, { once: true });
+      v.addEventListener('seeked', () => {
+        try {
+          const c = document.createElement('canvas');
+          c.width = Math.min(1280, v.videoWidth || 640); c.height = Math.round(c.width * (v.videoHeight || 360) / (v.videoWidth || 640));
+          c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+          done({ poster: c.toDataURL('image/jpeg', 0.8), w: v.videoWidth, h: v.videoHeight });
+        } catch { done({}); }
+      }, { once: true });
+      v.addEventListener('error', () => done({}), { once: true });
+      setTimeout(() => done({}), 8000);
+    });
+  }
+  async function insertMedia(kind) {
+    commitEditing();
+    const exts = Object.keys(MEDIA_TYPES).filter(e => MEDIA_TYPES[e].startsWith(kind));
+    const f = await Platform.open([{ name: kind === 'video' ? 'Videos' : 'Audio', extensions: exts }]);
+    if (!f) return;
+    const mime = MEDIA_TYPES[Platform.extOf(f.name)];
+    if (!mime || !mime.startsWith(kind)) return UI.toast('That file type isn\'t supported');
+    if (f.data.length > 200e6) return UI.toast('Media files up to 200 MB can be inserted', 4000);
+    UI.toast('Inserting ' + kind + '…');
+    const src = await Platform.bytesToDataUrl(f.data, mime);
+    let el;
+    if (kind === 'video') {
+      const meta = await videoPoster(URL.createObjectURL(new Blob([f.data], { type: mime })));
+      let w = meta.w || 640, h = meta.h || 360;
+      const k = Math.min(640 / w, 400 / h); w = Math.round(w * k); h = Math.round(h * k);
+      el = { id: newId(), type: 'media', kind, src, ...(meta.poster ? { poster: meta.poster } : {}), x: Math.round((W - w) / 2), y: Math.round((H - h) / 2), w, h };
+    } else el = { id: newId(), type: 'media', kind, src, x: W - 120, y: H - 120, w: 64, h: 64 };
+    snapshot();
+    slide().elements.push(el);
+    selectedId = el.id;
+    renderStage(); refreshThumbSoon(); state.markDirty();
+  }
+  document.getElementById('insVideo').addEventListener('click', () => insertMedia('video'));
+  document.getElementById('insAudio').addEventListener('click', () => insertMedia('audio'));
+  ['mediaAuto', 'mediaLoop', 'mediaHide'].forEach(id => document.getElementById(id).addEventListener('change', e => {
+    const el = selectedId && elById(selectedId);
+    if (!el || el.type !== 'media') return UI.toast('Select a video or audio clip first');
+    snapshot();
+    el[{ mediaAuto: 'autoplay', mediaLoop: 'loop', mediaHide: 'hideIcon' }[id]] = e.target.checked;
+    renderStage(); state.markDirty();
+  }));
+  document.getElementById('mediaPlay').addEventListener('click', () => {
+    const node = selectedId && stage.querySelector(`[data-id="${selectedId}"] video, [data-id="${selectedId}"] audio`);
+    if (!node) return UI.toast('Select a video or audio clip first');
+    if (node.paused) node.play().catch(() => {}); else node.pause();
+  });
   document.getElementById('insTable').addEventListener('click', async () => {
     const r = await UI.form('Insert Table', [
       { name: 'rows', label: 'Rows', type: 'number', value: 3, min: 1, max: 15 },
@@ -843,6 +930,12 @@
     document.getElementById('transDur').value = slide().transDur || 1;
     document.getElementById('advanceOn').checked = typeof slide().advance === 'number';
     document.getElementById('advanceAfter').value = typeof slide().advance === 'number' ? slide().advance : 0;
+    const media = el && el.type === 'media';
+    document.getElementById('mediaAuto').checked = !!(media && el.autoplay);
+    document.getElementById('mediaLoop').checked = !!(media && el.loop);
+    document.getElementById('mediaHide').checked = !!(media && el.hideIcon);
+    ['mediaAuto', 'mediaLoop', 'mediaPlay'].forEach(id => { document.getElementById(id).disabled = !media; });
+    document.getElementById('mediaHide').disabled = !(media && el.kind === 'audio');
     const a = el && el.anim;
     document.getElementById('animEffect').value = a ? a.effect : '';
     ['animDir', 'animStart', 'animDur', 'animDelay', 'animEarlier', 'animLater'].forEach(id => { document.getElementById(id).disabled = !a; });
@@ -992,11 +1085,23 @@
     groups = SlidesAnim.sequence(s);
     built = Math.min(upTo, groups.length);
     applyVisibility(s);
+    startMedia(s);
     const frames = TRANSITION_FRAMES[s.transition];
     let wait = 0;
     if (animate && frames) { presentSlide.animate(frames, { duration: (s.transDur || 1) * 1000, easing: 'ease-out' }); wait = (s.transDur || 1) * 1000; }
     if (built === 0 && groups[0] && groups[0].auto) setTimeout(() => { if (built === 0 && pres.slides[showIndex] === s) build(); }, wait);
     else scheduleAdvance();
+  }
+  /** Media in the show: clips set to start automatically play; a click on a clip plays or pauses it. */
+  function startMedia(s) {
+    s.elements.filter(e => e.type === 'media').forEach(e => {
+      const node = showNode(e.id);
+      const m = node && node.querySelector('video, audio');
+      if (!m) return;
+      if (e.kind === 'audio' && e.hideIcon) node.querySelector('.media-audio-icon').style.visibility = 'hidden';
+      node.addEventListener('click', ev => { ev.stopPropagation(); if (m.paused) m.play().catch(() => {}); else m.pause(); });
+      if (e.autoplay) m.play().catch(() => {});
+    });
   }
   function applyVisibility(s) {
     const vis = SlidesAnim.visibilityAfter(s, groups, built);
@@ -1307,6 +1412,7 @@
       for (const el of [...masterItems(s), ...s.elements]) {
         const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: (el.master ? 'atlas-master-' : 'atlas-') + el.id };
         if (el.type === 'image') { ps.addImage({ data: el.src, ...box }); continue; }
+        if (el.type === 'media') { ps.addMedia({ type: el.kind, data: el.src, cover: el.poster ? await asPng(el.poster) : (el.kind === 'audio' ? AUDIO_ICON() : undefined), ...box }); continue; }
         if (el.type === 'table') {
           const tmp = document.createElement('div'); tmp.innerHTML = el.html;
           const rows = [...tmp.querySelectorAll('tr')].map((tr, ri) => [...tr.children].map(td => ({
@@ -1341,7 +1447,7 @@
   async function addTimingToPptx(bytes) {
     const zip = await JSZip.loadAsync(bytes);
     // The master, layouts and theme go in a custom document property so Atlas can restore them exactly.
-    const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({ layout: sl.layout, hideMaster: !!sl.hideMaster })) });
+    const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({ layout: sl.layout, hideMaster: !!sl.hideMaster, media: Object.fromEntries(sl.elements.filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])) })) });
     const xmlEsc = t => t.replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     zip.file('docProps/custom.xml', `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/custom-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes"><property fmtid="{D5CDD505-2E9C-101B-9397-08002B2CF9AE}" pid="2" name="AtlasSlidesMeta"><vt:lpwstr>${xmlEsc(meta)}</vt:lpwstr></property></Properties>`);
     const ct = await zip.file('[Content_Types].xml').async('string');
@@ -1356,14 +1462,39 @@
       const ids = {};
       for (const m of xml.matchAll(/<p:cNvPr id="(\d+)" name="atlas-([^"]+)"/g)) ids[m[2]] = m[1];
       const s = pres.slides[i];
+      // PptxGenJS writes audio as <a:videoFile>; PowerPoint wants <a:audioFile> for its audio relationships.
+      if (s.elements.some(e => e.type === 'media' && e.kind === 'audio')) {
+        const rels = await zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`).async('string');
+        const audioIds = new Set([...rels.matchAll(/<Relationship Id="([^"]+)" Type="[^"]*\/relationships\/audio"/g)].map(m => m[1]));
+        xml = xml.replace(/<a:videoFile r:link="([^"]+)"\/>/g, (all, id) => (audioIds.has(id) ? `<a:audioFile r:link="${id}"/>` : all));
+      }
       const extra = SlidesAnim.transitionXml(s) + SlidesAnim.timingXml(s, el => ids[el.id]);
-      if (!extra) continue;
+      if (!extra) { zip.file(path, xml); continue; }
       xml = xml.includes('</p:clrMapOvr>') ? xml.replace('</p:clrMapOvr>', '</p:clrMapOvr>' + extra) : xml.replace('</p:cSld>', '</p:cSld>' + extra);
       zip.file(path, xml);
     }
     return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
   }
 
+  /** PptxGenJS stores a media cover as .png whatever it is, so convert other pictures first. */
+  function asPng(url) {
+    if (/^data:image\/png/i.test(url)) return Promise.resolve(url);
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => { const c = document.createElement('canvas'); c.width = img.naturalWidth; c.height = img.naturalHeight; c.getContext('2d').drawImage(img, 0, 0); resolve(c.toDataURL('image/png')); };
+      img.onerror = () => resolve(AUDIO_ICON());
+      img.src = url;
+    });
+  }
+  /** A small speaker picture for audio clips in PowerPoint. */
+  const AUDIO_ICON = () => {
+    const c = document.createElement('canvas'); c.width = c.height = 96;
+    const g = c.getContext('2d');
+    g.fillStyle = '#ffffff'; g.fillRect(0, 0, 96, 96);
+    g.fillStyle = '#404040'; g.beginPath(); g.moveTo(16, 36); g.lineTo(34, 36); g.lineTo(56, 16); g.lineTo(56, 80); g.lineTo(34, 60); g.lineTo(16, 60); g.closePath(); g.fill();
+    g.strokeStyle = '#404040'; g.lineWidth = 5; g.beginPath(); g.arc(58, 48, 16, -0.9, 0.9); g.stroke(); g.beginPath(); g.arc(58, 48, 28, -0.9, 0.9); g.stroke();
+    return c.toDataURL('image/png');
+  };
   // ---------- PPTX import ----------
   const EMU = 9525; // EMU per CSS px
   async function fromPptx(bytes) {
@@ -1578,6 +1709,18 @@
       if (ln === 'pic') {
         const blip = node.getElementsByTagNameNS(A, 'blip')[0];
         const src = blip && await mediaUrl(zipF, path, rels[blip.getAttributeNS(R, 'embed')]);
+        // Video and audio: a picture (the poster) with a link to the media part.
+        const mf = [...node.getElementsByTagName('*')].find(e => ['videoFile', 'audioFile', 'media'].includes(e.localName) && (e.getAttributeNS(R, 'link') || e.getAttributeNS(R, 'embed')));
+        if (mf) {
+          const target = rels[mf.getAttributeNS(R, 'embed') || mf.getAttributeNS(R, 'link')];
+          const clip = target && await mediaFile(zipF, path, target);
+          if (clip) {
+            const el = tag({ id: newId(), type: 'media', kind: clip.startsWith('data:audio') ? 'audio' : 'video', src: clip, ...(src ? { poster: src } : {}), ...box });
+            const nm = (nv && nv.getAttribute('name')) || '';
+            if (/^atlas-/.test(nm)) el.atlasName = nm.slice(6);
+            return el;
+          }
+        }
         return src ? tag({ id: newId(), type: 'image', src, ...box }) : null;
       }
       if (ln === 'graphicFrame') {
@@ -1649,6 +1792,15 @@
       if (isShape) { el.shape = { rect: 'rect', roundRect: 'roundRect', ellipse: 'ellipse', triangle: 'triangle', rightArrow: 'rightArrow', line: 'line', star5: 'star5', diamond: 'diamond', straightConnector1: 'line' }[prst] || 'rect'; el.fill = fill; el.line = line; }
       return el;
     }
+    async function mediaFile(zipF, slidePath, target) {
+      if (!target || /^https?:/i.test(target)) return null;
+      const p = target.startsWith('/') ? target.slice(1) : slidePath.replace(/[^/]+$/, '') + target;
+      const norm = p.split('/').reduce((acc, part) => { if (part === '..') acc.pop(); else if (part !== '.') acc.push(part); return acc; }, []).join('/');
+      const f = zipF.file(norm);
+      const mime = MEDIA_TYPES[norm.split('.').pop().toLowerCase()];
+      if (!f || !mime) return null;
+      return 'data:' + mime + ';base64,' + await f.async('base64');
+    }
     async function mediaUrl(zipF, slidePath, target) {
       if (!target) return null;
       const p = target.startsWith('/') ? target.slice(1) : slidePath.replace(/[^/]+$/, '') + target;
@@ -1668,7 +1820,12 @@
       try { meta = prop ? JSON.parse(prop.textContent) : null; } catch { meta = null; }
     }
     if (meta && typeof meta === 'object') {
-      (Array.isArray(meta.slides) ? meta.slides : []).forEach((m, i) => { if (slides[i] && m) { slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true; } });
+      (Array.isArray(meta.slides) ? meta.slides : []).forEach((m, i) => {
+        if (!slides[i] || !m) return;
+        slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true;
+        // Playback options, matched by the shape names Atlas wrote.
+        if (m.media && typeof m.media === 'object') slides[i].elements.forEach(e => { const o = e.type === 'media' && e.atlasName && Object.hasOwn(m.media, e.atlasName) ? m.media[e.atlasName] : null; if (o) ['autoplay', 'loop', 'hideIcon'].forEach(k => { e[k] = o[k] === true; }); });
+      });
       return cleanPres({ theme: meta.theme, customTheme: meta.customTheme, master: meta.master, layouts: meta.layouts, slides });
     }
     return cleanPres({ theme: 'office', slides, ...imported });

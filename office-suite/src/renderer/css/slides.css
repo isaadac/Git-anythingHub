@@ -117,3 +117,10 @@ body.master-view .notes { display: none; }
 body.master-view .stage-wrap { background: #dfe7f0; }
 .ribbon-tabs button.contextual { color: #c55a11; font-weight: 600; }
 .ribbon-tabs button[hidden] { display: none; }
+
+/* Video and audio */
+.el.media video { width: 100%; height: 100%; object-fit: contain; background: #000; display: block; }
+#stage .el.media video { pointer-events: none; }
+.el.media .media-audio-icon { width: 100%; height: 100%; display: grid; place-items: center; font-size: calc(min(100%, 48px)); background: rgba(255,255,255,.85); border-radius: 8px; }
+.el.media .media-badge { position: absolute; left: 4px; bottom: 4px; background: rgba(0,0,0,.65); color: #fff; font: 11px var(--font); padding: 1px 6px; border-radius: 3px; pointer-events: none; }
+.presenter .el.media { cursor: pointer; }
