@@ -120,6 +120,11 @@ body.dark .doc .page-break::after { background: #262626; }
   .fld { background: none; }
 }
 @media screen and (max-width: 900px) {
-  .page { width: 100% !important; padding: 0.5in 0.5in 0 !important; }
+  .page { width: 100% !important; padding: 0.5in 0.5in 0.5in !important; background: var(--paper, #fff); min-height: calc(100% - 4px); box-shadow: 0 1px 4px rgba(0,0,0,.15); }
   .canvas { padding: 8px; }
+}
+
+@media (max-width: 760px) {
+  .canvas { padding: 12px 6px 40px; }
+  .comments-pane, .navpane { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: -4px 0 12px rgba(0,0,0,.2); }
 }

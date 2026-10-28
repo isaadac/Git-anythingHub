@@ -132,3 +132,8 @@ body.no-grid .grid td { border-color: transparent; }
 .note-pop[hidden] { display: none; }
 .note-layer { position: absolute; left: 0; top: 0; }
 body.sheet-protected #protectSheet .ico { color: var(--accent-fg); }
+
+@media (max-width: 760px) {
+  .formula-bar .namebox { width: 64px; }
+  .pivot-pane { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: -4px 0 12px rgba(0,0,0,.2); }
+}

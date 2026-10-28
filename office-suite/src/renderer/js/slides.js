@@ -2317,7 +2317,7 @@
     app: 'slides', state,
     snapshot: () => { commitEditingQuietly(); return JSON.stringify(pres); },
     autosave: () => save(false, true),
-    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the presentation first to turn on AutoSave'
+    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) && !(Platform.canWriteBack && Platform.canWriteBack(state.path)) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the presentation first to turn on AutoSave'
       : /\.(pptx|aslides)$/i.test(state.path) ? true : 'AutoSave works with .pptx and .aslides files'
   });
   /** Copies the text being typed into the model without leaving edit mode. */

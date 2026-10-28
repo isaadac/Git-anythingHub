@@ -2947,7 +2947,7 @@
     app: 'sheets', state,
     snapshot: () => JSON.stringify(book),
     autosave: () => save(false, null, true),
-    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the workbook first to turn on AutoSave'
+    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) && !(Platform.canWriteBack && Platform.canWriteBack(state.path)) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the workbook first to turn on AutoSave'
       : /\.(xlsx|ods)$/i.test(state.path) ? true : 'AutoSave works with .xlsx and .ods files'
   });
   function loadRecovered(d) {

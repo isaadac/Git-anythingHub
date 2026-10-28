@@ -644,6 +644,13 @@
   };
   Cloud.shareDialog = async function (opts) {
     const { state, save } = opts;
+    // In the phone app, a document on the device goes out through the share sheet.
+    if (Platform.native && !Platform.isCloudPath(state.path)) {
+      const i = await UI.choose('Share', 'Send a copy with another app, or save it to a cloud account to share a link.', ['Send a copy…', 'Save to cloud…', 'Cancel']);
+      if (i === 0) return Platform.shareCurrent(state, save);
+      if (i !== 1) return;
+      if (!(await Cloud.saveAsDialog(opts))) return;
+    }
     if (!Platform.isCloudPath(state.path) || !parsePath(state.path).id) {
       const i = await UI.choose('Share', 'To share this document, save it to a cloud account first.', ['Save to cloud…', 'Cancel']);
       if (i !== 0 || !(await Cloud.saveAsDialog(opts))) return;

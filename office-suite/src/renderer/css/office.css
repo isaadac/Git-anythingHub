@@ -242,3 +242,26 @@ body.ai-open .canvas, body.ai-open .grid-wrap, body.ai-open .stage-wrap { margin
 .a11y-title:hover { text-decoration: underline; }
 .a11y-detail { color: var(--muted); font-size: 12px; }
 .a11y-fix { justify-self: start; border: 1px solid var(--border); background: var(--surface); border-radius: 3px; padding: 3px 10px; cursor: pointer; font-size: 12px; }
+
+/* Phones and small tablets */
+@media (max-width: 760px) {
+  .titlebar { gap: 6px; padding: 0 6px; padding-top: env(safe-area-inset-top); height: calc(40px + env(safe-area-inset-top)); }
+  .titlebar .brand span, .titlebar .status-saved, .titlebar .autosave span, .live-people { display: none; }
+  .titlebar .docname input { width: 100%; min-width: 60px; }
+  .titlebar .share-btn { padding: 3px 7px; }
+  .titlebar .ai-btn { font-size: 0; } .titlebar .ai-btn::before { content: '✨'; font-size: 14px; }
+  .ribbon-tabs { overflow-x: auto; scrollbar-width: none; }
+  .ribbon-tabs button { padding: 6px 10px; flex: none; }
+  .ribbon { min-height: 0; }
+  .ribbon .group .label { display: none; }
+  .statusbar > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .statusbar .hint, #stHint { display: none; }
+  body.app-write .statusbar #zoomOut, body.app-write .statusbar #zoom, body.app-write .statusbar #zoomIn, body.app-write .statusbar #zoomLabel { display: none; }
+  .statusbar { gap: 10px; padding-bottom: env(safe-area-inset-bottom); height: calc(26px + env(safe-area-inset-bottom)); }
+  .statusbar input[type=range] { width: 70px; }
+  .modal { min-width: 0; width: calc(100vw - 24px); padding: 16px; }
+  .ai-pane { top: 0; width: 100vw; }
+  .backstage nav { width: 130px; }
+  .backstage main { padding: 16px; }
+}
+html.touch .btn, html.touch .ribbon-tabs button, html.touch .modal .actions button { min-height: 34px; }

@@ -531,7 +531,7 @@
   // Zoom
   const zoom = document.getElementById('zoom');
   function setZoom(z) {
-    z = Math.max(50, Math.min(200, Math.round(z)));
+    z = Math.max(25, Math.min(200, Math.round(z)));
     zoom.value = z;
     page.style.zoom = z / 100;
     document.getElementById('zoomLabel').textContent = z + '%';
@@ -1227,7 +1227,7 @@ ${rules}</style></head>
     app: 'write', state,
     snapshot: () => toHtml(),
     autosave: () => save(false, null, true),
-    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the document first to turn on AutoSave'
+    canAutoSave: () => !Platform.desktop && !Platform.isCloudPath(state.path) && !(Platform.canWriteBack && Platform.canWriteBack(state.path)) ? 'AutoSave needs the desktop app' : !state.path ? 'Save the document first to turn on AutoSave'
       : /\.(docx|html?)$/i.test(state.path) ? true : 'AutoSave works with .docx and .html files'
   });
   async function loadRecovered(d) {
