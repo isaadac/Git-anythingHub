@@ -47,6 +47,7 @@
       return s ? rawAt(r, c, s) : '';
     },
     sheetNames: () => book.sheets.map(s => s.name),
+    isLegacy: (name, r, c) => { const s = book.sheets.find(x => x.name === name); return !!(s && (s.cells[addr(r, c)] || {}).li); },
     resolveName: name => (data ? data.resolveName(name) : null),
     tableRef: (spec, sheetName, cur) => (data ? data.resolveTable(spec, sheetName, cur) : null),
     formulasInRange: (name, r1, c1, r2, c2) => {
@@ -76,6 +77,8 @@
     const key = addr(r, c);
     const cur = s.cells[key] || {};
     const next = { ...cur, ...props };
+    // A formula typed (or changed) here is a dynamic array formula, whatever it was in the file.
+    if ('v' in props && !('li' in props) && props.v !== cur.v) delete next.li;
     if (props.s) next.s = { ...(cur.s || {}), ...props.s };
     if ((next.v === undefined || next.v === '') && (!next.s || !Object.keys(next.s).length) && !next.n) delete s.cells[key];
     else s.cells[key] = next;
@@ -2685,7 +2688,9 @@
         if (cell.z && cell.z !== 'General') st.fmt = String(cell.z).slice(0, 200);
         const note = Array.isArray(cell.c) && cell.c.length ? { text: cell.c.map(x => String(x.t || '')).join('\n').slice(0, 32767), author: String(cell.c[0].a || '').slice(0, 100) } : null;
         if (v === '' && !Object.keys(st).length && !note) continue;
-        s.cells[addr(p.row, p.col)] = { v, ...(Object.keys(st).length ? { s: st } : {}), ...(note ? { n: note } : {}) };
+        // Formulas from before dynamic arrays (not flagged as such, and not array formulas).
+        const legacy = cell.f && !cell.F && !cell.D;
+        s.cells[addr(p.row, p.col)] = { v, ...(legacy ? { li: 1 } : {}), ...(Object.keys(st).length ? { s: st } : {}), ...(note ? { n: note } : {}) };
         if (p.row > maxR) maxR = p.row;
         if (p.col > maxC) maxC = p.col;
       }
@@ -2705,7 +2710,7 @@
           Object.entries(ms.styles).forEach(([k, st]) => {
             const clean = CELL_KEY.test(k) && cleanStyle(st);
             if (!clean) return;
-            s.cells[k] = { v: s.cells[k]?.v ?? '', s: { ...(s.cells[k]?.s || {}), ...clean } };
+            s.cells[k] = { ...(s.cells[k] || {}), v: s.cells[k]?.v ?? '', s: { ...(s.cells[k]?.s || {}), ...clean } };
           });
         }
         s.charts = (Array.isArray(ms.charts) ? ms.charts : []).map(cleanChart).filter(Boolean).slice(0, 100);
@@ -2723,7 +2728,7 @@
           const p = parseRef(k);
           if (p.row >= MAX_ROWS || p.col >= MAX_COLS) continue;
           const cur = s.cells[k];
-          s.cells[k] = { v: cur ? cur.v : '', ...(cur && cur.n ? { n: cur.n } : {}), s: { ...((cur && cur.s) || {}), ...st } };
+          s.cells[k] = { ...(cur || {}), v: cur ? cur.v : '', s: { ...((cur && cur.s) || {}), ...st } };
         }
       }
       if (!(ms && ms.name === sn) && exs && exs.freeze) { if (exs.freeze.rows >= 1) s.freezeRow = true; if (exs.freeze.cols >= 1) s.freezeCol = true; }
@@ -2921,8 +2926,16 @@
     const styleTable = SheetsStyles.table();
     const sheets = book.sheets.map(s => {
       const cellStyles = new Map();
-      for (const [k, cell] of Object.entries(s.cells)) if (cell.s) { const i = styleTable.add(cell.s); if (i) cellStyles.set(k, i); }
-      return { conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s),
+      // Errors newer than SheetJS's list (#SPILL!, #CALC!) are written as such afterwards.
+      const errors = new Map();
+      for (const [k, cell] of Object.entries(s.cells)) {
+        if (cell.s) { const i = styleTable.add(cell.s); if (i) cellStyles.set(k, i); }
+        if (typeof cell.v === 'string' && cell.v[0] === '=') {
+          const p = parseRef(k), v = engine.value(s.name, p.row, p.col);
+          if (v instanceof F.FormulaError && /^#(SPILL!|CALC!)$/.test(v.error)) errors.set(k, v.error);
+        }
+      }
+      return { errors, conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s),
         tables: data ? data.tablesXml(s, s === book.sheets[0]) : [], extLst: SheetsSpark.toXlsx(s.sparklines, s.name),
         sheetProtection: SheetsProtect.toXml(s.protect), cellStyles,
         freeze: s.freezeRow || s.freezeCol ? { rows: s.freezeRow ? 1 : 0, cols: s.freezeCol ? 1 : 0 } : null };

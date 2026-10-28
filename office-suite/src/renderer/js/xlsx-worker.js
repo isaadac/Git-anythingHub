@@ -8,6 +8,10 @@ self.onmessage = e => {
   try {
     const wb = XLSX.read(e.data, { type: 'array', cellFormula: true, cellNF: true, cellStyles: true, bookFiles: true });
     const sheets = []; // an array, so a sheet called __proto__ can't do anything odd
+    // Workbooks in the 1904 date system (old Mac Excel): dates become the usual 1900 serials, as
+    // Excel does when the option is turned off, so dates and date functions agree.
+    const d1904 = !!(wb.Workbook && wb.Workbook.WBProps && wb.Workbook.WBProps.date1904);
+    const hasDate = z => typeof z === 'string' && /[dy]/i.test(z.replace(/"[^"]*"|\\.|\[[^\]]*\]/g, ''));
     for (const name of wb.SheetNames) {
       const ws = wb.Sheets[name];
       const out = {};
@@ -18,7 +22,8 @@ self.onmessage = e => {
           continue;
         }
         // Plain values only: no prototypes, functions or getters cross back to the app.
-        out[k] = { t: c.t, v: c.v instanceof Date ? c.v.getTime() : c.v, f: c.f, F: typeof c.F === 'string' ? c.F : undefined, z: c.z, w: c.w, isDate: c.v instanceof Date,
+        if (d1904 && c.t === 'n' && typeof c.v === 'number' && !c.f && hasDate(c.z)) c.v += 1462;
+        out[k] = { t: c.t, v: c.v instanceof Date ? c.v.getTime() : c.v, f: c.f, F: typeof c.F === 'string' ? c.F : undefined, D: !!c.D, z: c.z, w: c.w, isDate: c.v instanceof Date,
           c: Array.isArray(c.c) ? c.c.slice(0, 20).map(x => ({ a: String(x.a || '').slice(0, 100), t: String(x.t || '').slice(0, 32767) })) : undefined };
       }
       sheets.push(out);

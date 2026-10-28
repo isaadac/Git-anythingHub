@@ -505,6 +505,7 @@
       [...el.attributes].forEach(a => {
         const n = a.name.toLowerCase();
         if (n === 'data-fld' && ['page', 'numpages', 'date', 'time', 'author', 'filename', 'numwords'].includes(a.value)) return; // fields
+        if (n === 'data-instr' && el.classList.contains('fld') && a.value.length <= 500) return; // a Word field's instruction
         if (n === 'data-eq' && a.value.length <= 2000) return;                 // equation (drawn by the app from this text)
         if (n === 'data-orient' && ['portrait', 'landscape'].includes(a.value)) return; // section break
         if (n === 'data-cols' && ['1', '2', '3'].includes(a.value)) return;

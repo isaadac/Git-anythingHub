@@ -51,7 +51,7 @@ jobs:
       - name: Browser and tools for the end-to-end tests
         run: |
           npx playwright install --with-deps chromium
-          pip install openpyxl python-pptx
+          pip install openpyxl python-pptx python-docx
       - name: End-to-end tests (web pages and the desktop app)
         run: xvfb-run -a npm run e2e
 

@@ -92,6 +92,10 @@
       if (!add || !paths[i] || !zip.file(paths[i])) continue;
       let xml = await zip.file(paths[i]).async('string');
       for (const tag of ORDER) if (typeof add[tag] === 'string' && add[tag]) xml = insertInSheet(xml, tag, add[tag]);
+      if (add.errors && add.errors.size) {
+        xml = xml.replace(/<c r="([A-Z]+\d+)"([^>]*\bt="e"[^>]*)>([\s\S]*?)<\/c>/g, (all, ref, attrs, inner) =>
+          (add.errors.has(ref) ? `<c r="${ref}"${attrs}>${inner.replace(/<v>[^<]*<\/v>/, `<v>${add.errors.get(ref)}</v>`)}</c>` : all));
+      }
       // Every cell gets its index in the new style table; cells that only carry formatting are added.
       if (add.cellStyles) {
         const want = add.cellStyles;
@@ -210,6 +214,16 @@
       else if (/<dxfs\b[\s\S]*?<\/dxfs>/.test(st)) st = st.replace(/<dxfs\b[\s\S]*?<\/dxfs>/, block);
       else st = st.replace(/(<tableStyles\b|<colors\b|<extLst\b|<\/styleSheet>)/, block + '$1');
       zip.file('xl/styles.xml', st);
+    }
+    // Text XML can't hold (control characters, U+FFFF, half surrogate pairs) is written as Excel
+    // writes it, _xHHHH_; and that escape in capitals, as other programs expect.
+    for (const name of Object.keys(zip.files)) {
+      if (!/^xl\/(worksheets\/sheet\d+|sharedStrings)\.xml$/.test(name)) continue;
+      const xml = await zip.file(name).async('string');
+      const clean = xml
+        .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, c => '_x' + c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0') + '_')
+        .replace(/_x([0-9a-f]{4})_/g, (m, h) => '_x' + h.toUpperCase() + '_');
+      if (clean !== xml) zip.file(name, clean);
     }
     return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
   }

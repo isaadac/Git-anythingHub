@@ -808,7 +808,7 @@
       } else document.execCommand('insertText', false, '\u00a0\u00a0\u00a0\u00a0');
     }
     if (mod && e.key === 'Enter') { e.preventDefault(); document.getElementById('insPageBreak').click(); }
-    if (e.key === 'F9' && !mod) { e.preventDefault(); extras.updateFields(); if (toc) toc.refreshPages(); UI.toast('Fields updated'); }
+    if (e.key === 'F9' && !mod) { e.preventDefault(); extras.updateFields(true); if (toc) toc.refreshPages(); UI.toast('Fields updated'); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); exec('justifyCenter'); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); exec('justifyLeft'); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'r') { e.preventDefault(); exec('justifyRight'); }

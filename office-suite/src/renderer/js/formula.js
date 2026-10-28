@@ -35,14 +35,18 @@
   const isErr = v => v instanceof FormulaError;
 
   // ---------- Tokenizer ----------
-  const TOKEN_RE = /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|("(?:[^"]|"")*")|((?:'(?:[^']|'')+'|[A-Za-z_][\w.]*)!\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)|(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)(?![\w(\[])|((?:[A-Za-z_][\w.]*)?\[(?:[^\[\]']|'.|\[(?:[^\[\]']|'.)*\])*\])|([A-Za-z_][\w.]*)|(<>|<=|>=|[-+*/^&=<>%(),:;]))/y;
+  const TOKEN_RE = /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|("(?:[^"]|"")*")|((?:'(?:[^']|'')+'|[A-Za-z_][\w.]*(?::[A-Za-z_][\w.]*)?)!\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)|(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)(?![\w(\[])|((?:[A-Za-z_\\][\w.\\]*)?\[(?:[^\[\]']|'.|\[(?:[^\[\]']|'.)*\])*\])|([A-Za-z_\\][\w.\\]*)|(<>|<=|>=|[-+*/^&=<>%(),:;]))/y;
 
+  const CP1252 = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008DŽ\u008F\u0090‘’“”•–—˜™š›œ\u009DžŸ';
+  const ERR_LIT_RE = /^\s*(?:(?:'(?:[^']|'')+'|[A-Za-z_][\w.]*)!)?(#(?:NULL!|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|SPILL!|CALC!|GETTING_DATA))/i;
   function tokenize(src) {
     const tokens = [];
     TOKEN_RE.lastIndex = 0;
     let pos = 0;
     while (pos < src.length) {
       if (/^\s*$/.test(src.slice(pos))) break;
+      const er = ERR_LIT_RE.exec(src.slice(pos));
+      if (er) { pos += er[0].length; tokens.push({ t: 'err', v: er[1].toUpperCase() }); continue; }
       TOKEN_RE.lastIndex = pos;
       const m = TOKEN_RE.exec(src);
       if (!m) throw ERR.ERROR;
@@ -79,7 +83,12 @@
       if (!t) throw ERR.ERROR;
       if (t.t === 'num') return { k: 'num', v: t.v };
       if (t.t === 'str') return { k: 'str', v: t.v };
-      if (t.t === 'bool') return { k: 'bool', v: t.v };
+      if (t.t === 'bool') {
+        // TRUE() and FALSE() are functions too.
+        if (peek() && peek().t === 'op' && peek().v === '(' && tokens[i + 1] && tokens[i + 1].t === 'op' && tokens[i + 1].v === ')') i += 2;
+        return { k: 'bool', v: t.v };
+      }
+      if (t.t === 'err') return { k: 'err', v: t.v };
       if (t.t === 'ref') {
         const n = refNode(t.v);
         if (!t.spill) return n;
@@ -179,8 +188,13 @@
     }
     const [a, b] = body.split(':');
     const s = parseRef(a);
+    const e = b ? parseRef(b) : s;
+    // Sheet1:Sheet4!C1 — the same cells on every sheet from Sheet1 to Sheet4.
+    if (sheet && sheet.includes(':')) {
+      const [s1, s2] = sheet.split(':');
+      return { k: 'ref3d', s1, s2, r1: Math.min(s.row, e.row), c1: Math.min(s.col, e.col), r2: Math.max(s.row, e.row), c2: Math.max(s.col, e.col) };
+    }
     if (!b) return { k: 'ref', sheet, row: s.row, col: s.col };
-    const e = parseRef(b);
     return { k: 'range', sheet, r1: Math.min(s.row, e.row), c1: Math.min(s.col, e.col), r2: Math.max(s.row, e.row), c2: Math.max(s.col, e.col) };
   }
 
@@ -190,6 +204,14 @@
     flat() { return this.rows.flat(); }
     get h() { return this.rows.length; }
     get w() { return this.rows.length ? this.rows[0].length : 0; }
+  }
+  /** Implicit intersection: the value of a one-column (or one-row) range in the given row (column). */
+  function intersect(v, row, col) {
+    if (!isMulti(v)) return v.rows[0] ? v.rows[0][0] : '';
+    if (!v.at) return v.rows[0][0];
+    if (v.w === 1) { const i = row - v.at.r1; return i >= 0 && i < v.h ? v.rows[i][0] : ERR.VALUE; }
+    if (v.h === 1) { const j = col - v.at.c1; return j >= 0 && j < v.w ? v.rows[0][j] : ERR.VALUE; }
+    return ERR.VALUE;
   }
   const isMulti = v => v instanceof Range && (v.rows.length > 1 || (v.rows[0] && v.rows[0].length > 1));
   /**
@@ -263,6 +285,42 @@
     }
     return out;
   }
+  /** Year, month and day of a serial number as Excel gives them (0 is 0 January 1900, 60 is 29 February 1900). */
+  function excelYMD(serial) {
+    if (serial < 0) throw ERR.NUM;
+    const s = Math.floor(serial);
+    if (s === 0) return [1900, 1, 0];
+    if (s === 60) return [1900, 2, 29];
+    const d = serialToDate(s);
+    return [d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()];
+  }
+  /** Σ f(x, y) over the pairs of two same-sized arrays where both are numbers (SUMX2MY2 and kin). */
+  function pairSum(a, f) {
+    const xs = a[0] instanceof Range ? a[0].flat() : [a[0]], ys = a[1] instanceof Range ? a[1].flat() : [a[1]];
+    if (xs.length !== ys.length) throw ERR.NA;
+    let s = 0, n = 0;
+    for (let i = 0; i < xs.length; i++) {
+      if (isErr(xs[i])) throw xs[i];
+      if (isErr(ys[i])) throw ys[i];
+      if (typeof xs[i] === 'number' && typeof ys[i] === 'number') { s += f(xs[i], ys[i]); n++; }
+    }
+    if (!n) throw ERR.DIV0;
+    return s;
+  }
+  /** The logical values AND, OR and XOR look at (Excel's rules: ranges skip text and blanks). */
+  function logicals(args) {
+    const out = [];
+    for (const a of args) {
+      if (a instanceof Range) {
+        for (const v of a.flat()) { if (isErr(v)) throw v; if (typeof v === 'boolean') out.push(v); else if (typeof v === 'number') out.push(v !== 0); }
+      } else if (isErr(a)) throw a;
+      else if (typeof a === 'boolean') out.push(a);
+      else if (typeof a === 'number') out.push(a !== 0);
+      else if (typeof a === 'string' && a !== '') { const u = a.trim().toUpperCase(); if (u === 'TRUE' || u === 'FALSE') out.push(u === 'TRUE'); else throw ERR.VALUE; }
+    }
+    if (!out.length) throw ERR.VALUE;
+    return out;
+  }
   /** Numbers from args: from ranges only real numbers count; direct args are coerced (Excel rules). */
   function nums(args) {
     const out = [];
@@ -275,8 +333,10 @@
 
   // Excel date serials (1900 system; serial 1 = 1900-01-01, with the 1900 leap-year quirk).
   const EPOCH = Date.UTC(1899, 11, 30);
-  const dateToSerial = d => (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()) - EPOCH) / 86400000;
-  const serialToDate = s => new Date(EPOCH + Math.round(s * 86400000));
+  // Excel counts 29 February 1900 (a day that didn't exist, kept from Lotus 1-2-3), so its serial
+  // numbers before 1 March 1900 are one less than the calendar gives.
+  const dateToSerial = d => { const s = (Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes(), d.getSeconds()) - EPOCH) / 86400000; return s < 61 && s >= 1 ? s - 1 : s; };
+  const serialToDate = s => new Date(EPOCH + Math.round((s < 60 && s >= 1 ? s + 1 : s) * 86400000));
 
   /** Builds an Excel-style criteria matcher, e.g. ">5", "<>x", "a*", 10. */
   function criteria(c) {
@@ -318,6 +378,8 @@
   // ---------- Functions ----------
   // Lazy functions receive (argNodes, evalNode) so they can short-circuit.
   const LAZY = {
+    // Only the chosen value is worked out (an error elsewhere doesn't matter).
+    CHOOSE: (a, ev) => { const i = Math.trunc(toNum(scalar(ev(a[0])))); if (i < 1 || i >= a.length) throw ERR.VALUE; return ev(a[i]); },
     IF: (a, ev) => {
       const c = ev(a[0]);
       if (isMulti(c)) {
@@ -345,7 +407,7 @@
   const FN = {
     // Math
     SUM: a => nums(a).reduce((s, n) => s + n, 0),
-    PRODUCT: a => nums(a).reduce((s, n) => s * n, 1),
+    PRODUCT: a => { const n = nums(a); return n.length ? n.reduce((s, x) => s * x, 1) : 0; },
     AVERAGE: a => { const n = nums(a); if (!n.length) throw ERR.DIV0; return n.reduce((s, x) => s + x, 0) / n.length; },
     MIN: a => { const n = nums(a); return n.length ? Math.min(...n) : 0; },
     MAX: a => { const n = nums(a); return n.length ? Math.max(...n) : 0; },
@@ -370,11 +432,11 @@
     MOD: a => { const n = toNum(a[0]), d = toNum(a[1]); if (d === 0) throw ERR.DIV0; return n - d * Math.floor(n / d); },
     INT: a => Math.floor(toNum(a[0])),
     TRUNC: a => { const d = a[1] === undefined ? 0 : toNum(a[1]); const f = 10 ** d; return Math.trunc(toNum(a[0]) * f) / f; },
-    ROUND: a => roundTo(toNum(a[0]), a[1] === undefined ? 0 : toNum(a[1])),
-    ROUNDUP: a => { const d = a[1] === undefined ? 0 : toNum(a[1]); const f = 10 ** d; const n = toNum(a[0]); return Math.sign(n) * Math.ceil(Math.abs(n) * f - 1e-9) / f; },
-    ROUNDDOWN: a => { const d = a[1] === undefined ? 0 : toNum(a[1]); const f = 10 ** d; const n = toNum(a[0]); return Math.sign(n) * Math.floor(Math.abs(n) * f + 1e-9) / f; },
+    ROUND: a => roundTo(toNum(a[0]), a[1] === undefined ? 0 : Math.trunc(toNum(a[1]))),
+    ROUNDUP: a => { const d = a[1] === undefined ? 0 : Math.trunc(toNum(a[1])); const f = 10 ** d; const n = toNum(a[0]); return Math.sign(n) * Math.ceil(Math.abs(n) * f - 1e-9) / f; },
+    ROUNDDOWN: a => { const d = a[1] === undefined ? 0 : Math.trunc(toNum(a[1])); const f = 10 ** d; const n = toNum(a[0]); return Math.sign(n) * Math.floor(Math.abs(n) * f + 1e-9) / f; },
     CEILING: a => { const s = a[1] === undefined ? 1 : toNum(a[1]); return s === 0 ? 0 : Math.ceil(toNum(a[0]) / s) * s; },
-    FLOOR: a => { const s = a[1] === undefined ? 1 : toNum(a[1]); if (s === 0) throw ERR.DIV0; return Math.floor(toNum(a[0]) / s) * s; },
+    FLOOR: a => { const s = a[1] === undefined ? 1 : toNum(a[1]); if (s === 0) { if (toNum(a[0]) === 0) return 0; throw ERR.DIV0; } return Math.floor(toNum(a[0]) / s) * s; },
     SIGN: a => Math.sign(toNum(a[0])),
     PI: () => Math.PI,
     SIN: a => Math.sin(toNum(a[0])), COS: a => Math.cos(toNum(a[0])), TAN: a => Math.tan(toNum(a[0])),
@@ -399,9 +461,9 @@
     MINIFS: a => { const s = asRange(a[0]).flat(); const ok = s.map(() => true); ifs(a.slice(1), (r, m) => r.forEach((v, i) => { if (!m(v)) ok[i] = false; })); const v = s.filter((x, i) => ok[i] && typeof x === 'number'); return v.length ? Math.min(...v) : 0; },
 
     // Logic
-    AND: a => flatten(a).filter(v => !isBlank(v)).every(toBool),
-    OR: a => flatten(a).filter(v => !isBlank(v)).some(toBool),
-    XOR: a => flatten(a).filter(v => !isBlank(v)).filter(toBool).length % 2 === 1,
+    AND: a => logicals(a).every(Boolean),
+    OR: a => logicals(a).some(Boolean),
+    XOR: a => logicals(a).filter(Boolean).length % 2 === 1,
     NOT: a => !toBool(a[0]),
     TRUE: () => true, FALSE: () => false,
     NA: () => { throw ERR.NA; },
@@ -429,31 +491,47 @@
       const s = toStr(a[0]), f = toStr(a[1]), r = toStr(a[2]);
       if (!f) return s;
       if (a[3] === undefined) return s.split(f).join(r);
-      const n = toNum(a[3]); let idx = -1;
+      const n = Math.trunc(toNum(a[3])); let idx = -1;
+      if (n < 1) throw ERR.VALUE;
       for (let k = 0; k < n; k++) { idx = s.indexOf(f, idx + 1); if (idx < 0) return s; }
       return s.slice(0, idx) + r + s.slice(idx + f.length);
     },
-    REPLACE: a => { const s = toStr(a[0]); const st = toNum(a[1]) - 1; return s.slice(0, st) + toStr(a[3]) + s.slice(st + toNum(a[2])); },
+    REPLACE: a => { const s = toStr(a[0]); const st = Math.trunc(toNum(a[1])) - 1, n = Math.trunc(toNum(a[2])); if (st < 0 || n < 0) throw ERR.VALUE; return s.slice(0, st) + toStr(a[3]) + s.slice(st + n); },
     FIND: a => { const i = toStr(a[1]).indexOf(toStr(a[0]), (a[2] === undefined ? 1 : toNum(a[2])) - 1); if (i < 0) throw ERR.VALUE; return i + 1; },
     SEARCH: a => { const i = toStr(a[1]).toLowerCase().indexOf(toStr(a[0]).toLowerCase(), (a[2] === undefined ? 1 : toNum(a[2])) - 1); if (i < 0) throw ERR.VALUE; return i + 1; },
     EXACT: a => toStr(a[0]) === toStr(a[1]),
     VALUE: a => toNum(a[0]),
     T: a => (typeof scalar(a[0]) === 'string' ? scalar(a[0]) : ''),
     N: a => (typeof scalar(a[0]) === 'number' ? scalar(a[0]) : typeof scalar(a[0]) === 'boolean' ? +scalar(a[0]) : 0),
-    CHAR: a => String.fromCharCode(toNum(a[0])),
+    // Character n (1–255) of the Windows character set, as Excel on Windows.
+    CHAR: a => { const n = Math.trunc(toNum(a[0])); if (n < 1 || n > 255) throw ERR.VALUE; return n >= 128 && n < 160 ? CP1252[n - 128] : String.fromCharCode(n); },
     CODE: a => toStr(a[0]).charCodeAt(0) || 0,
     TEXT: a => formatValue(toNum(a[0]), toStr(a[1])),
     FIXED: a => toNum(a[0]).toLocaleString('en-US', { minimumFractionDigits: a[1] === undefined ? 2 : toNum(a[1]), maximumFractionDigits: a[1] === undefined ? 2 : toNum(a[1]), useGrouping: !(a[2] && toBool(a[2])) }),
-    DOLLAR: a => formatValue(toNum(a[0]), '$#,##0.00'),
+    DOLLAR: a => {
+      const d = a[1] === undefined ? 2 : Math.trunc(toNum(a[1]));
+      const n = roundTo(toNum(a[0]), d);
+      const body = formatValue(Math.abs(n), '$#,##0' + (d > 0 ? '.' + '0'.repeat(Math.min(d, 127)) : ''));
+      return n < 0 ? '(' + body + ')' : body;
+    },
 
     // Date & time
     TODAY: () => Math.floor(dateToSerial(new Date())),
     NOW: () => dateToSerial(new Date()),
-    DATE: a => dateToSerial(new Date(toNum(a[0]), toNum(a[1]) - 1, toNum(a[2]))),
+    DATE: a => {
+      // Years 0–1899 count from 1900; months and days may run over (DATE(2024, 14, 0)).
+      let y = Math.trunc(toNum(a[0]));
+      if (y >= 0 && y < 1900) y += 1900;
+      if (y < 0 || y > 9999) throw ERR.NUM;
+      const first = new Date(y, Math.trunc(toNum(a[1])) - 1, 1);
+      const v = dateToSerial(first) + Math.trunc(toNum(a[2])) - 1;
+      if (v < 0) throw ERR.NUM;
+      return v;
+    },
     TIME: a => (toNum(a[0]) * 3600 + toNum(a[1]) * 60 + toNum(a[2])) / 86400,
-    YEAR: a => serialToDate(toNum(a[0])).getUTCFullYear(),
-    MONTH: a => serialToDate(toNum(a[0])).getUTCMonth() + 1,
-    DAY: a => serialToDate(toNum(a[0])).getUTCDate(),
+    YEAR: a => excelYMD(toNum(a[0]))[0],
+    MONTH: a => excelYMD(toNum(a[0]))[1],
+    DAY: a => excelYMD(toNum(a[0]))[2],
     HOUR: a => serialToDate(toNum(a[0])).getUTCHours(),
     MINUTE: a => serialToDate(toNum(a[0])).getUTCMinutes(),
     SECOND: a => serialToDate(toNum(a[0])).getUTCSeconds(),
@@ -497,7 +575,7 @@
       const rows = ret.rows;
       return rows.length === 1 ? rows[0][i] : rows[i][0];
     },
-    CHOOSE: a => { const i = toNum(a[0]); if (i < 1 || i >= a.length) throw ERR.VALUE; return a[i]; },
+
     ROWS: a => asRange(a[0]).rows.length,
     COLUMNS: a => asRange(a[0]).rows[0].length,
 
@@ -696,6 +774,13 @@
     'CEILING.PRECISE FLOOR.PRECISE ROMAN ARABIC BASE DECIMAL DEC2BIN BIN2DEC DEC2HEX HEX2DEC DEC2OCT OCT2DEC CLEAN UNICHAR UNICODE ' +
     'NUMBERVALUE TEXTBEFORE TEXTAFTER DATEDIF WEEKNUM ISOWEEKNUM YEARFRAC TIMEVALUE ISNONTEXT STANDARDIZE NORM.DIST NORMDIST NORM.S.DIST ' +
     'NORMSDIST NORM.INV NORMINV NORM.S.INV NORMSINV EXPON.DIST POISSON.DIST BINOM.DIST ADDRESS EFFECT NOMINAL SLN SYD').split(' '));
+  /** Functions given an error as a value to look at, not one to pass on. */
+  const TESTS_ERRORS = new Set(['ISNUMBER', 'ISTEXT', 'ISBLANK', 'ISLOGICAL', 'ISNONTEXT', 'ISREF', 'ISFORMULA']);
+  /** Lazily evaluated functions whose arguments a formula from an older Excel intersects. */
+  const LEGACY_LAZY = new Set(['ISERROR', 'ISERR', 'ISNA', 'IF', 'IFERROR', 'IFNA', 'CHOOSE']);
+  /** Functions that treat a reference to a single cell like a range: its text is skipped. */
+  const REF_AS_RANGE = new Set(('SUM PRODUCT AVERAGE MIN MAX MEDIAN MODE STDEV STDEVP VAR VARP STDEV.S STDEV.P VAR.S VAR.P ' +
+    'GEOMEAN HARMEAN DEVSQ AVEDEV SKEW KURT SUMSQ AND OR XOR COUNT').split(' '));
   /** Functions whose result can be an array (they spill). */
   const ARRAY_FNS = new Set(('FILTER SORT SORTBY UNIQUE SEQUENCE RANDARRAY TRANSPOSE TOCOL TOROW VSTACK HSTACK TAKE DROP CHOOSECOLS CHOOSEROWS ' +
     'WRAPROWS WRAPCOLS EXPAND TEXTSPLIT MMULT MINVERSE FREQUENCY MODE.MULT OFFSET INDIRECT INDEX XLOOKUP ROW COLUMN').split(' '));
@@ -1028,6 +1113,21 @@
     'CONFIDENCE.NORM': a => { const alpha = toNum(a[0]), sd = toNum(a[1]), n = toNum(a[2]); if (alpha <= 0 || alpha >= 1 || sd <= 0 || n < 1) throw ERR.NUM; return normInv(1 - alpha / 2) * sd / Math.sqrt(n); },
     CONFIDENCE: a => FN['CONFIDENCE.NORM'](a),
     'EXPON.DIST': a => { const x = toNum(a[0]), l = toNum(a[1]); if (x < 0 || l <= 0) throw ERR.NUM; return toBool(a[2]) ? 1 - Math.exp(-l * x) : l * Math.exp(-l * x); },
+    POISSON: a => FN['POISSON.DIST'](a),
+    DAYS360: a => {
+      // 30-day months: US (NASD) method, or European with TRUE.
+      const [y1, m1, d1a] = excelYMD(toNum(a[0])), [y2, m2, d2a] = excelYMD(toNum(a[1]));
+      let d1 = d1a, d2 = d2a;
+      if (a[2] !== undefined && toBool(a[2])) { if (d1 === 31) d1 = 30; if (d2 === 31) d2 = 30; }
+      else {
+        const lastFeb = (y, m, d) => m === 2 && d === new Date(Date.UTC(y, 2, 0)).getUTCDate();
+        if (lastFeb(y1, m1, d1) && lastFeb(y2, m2, d2)) d2 = 30;
+        if (lastFeb(y1, m1, d1)) d1 = 30;
+        if (d2 === 31 && d1 >= 30) d2 = 30;
+        if (d1 === 31) d1 = 30;
+      }
+      return (y2 - y1) * 360 + (m2 - m1) * 30 + (d2 - d1);
+    },
     'POISSON.DIST': a => {
       const x = Math.trunc(toNum(a[0])), m = toNum(a[1]);
       if (x < 0 || m < 0) throw ERR.NUM;
@@ -1076,6 +1176,9 @@
 
     // Math
     SUMSQ: a => nums(a).reduce((s, x) => s + x * x, 0),
+    SUMX2MY2: a => pairSum(a, (x, y) => x * x - y * y),
+    SUMX2PY2: a => pairSum(a, (x, y) => x * x + y * y),
+    SUMXMY2: a => pairSum(a, (x, y) => (x - y) * (x - y)),
     MROUND: a => { const n = toNum(a[0]), m = toNum(a[1]); if (m === 0) return 0; if (Math.sign(n) * Math.sign(m) < 0) throw ERR.NUM; return roundTo(Math.round(n / m + Number.EPSILON * Math.sign(n / m)) * m, 10); },
     QUOTIENT: a => { const d = toNum(a[1]); if (d === 0) throw ERR.DIV0; return Math.trunc(toNum(a[0]) / d); },
     GCD: a => { const n = nums(a).map(Math.trunc); if (n.some(x => x < 0)) throw ERR.NUM; const g = (x, y) => (y ? g(y, x % y) : x); return n.reduce(g, 0); },
@@ -1294,74 +1397,376 @@
   }
 
   // ---------- Number formatting ----------
-  /** Formats a number with a (subset of) Excel number format codes. */
-  function formatValue(v, fmt) {
-    if (typeof v !== 'number' || !fmt || fmt === 'General') return typeof v === 'number' ? formatGeneral(v) : v;
-    if (fmt === '@') return String(v);
-    const sections = fmt.split(';');
-    let f = sections[0];
-    let n = v;
-    if (v < 0 && sections[1]) { f = sections[1]; n = -v; }
-    else if (v === 0 && sections[2]) f = sections[2];
-    f = f.replace(/\[[^\]]*\]/g, '');
-    if (/[ymdhs]/i.test(f.replace(/"[^"]*"/g, '')) && !/[0#]/.test(f)) return formatDate(n, f);
-    const sci = /([0#.]+)E([+-])(0+)/i.exec(f.replace(/"[^"]*"/g, ''));
-    if (sci) {
-      // Scientific, e.g. 0.00E+00
-      const decimals = (sci[1].split('.')[1] || '').length;
-      const [mant, exp] = Math.abs(n).toExponential(decimals).split('e');
-      const e = +exp;
-      const expText = (e < 0 ? '-' : sci[2] === '+' ? '+' : '') + String(Math.abs(e)).padStart(sci[3].length, '0');
-      return (n < 0 && !sections[1] ? '-' : '') + mant + 'E' + expText;
-    }
-    const pct = f.includes('%');
-    if (pct) n *= 100;
-    const m = /([#0,]*)(?:\.([0#]+))?/.exec(f.replace(/"[^"]*"/g, '').replace(/[^#0,.%]/g, m2 => m2 === '%' ? '%' : ' ').trim().split(' ').find(p => /[0#]/.test(p)) || '0');
-    const decimals = m && m[2] ? m[2].length : 0;
-    const grouping = m && m[1] && m[1].includes(',');
-    let body = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: decimals, maximumFractionDigits: decimals, useGrouping: !!grouping });
-    if (m && m[1] && /^0+/.test(m[1].replace(/,/g, '')) ) {
-      const minInt = m[1].replace(/[#,]/g, '').length;
-      const [ip, dp] = body.split('.');
-      if (ip.replace(/,/g, '').length < minInt) body = ip.padStart(minInt, '0') + (dp ? '.' + dp : '');
-    }
-    const prefix = (f.match(/^[^#0]*/)[0] || '').replace(/"/g, '').replace(/\\/g, '').replace(/[_*]./g, '');
-    const suffix = (f.match(/[^#0%]*%?[^#0]*$/)[0] || '').replace(/"/g, '').replace(/\\/g, '').replace(/[_*]./g, '');
-    const sign = n < 0 && !sections[1] ? '-' : '';
-    return sign + prefix.replace('-', '') + body + suffix.replace(/^[,.]+/, '');
+  // Excel's number format codes: up to four sections (positive;negative;zero;text) with
+  // conditions, digit placeholders (0 # ?), grouping and scaling commas, percent, scientific,
+  // fractions, literals ("text", \c, _x, $ - + ( ) : and other symbols), and dates and times.
+
+  /** General as Excel shows a number: at most 11 characters (after SheetJS's SSF, Apache-2.0). */
+  function generalText(v) {
+    if (!isFinite(v)) return String(v);
+    if (v === 0) return '0';
+    const strip = o => (o.indexOf('.') === -1 ? o : o.replace(/(?:\.0*|(\.\d*[1-9])0+)$/, '$1'));
+    const normExp = o => (o.indexOf('E') === -1 ? o : o.replace(/(?:\.0*|(\.\d*[1-9])0+)[Ee]/, '$1E').replace(/(E[+-])(\d)$/, '$10$2'));
+    const V = Math.floor(Math.log(Math.abs(v)) * Math.LOG10E);
+    const w = v < 0 ? 12 : 11;
+    let o;
+    if (V >= -4 && V <= -1) o = v.toPrecision(10 + V);
+    else if (Math.abs(V) <= 9) {
+      o = strip(v.toFixed(12));
+      if (o.length > w) { o = v.toPrecision(10); if (o.length > w) o = v.toExponential(5); }
+    } else if (V === 10) o = v.toFixed(10).substr(0, 12);
+    else { o = strip(v.toFixed(11)); if (o.length > w || o === '0' || o === '-0') o = v.toPrecision(6); }
+    return strip(normExp(o.toUpperCase()));
   }
-  function formatDate(serial, f) {
-    const d = serialToDate(serial);
-    const Y = d.getUTCFullYear(), M = d.getUTCMonth(), D = d.getUTCDate(), h = d.getUTCHours(), mi = d.getUTCMinutes(), s = d.getUTCSeconds();
+
+  const fmtCache = new Map();
+  /** A format code split into sections of tokens. */
+  function compileFormat(fmt) {
+    let c = fmtCache.get(fmt);
+    if (c) return c;
+    const sections = [];
+    let toks = [], cond = null, i = 0;
+    const lit = t => toks.push({ k: 'lit', v: t });
+    while (i < fmt.length) {
+      const ch = fmt[i];
+      if (ch === ';') { sections.push({ toks, cond }); toks = []; cond = null; i++; continue; }
+      if (ch === '"') { const j = fmt.indexOf('"', i + 1); lit(fmt.slice(i + 1, j < 0 ? fmt.length : j)); i = j < 0 ? fmt.length : j + 1; continue; }
+      if (ch === '\\') { lit(fmt[i + 1] || ''); i += 2; continue; }
+      if (ch === '_') { lit(' '); i += 2; continue; }
+      if (ch === '*') { i += 2; continue; } // repeat-to-fill: nothing in text
+      if (ch === '[') {
+        const j = fmt.indexOf(']', i);
+        const body = fmt.slice(i + 1, j < 0 ? fmt.length : j);
+        i = j < 0 ? fmt.length : j + 1;
+        let m;
+        if ((m = /^(<=|>=|<>|<|>|=)\s*(-?[\d.]+(?:[eE][+-]?\d+)?)$/.exec(body))) cond = { op: m[1], v: +m[2] };
+        else if ((m = /^\$([^-\]]*)/.exec(body))) { if (m[1]) lit(m[1]); }
+        else if (/^(h+|m+|s+)$/i.test(body)) toks.push({ k: 'date', v: body.toLowerCase(), elapsed: true });
+        continue; // colours and locale codes show nothing
+      }
+      if (ch === '0' || ch === '#' || ch === '?') { toks.push({ k: 'dig', v: ch }); i++; continue; }
+      if (ch === '.') { toks.push({ k: 'dot' }); i++; continue; }
+      if (ch === ',') { toks.push({ k: 'comma' }); i++; continue; }
+      if (ch === '%') { toks.push({ k: 'pct' }); i++; continue; }
+      if (ch === '/') { toks.push({ k: 'slash' }); i++; continue; }
+      if (ch === '@') { toks.push({ k: 'text' }); i++; continue; }
+      if ((ch === 'E' || ch === 'e') && (fmt[i + 1] === '+' || fmt[i + 1] === '-')) { toks.push({ k: 'exp', sign: fmt[i + 1] }); i += 2; continue; }
+      let m;
+      if ((m = /^(AM\/PM|A\/P)/i.exec(fmt.slice(i)))) { toks.push({ k: 'ampm', v: m[1] }); i += m[1].length; continue; }
+      if ((m = /^(y+|m+|d+|h+|s+)/i.exec(fmt.slice(i)))) { toks.push({ k: 'date', v: m[1].toLowerCase() }); i += m[1].length; continue; }
+      if (/^General/i.test(fmt.slice(i))) { toks.push({ k: 'general' }); i += 7; continue; }
+      lit(ch); i++;
+    }
+    sections.push({ toks, cond });
+    for (const s of sections) {
+      s.isDate = s.toks.some(t => t.k === 'date' || t.k === 'ampm');
+      if (s.isDate) {
+        // Digits after seconds are fractions of a second; "m" next to h or s is minutes.
+        const ts = s.toks;
+        for (let a = 0; a < ts.length; a++) {
+          if (ts[a].k === 'dot' && ts[a + 1] && ts[a + 1].k === 'dig' && ts[a + 1].v === '0') {
+            let n = 0; while (ts[a + 1 + n] && ts[a + 1 + n].k === 'dig' && ts[a + 1 + n].v === '0') n++;
+            ts.splice(a, n + 1, { k: 'frac', n });
+          }
+        }
+        const dates = ts.filter(t => t.k === 'date');
+        dates.forEach((t, j) => {
+          if (t.v[0] !== 'm' || t.v.length > 2 || t.elapsed) return;
+          const prev = dates[j - 1], next = dates[j + 1];
+          if ((prev && prev.v[0] === 'h') || (next && next.v[0] === 's')) t.minute = true;
+        });
+        s.frac = (ts.find(t => t.k === 'frac') || { n: 0 }).n;
+      }
+    }
+    c = sections;
+    if (fmtCache.size > 2000) fmtCache.clear();
+    fmtCache.set(fmt, c);
+    return c;
+  }
+
+  /** Formats a value with an Excel number format code. */
+  function formatValue(v, fmt) {
+    if (typeof v === 'boolean') return v ? 'TRUE' : 'FALSE';
+    if (typeof v !== 'number') {
+      if (typeof v === 'string' && fmt) {
+        const secs = compileFormat(fmt);
+        const s = secs.length >= 4 ? secs[3] : secs.find(x => x.toks.some(t => t.k === 'text'));
+        if (s) return s.toks.map(t => (t.k === 'text' ? v : t.k === 'lit' ? t.v : '')).join('');
+      }
+      return v;
+    }
+    if (!fmt || /^general$/i.test(fmt) || fmt === '@') return generalText(v);
+    const secs = compileFormat(fmt);
+    const test = (c, x) => ({ '<': x < c.v, '>': x > c.v, '=': x === c.v, '<=': x <= c.v, '>=': x >= c.v, '<>': x !== c.v }[c.op]);
+    let s, n = v, sign = '';
+    if (secs.some(x => x.cond)) {
+      s = secs.find(x => x.cond && test(x.cond, v)) || secs.find(x => !x.cond) || secs[secs.length - 1];
+      if (v < 0 && !(s.cond && s.cond.v <= 0 && (s.cond.op === '<' || s.cond.op === '<='))) sign = '-';
+      n = Math.abs(v);
+    } else if (v < 0 && secs.length > 1 && secs[1].toks.length) { s = secs[1]; n = -v; }
+    else if (v === 0 && secs.length > 2) s = secs[2];
+    else { s = secs[0]; if (v < 0) { sign = '-'; n = -v; } }
+    if (s.toks.some(t => t.k === 'general')) return sign + s.toks.map(t => (t.k === 'general' ? generalText(n) : t.k === 'lit' ? t.v : '')).join('');
+    if (s.isDate) return formatDate(sign ? -n : n, s);
+    return sign + formatNumber(n, s.toks);
+  }
+
+  /** Rounds half away from zero, as Excel does with the decimal digits it shows. */
+  function roundShown(x, d) {
+    if (d > 15) d = 15;
+    // Excel works to 15 significant digits: 0.035 is 0.035, not 0.034999999999999996.
+    x = Number(x.toPrecision(15));
+    const r = Math.round(Number(x + 'e' + d));
+    return isFinite(r) ? Number(r + 'e-' + d) : x;
+  }
+  function digitsOf(x) {
+    // Plain digits, also for numbers JavaScript would print with an exponent.
+    if (!isFinite(x)) return String(x);
+    if (x < 1e21) return Math.floor(x).toFixed(0);
+    return BigInt(Math.floor(x)).toString();
+  }
+
+  function formatNumber(n, toks) {
+    const t = toks.filter(x => x.k !== 'lit' || x.v !== '');
+    const pct = t.filter(x => x.k === 'pct').length;
+    n *= Math.pow(100, pct);
+    if (t.some(x => x.k === 'slash') && t.some(x => x.k === 'dig')) return formatFraction(n, t);
+    const expAt = t.findIndex(x => x.k === 'exp');
+    const digAt = t.map((x, i) => (x.k === 'dig' ? i : -1)).filter(i => i >= 0);
+    if (!digAt.length) return t.map(x => (x.k === 'lit' ? x.v : x.k === 'pct' ? '%' : x.k === 'text' ? generalText(n) : '')).join('');
+    const end = expAt >= 0 ? expAt : t.length;
+    const dot = t.findIndex((x, i) => x.k === 'dot' && i < end);
+    const lastDig = Math.max(...digAt.filter(i => i < end));
+    // Commas: between digits before the point group thousands; after the last digit (or just
+    // before the point) each divides by 1000; anywhere else they are just commas.
+    const role = new Map();
+    t.forEach((x, i) => {
+      if (x.k !== 'comma' || i >= end) return;
+      const before = digAt.some(j => j < i && (dot < 0 || j < dot));
+      let j = i + 1; while (t[j] && t[j].k === 'comma') j++;
+      const scale = (j > lastDig && i > lastDig - (dot >= 0 && dot < lastDig ? 0 : 0) && digAt.every(d => d < i)) || (t[j] && t[j].k === 'dot');
+      if (before && scale) role.set(i, 'scale');
+      else if (before && (dot < 0 || i < dot) && digAt.some(d => d > i && (dot < 0 || d < dot))) role.set(i, 'group');
+      else role.set(i, 'lit');
+    });
+    const scales = [...role.values()].filter(r => r === 'scale').length;
+    n /= Math.pow(1000, scales);
+    const group = [...role.values()].includes('group');
+    const intToks = [], decToks = [];
+    t.forEach((x, i) => { if (x.k === 'dig' && i < end) (dot >= 0 && i > dot ? decToks : intToks).push(i); });
+    let expText = '';
+    if (expAt >= 0) {
+      const expDigits = t.slice(expAt + 1).filter(x => x.k === 'dig');
+      let e = 0;
+      if (n !== 0) {
+        e = Math.floor(Math.log10(n));
+        const k = intToks.length || 1;
+        if (k > 1 && intToks.some(i => t[i].v === '#')) e = Math.floor(e / k) * k;
+        else e -= k - 1;
+        n /= Math.pow(10, e);
+        if (roundShown(n, decToks.length) >= Math.pow(10, k > 1 && intToks.some(i => t[i].v === '#') ? k : k)) { n /= 10; e += 1; }
+      }
+      const ed = String(Math.abs(e)).padStart(expDigits.filter(x => x.v === '0').length || 1, '0');
+      expText = 'E' + (e < 0 ? '-' : t[expAt].sign === '+' ? '+' : '') + ed;
+    }
+    const r = roundShown(n, decToks.length);
+    const whole = Math.floor(r + 1e-9 * Math.max(1, r) * 0) ;
+    let fracDigits = decToks.length ? r.toFixed(decToks.length).split('.')[1] || '' : '';
+    let intDigits = digitsOf(r + (decToks.length ? 0 : 0));
+    if (decToks.length && r.toFixed(decToks.length).split('.')[0] !== intDigits) intDigits = r.toFixed(decToks.length).split('.')[0];
+    if (intDigits === '0') intDigits = '';
+    void whole;
+    // Integer positions, right to left: each placeholder takes one digit, the first takes the rest.
+    const ints = intToks.length ? intToks : [];
+    const cells = new Map();
+    const k = ints.length;
+    const ds = intDigits.split('');
+    ints.forEach((ti, j) => {
+      const fromRight = k - 1 - j;
+      const have = fromRight < ds.length;
+      let items = [];
+      if (j === 0 && ds.length > k) items = ds.slice(0, ds.length - k).map(c => ({ ch: c, real: true }));
+      if (have) items.push({ ch: ds[ds.length - 1 - fromRight], real: true });
+      else { const p = t[ti].v; items.push(p === '0' ? { ch: '0', real: true } : p === '?' ? { ch: ' ', real: false, space: true } : { ch: '', real: false }); }
+      cells.set(ti, items);
+    });
+    if (group) {
+      const all = ints.flatMap(ti => cells.get(ti));
+      for (let p = all.length - 3; p > 0; p -= 3) {
+        const left = all[p - 1];
+        all[p - 1] = { ...left, ch: left.ch + (left.real ? ',' : left.space ? ' ' : '') };
+      }
+      // Put the grouped positions back into their placeholders.
+      let at = 0;
+      ints.forEach(ti => { const len = cells.get(ti).length; cells.set(ti, all.slice(at, at + len)); at += len; });
+    }
+    // Decimals: trailing zeros in # and ? places are dropped (? leaves a space).
+    const dec = decToks.map((ti, j) => ({ ti, d: fracDigits[j] || '0' }));
+    for (let j = dec.length - 1; j >= 0; j--) {
+      const p = t[dec[j].ti].v;
+      if (dec[j].d !== '0' || p === '0') break;
+      dec[j].d = p === '?' ? ' ' : '';
+    }
+    const decMap = new Map(dec.map(x => [x.ti, x.d]));
+    let out = '';
+    let placedInt = intToks.length > 0;
+    t.forEach((x, i) => {
+      if (i >= end && i !== expAt) {
+        if (x.k === 'dig') {
+          // Exponent digits were written with the E.
+          return;
+        }
+      }
+      if (x.k === 'dig') {
+        if (cells.has(i)) out += cells.get(i).map(c => c.ch).join('');
+        else if (decMap.has(i)) out += decMap.get(i);
+        return;
+      }
+      if (x.k === 'dot' && i < end) {
+        if (!placedInt) { out += intDigits; placedInt = true; }
+        out += '.'; return;
+      }
+      if (i === expAt) { out += expText; return; }
+      if (x.k === 'comma') { if (role.get(i) === 'lit' || i >= end) out += ','; return; }
+      if (x.k === 'pct') { out += '%'; return; }
+      if (x.k === 'lit') { out += x.v; return; }
+      if (x.k === 'text') { out += generalText(n); return; }
+      if (x.k === 'slash') out += '/';
+    });
+    if (!placedInt && intDigits) out = intDigits + out;
+    return out;
+  }
+
+  function formatFraction(n, t) {
+    const slash = t.findIndex(x => x.k === 'slash');
+    let ne = slash - 1; while (ne >= 0 && t[ne].k !== 'dig') ne--;
+    let ns = ne; while (ns > 0 && t[ns - 1].k === 'dig') ns--;
+    let ds = slash + 1; while (ds < t.length && t[ds].k !== 'dig' && !(t[ds].k === 'lit' && /^\d+$/.test(t[ds].v))) ds++;
+    let de = ds; while (de + 1 < t.length && t[de + 1].k === 'dig') de++;
+    const numToks = ne >= 0 ? t.slice(ns, ne + 1).map(x => x.v) : [];
+    const intIdx = [];
+    for (let i = 0; i < ns; i++) if (t[i].k === 'dig') intIdx.push(i);
+    // A fixed denominator ("# ?/8") is written as digits.
+    let fixed = null, denToks = [];
+    if (t[ds] && t[ds].k === 'lit') { let s = ''; let j = ds; while (t[j] && ((t[j].k === 'lit' && /^\d+$/.test(t[j].v)) || (t[j].k === 'dig' && t[j].v === '0'))) { s += t[j].k === 'lit' ? t[j].v : '0'; j++; } fixed = +s; de = j - 1; }
+    else denToks = t.slice(ds, de + 1).filter(x => x.k === 'dig').map(x => x.v);
+    const hasInt = intIdx.length > 0;
+    let whole = hasInt ? Math.floor(n) : 0;
+    const frac = n - whole;
+    let num, den;
+    if (fixed) { den = fixed; num = Math.round(frac * den); }
+    else {
+      const max = Math.pow(10, denToks.length || 1) - 1;
+      let best = [Math.round(frac), 1], err = Math.abs(frac - best[0]);
+      for (let d = 1; d <= max && err > 1e-12; d++) { const nn = Math.round(frac * d), e2 = Math.abs(frac - nn / d); if (e2 < err - 1e-12) { err = e2; best = [nn, d]; } }
+      [num, den] = best;
+    }
+    if (hasInt && num === den && den) { whole += 1; num = 0; }
+    const fill = (toks, digits, right) => {
+      // Placeholders for a number: right-aligned (integer, numerator) or left-aligned (denominator).
+      const s = String(digits);
+      if (s.length >= toks.length) return s;
+      const pad = toks.slice(0, toks.length - s.length);
+      const padText = pad.map(p => (p === '0' ? '0' : p === '?' ? ' ' : '')).join('');
+      if (right) return padText + s;
+      if (toks.includes('0')) return s.padStart(toks.length, '0');
+      return s + toks.slice(s.length).map(p => (p === '?' ? ' ' : p === '0' ? '0' : '')).join('');
+    };
+    const numHasZero = numToks.includes('0');
+    const hideFrac = num === 0 && !numHasZero && hasInt;
+    const hideInt = hasInt && whole === 0 && !intIdx.some(i => t[i].v === '0') && !hideFrac;
+    const qmark = numToks.includes('?') || denToks.includes('?');
+    let out = '';
+    // The integer part, with its literals filled from the right.
+    if (hasInt) {
+      const ints = intIdx.map(i => t[i].v);
+      const ds2 = whole === 0 ? (hideInt ? [] : ['0']) : String(whole).split('');
+      const k = ints.length;
+      const parts = new Map();
+      intIdx.forEach((ti, j) => {
+        const fromRight = k - 1 - j;
+        let s = '';
+        if (j === 0 && ds2.length > k) s = ds2.slice(0, ds2.length - k).join('');
+        if (fromRight < ds2.length) s += ds2[ds2.length - 1 - fromRight];
+        else s += ints[j] === '0' ? '0' : ints[j] === '?' ? ' ' : '';
+        parts.set(ti, s);
+      });
+      for (let i = 0; i < ns; i++) {
+        if (parts.has(i)) out += parts.get(i);
+        else if (t[i].k === 'lit') {
+          const between = i > intIdx[0] || false;
+          const afterInt = i > intIdx[intIdx.length - 1];
+          if (afterInt && hideInt) out += numToks.includes('?') || intIdx.some(j => t[j].v === '?') ? ' '.repeat(t[i].v.length) : '';
+          else out += t[i].v;
+          void between;
+        }
+      }
+    } else for (let i = 0; i < ns; i++) if (t[i].k === 'lit') out += t[i].v;
+    // The fraction (numerator, what is around the slash, denominator), or as many spaces.
+    let fracText = '';
+    if (ne >= 0) {
+      fracText += fill(numToks, num, true);
+      for (let i = ne + 1; i < (fixed ? ds : ds); i++) fracText += t[i].k === 'slash' ? '/' : t[i].k === 'lit' ? t[i].v : '';
+      fracText += fixed ? String(fixed) : fill(denToks, den, false);
+    }
+    if (hideFrac) {
+      // Nothing to show after the whole number: spaces if the denominator holds its place.
+      let around = '';
+      for (let i = hasInt ? intIdx[intIdx.length - 1] + 1 : 0; i < ns; i++) if (t[i].k === 'lit') around += t[i].v;
+      if (qmark) { out = out.slice(0, out.length - around.length) + ' '.repeat(around.length + fracText.length); }
+      else out = out.slice(0, out.length - around.length);
+      if (!hasInt) out += '0';
+    } else out += fracText;
+    for (let i = de + 1; i < t.length; i++) out += t[i].k === 'lit' ? t[i].v : t[i].k === 'pct' ? '%' : '';
+    return out;
+  }
+
+  function formatDate(serial, s) {
+    if (serial < 0 || !isFinite(serial)) return '#'.repeat(10);
+    const p = s.frac || 0;
+    // Rounded to what is shown: whole seconds, or the fractions of a second the format has.
+    const unit = Math.pow(10, p);
+    let total = Math.round(serial * 86400 * unit) / unit;
+    const day = Math.floor(total / 86400);
+    let secs = total - day * 86400;
+    const d = serialToDate(day);
+    const Y = d.getUTCFullYear(), M = d.getUTCMonth(), D = d.getUTCDate(), dow = d.getUTCDay();
+    const h = Math.floor(secs / 3600), mi = Math.floor((secs % 3600) / 60), sWhole = Math.floor(secs % 60);
+    const fracS = secs - Math.floor(secs);
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const ampm = /AM\/PM/i.test(f);
+    const ampm = s.toks.some(t => t.k === 'ampm');
     const p2 = x => String(x).padStart(2, '0');
-    return f.replace(/"([^"]*)"|yyyy|yy|mmmm|mmm|mm|m|dddd|ddd|dd|d|hh|h|ss|s|AM\/PM/gi, (tok, lit, off, str) => {
-      if (lit !== undefined) return lit;
-      const t = tok.toLowerCase();
-      // "m" after h or before s means minutes.
-      const isMinute = (t === 'mm' || t === 'm') && (/h[^ymd]*$/i.test(str.slice(0, off)) || /^[^ymd]*s/i.test(str.slice(off + tok.length)));
-      if (isMinute) return t === 'mm' ? p2(mi) : String(mi);
-      switch (t) {
-        case 'yyyy': return String(Y);
-        case 'yy': return p2(Y % 100);
-        case 'mmmm': return months[M];
-        case 'mmm': return months[M].slice(0, 3);
-        case 'mm': return p2(M + 1);
-        case 'm': return String(M + 1);
-        case 'dddd': return days[d.getUTCDay()];
-        case 'ddd': return days[d.getUTCDay()].slice(0, 3);
-        case 'dd': return p2(D);
-        case 'd': return String(D);
-        case 'hh': return p2(ampm ? ((h + 11) % 12) + 1 : h);
-        case 'h': return String(ampm ? ((h + 11) % 12) + 1 : h);
-        case 'ss': return p2(s);
-        case 's': return String(s);
-        case 'am/pm': return h < 12 ? 'AM' : 'PM';
-        default: return tok;
+    let out = '';
+    for (const t of s.toks) {
+      if (t.k === 'lit') { out += t.v; continue; }
+      if (t.k === 'frac') { out += '.' + fracS.toFixed(t.n).slice(2); continue; }
+      if (t.k === 'ampm') {
+        const pm = h >= 12;
+        if (t.v.length > 3) out += pm ? 'PM' : 'AM';
+        else { const c = pm ? t.v[2] : t.v[0]; out += c; }
+        continue;
       }
-    });
+      if (t.k === 'dig') { out += t.v === '0' ? '0' : ''; continue; }
+      if (t.k === 'dot') { out += '.'; continue; }
+      if (t.k === 'comma') { out += ','; continue; }
+      if (t.k === 'slash') { out += '/'; continue; }
+      if (t.k === 'pct') { out += '%'; continue; }
+      if (t.k !== 'date') continue;
+      const v = t.v, c = v[0], len = v.length;
+      if (t.elapsed) {
+        const tot = c === 'h' ? Math.floor(total / 3600) : c === 'm' ? Math.floor(total / 60) : Math.floor(total);
+        out += String(tot).padStart(len, '0');
+        continue;
+      }
+      if (c === 'y') out += len <= 2 ? p2(Y % 100) : String(Y);
+      else if (c === 'm' && t.minute) out += len === 1 ? String(mi) : p2(mi);
+      else if (c === 'm') out += len === 1 ? String(M + 1) : len === 2 ? p2(M + 1) : len === 3 ? months[M].slice(0, 3) : len === 5 ? months[M][0] : months[M];
+      else if (c === 'd') out += len === 1 ? String(D) : len === 2 ? p2(D) : len === 3 ? days[dow].slice(0, 3) : days[dow];
+      else if (c === 'h') { const hh = ampm ? ((h + 11) % 12) + 1 : h; out += len === 1 ? String(hh) : p2(hh); }
+      else if (c === 's') out += len === 1 ? String(sWhole) : p2(sWhole);
+    }
+    return out;
   }
 
   // ---------- Workbook evaluator ----------
@@ -1466,7 +1871,12 @@
       }
       this.stack.add(key);
       let v;
-      try { v = this.compute(sheet, raw, { row, col, spill: true }); } finally { this.stack.delete(key); }
+      const wasLegacy = this.legacy;
+      this.legacy = !!(this.book.isLegacy && this.book.isLegacy(sheet, row, col));
+      try { v = this.compute(sheet, raw, { row, col, spill: true }); } finally { this.stack.delete(key); this.legacy = wasLegacy; }
+      // A formula from before dynamic arrays (an older Excel) takes the one value in its own row
+      // or column, as Excel's implicit intersection does, instead of spilling.
+      if (v instanceof Range && this.book.isLegacy && this.book.isLegacy(sheet, row, col)) v = intersect(v, row, col);
       if (v instanceof Range) v = this.spill(sheet, row, col, v);
       this.cache.set(key, v);
       return v;
@@ -1499,6 +1909,15 @@
         }
       }
     }
+    /** The sheets from a to b, as they are ordered in the workbook (a 3D reference). */
+    sheetSpan(a, b) {
+      const names = this.book.sheetNames ? this.book.sheetNames() : [];
+      const lower = names.map(x => x.toLowerCase());
+      let i = lower.indexOf(String(a).toLowerCase()), j = lower.indexOf(String(b).toLowerCase());
+      if (i < 0 || j < 0) throw ERR.REF;
+      if (i > j) [i, j] = [j, i];
+      return names.slice(i, j + 1);
+    }
     /** Cells a formula cell refers to directly (only non-empty formula cells matter for depth). */
     precedents(sheet, row, col) {
       const raw = this.book.getRaw(sheet, row, col);
@@ -1508,6 +1927,12 @@
       const out = [];
       const visit = n => {
         if (!n || typeof n !== 'object') return;
+        if (n.k === 'ref3d') {
+          let span = [];
+          try { span = this.sheetSpan(n.s1, n.s2); } catch { return; }
+          for (const s of span) visit({ k: 'range', sheet: s, r1: n.r1, c1: n.c1, r2: n.r2, c2: n.c2 });
+          return;
+        }
         if (n.k === 'ref' || n.k === 'range' || n.k === 'spill') {
           let s;
           try { s = this.resolveSheet(n.sheet, sheet); } catch { return; }
@@ -1602,6 +2027,18 @@
           const v = this.value(s, n.row, n.col);
           return v;
         }
+        case 'err': throw Object.values(ERR).find(e => e.error === n.v) || ERR.ERROR;
+        case 'ref3d': {
+          const rows = [];
+          for (const s of this.sheetSpan(n.s1, n.s2)) {
+            for (let r = n.r1; r <= n.r2; r++) {
+              const row = [];
+              for (let c = n.c1; c <= n.c2; c++) row.push(this.value(s, r, c));
+              rows.push(row);
+            }
+          }
+          return new Range(rows);
+        }
         case 'range': {
           const s = this.resolveSheet(n.sheet, sheet);
           const rows = [];
@@ -1610,7 +2047,9 @@
             for (let c = n.c1; c <= n.c2; c++) row.push(this.value(s, r, c));
             rows.push(row);
           }
-          return new Range(rows);
+          const out = new Range(rows);
+          out.at = { r1: n.r1, c1: n.c1 };
+          return out;
         }
         case 'neg': {
           const x = this.evalNode(n.e, sheet);
@@ -1622,14 +2061,27 @@
           if (isMulti(x)) return broadcast([x], ([v]) => toNum(v) / 100);
           return toNum(x) / 100;
         }
-        case 'bin': return this.binary(n.op, this.evalNode(n.l, sheet), this.evalNode(n.r, sheet));
+        case 'bin': {
+          let l = this.evalNode(n.l, sheet), r = this.evalNode(n.r, sheet);
+          if (this.legacy && this.cur) { if (l instanceof Range) l = intersect(l, this.cur.row, this.cur.col); if (r instanceof Range) r = intersect(r, this.cur.row, this.cur.col); }
+          return this.binary(n.op, l, r);
+        }
         case 'fn': {
-          if (LAZY[n.name]) return LAZY[n.name](n.args, a => this.evalNode(a, sheet), { engine: this, sheet });
+          if (LAZY[n.name]) {
+            const legacyArg = this.legacy && this.cur && LEGACY_LAZY.has(n.name);
+            return LAZY[n.name](n.args, a => { const v = this.evalNode(a, sheet); return legacyArg && v instanceof Range ? intersect(v, this.cur.row, this.cur.col) : v; }, { engine: this, sheet });
+          }
           const fn = FN[n.name];
           if (!fn) throw ERR.NAME;
-          const args = n.args.map(a => this.evalNode(a, sheet));
-          // Errors in direct (non-range) arguments propagate.
-          for (const a of args) if (isErr(a)) throw a;
+          let args = n.args.map(a => {
+            const v = this.evalNode(a, sheet);
+            return a.k === 'ref' && REF_AS_RANGE.has(n.name) ? new Range([[v]]) : v;
+          });
+          // A formula from an older Excel gives a scalar function the one value of a range in its own
+          // row or column (implicit intersection).
+          if (this.legacy && this.cur && (LIFT.has(n.name) || n.name === 'CONCATENATE')) args = args.map(v => (v instanceof Range ? intersect(v, this.cur.row, this.cur.col) : v));
+          // Errors in direct (non-range) arguments propagate (except to the functions that test for them).
+          if (!TESTS_ERRORS.has(n.name)) for (const a of args) if (isErr(a)) throw a;
           // A function of single values given arrays works element by element (and spills).
           if (LIFT.has(n.name) && args.some(isMulti)) return broadcast(args, xs => { for (const x of xs) if (isErr(x)) throw x; return fn(xs); });
           const v = fn(args);
@@ -1689,6 +2141,7 @@
   function parseLiteral(raw) {
     const s = raw.trim();
     if (s === '') return '';
+    if (s[0] === '#') { const e = Object.values(ERR).find(x => x.error === s.toUpperCase()); if (e && e !== ERR.ERROR && e !== ERR.CIRC) return e; }
     if (/^[-+]?(\d+\.?\d*|\.\d+)([eE][-+]?\d+)?$/.test(s)) return parseFloat(s);
     if (/^[-+]?\$?\d{1,3}(,\d{3})+(\.\d+)?$/.test(s) || /^[-+]?\$\d+(\.\d+)?$/.test(s)) return parseFloat(s.replace(/[$,]/g, ''));
     if (/^[-+]?(\d+\.?\d*|\.\d+)%$/.test(s)) return parseFloat(s) / 100;
@@ -1781,7 +2234,7 @@
     });
   }
 
-  const api = { Engine, FormulaError, ERR, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, parseStructured, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
+  const api = { Engine, FormulaError, ERR, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, generalText, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, parseStructured, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Formula = api;
 })(typeof window !== 'undefined' ? window : globalThis);

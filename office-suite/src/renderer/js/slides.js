@@ -1793,7 +1793,37 @@
       xml = xml.includes('</p:clrMapOvr>') ? xml.replace('</p:clrMapOvr>', '</p:clrMapOvr>' + extra) : xml.replace('</p:cSld>', '</p:cSld>' + extra);
       zip.file(path, xml);
     }
+    await shareMedia(zip);
     return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
+  }
+  /**
+   * PptxGenJS writes a picture again for every slide that shows it: keep one copy of each and point
+   * every slide at it (a logo on 28 slides is stored once, as PowerPoint does).
+   */
+  async function shareMedia(zip) {
+    const media = Object.keys(zip.files).filter(n => /^ppt\/media\/[^/]+$/.test(n));
+    if (media.length < 2) return;
+    const seen = new Map(), same = new Map();
+    for (const name of media) {
+      const bytes = await zip.file(name).async('uint8array');
+      // FNV-1a over the bytes, then a full comparison with the copy kept under that hash.
+      let h = 2166136261;
+      for (let i = 0; i < bytes.length; i++) h = Math.imul(h ^ bytes[i], 16777619);
+      const key = name.split('.').pop().toLowerCase() + ':' + bytes.length + ':' + (h >>> 0);
+      const first = seen.get(key);
+      if (first && first.bytes.length === bytes.length && first.bytes.every((b, i) => b === bytes[i])) same.set(name.slice('ppt/media/'.length), first.name.slice('ppt/media/'.length));
+      else if (!first) seen.set(key, { name, bytes });
+    }
+    if (!same.size) return;
+    for (const rel of Object.keys(zip.files).filter(n => n.endsWith('.rels'))) {
+      const xml = await zip.file(rel).async('string');
+      const out = xml.replace(/Target="([^"]*\/media\/)([^"/]+)"/g, (m, dir, file) => (same.has(file) ? `Target="${dir}${same.get(file)}"` : m));
+      if (out !== xml) zip.file(rel, out);
+    }
+    for (const file of same.keys()) zip.remove('ppt/media/' + file);
+    const ct = await zip.file('[Content_Types].xml').async('string');
+    const ct2 = ct.replace(/<Override PartName="\/ppt\/media\/([^"]+)"[^>]*\/>/g, (m, file) => (same.has(file) ? '' : m));
+    if (ct2 !== ct) zip.file('[Content_Types].xml', ct2);
   }
 
   /** A group's children with slide coordinates (turned with the group), for formats without groups. */

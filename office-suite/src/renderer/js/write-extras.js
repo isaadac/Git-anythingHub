@@ -264,10 +264,19 @@
       }
       return '';
     }
-    /** Brings every field in the document up to date (on opening, saving, printing and F9). */
-    function updateFields() {
+    /**
+     * Brings fields up to date. As in Word, page numbers, the date and the time follow by
+     * themselves (opening, layout, saving, printing); the others (author, file name, a document's
+     * creation date…) keep what they show until F9 (all = true).
+     */
+    function updateFields(all) {
       doc.querySelectorAll('span.fld').forEach(f => {
         if (!FIELDS[f.dataset.fld]) return;
+        const instr = (f.dataset.instr || '').trim().toUpperCase();
+        // A creation, save or print date isn't today's date: Isadek Write keeps Word's.
+        if (/^(CREATEDATE|SAVEDATE|PRINTDATE)\b/.test(instr)) return;
+        const auto = ['page', 'numpages', 'date', 'time'].includes(f.dataset.fld);
+        if (!all && !auto && f.textContent.trim()) return;
         const t = fieldText(f.dataset.fld, f) || ' ';
         if (f.textContent !== t) f.textContent = t;
         f.contentEditable = 'false';
@@ -388,7 +397,7 @@
       });
       body.querySelectorAll('span.fld').forEach(f => {
         if (!FIELDS[f.dataset.fld]) return;
-        st.fields.push({ kind: f.dataset.fld, text: f.textContent });
+        st.fields.push({ kind: f.dataset.fld, instr: f.dataset.instr || FIELDS[f.dataset.fld].instr, text: f.textContent });
         f.replaceWith(document.createTextNode(MK.fS + (st.fields.length - 1) + MK.fE));
       });
       st.wraps = [...body.querySelectorAll('img')].map(wrapOf);
@@ -416,7 +425,7 @@
               out += e && e.block ? `<m:oMathPara>${math}</m:oMathPara>` : math;
             } else {
               const fd = st.fields[+fl];
-              if (fd) out += `<w:fldSimple w:instr="${xmlEsc(FIELDS[fd.kind].instr)}"><w:r>${rPr}<w:t xml:space="preserve">${xmlEsc(fd.text)}</w:t></w:r></w:fldSimple>`;
+              if (fd) out += `<w:fldSimple w:instr="${xmlEsc(' ' + fd.instr.trim() + ' ')}"><w:r>${rPr}<w:t xml:space="preserve">${xmlEsc(fd.text)}</w:t></w:r></w:fldSimple>`;
             }
             return m;
           });
@@ -451,7 +460,7 @@
     async function preprocessDocx(bytes) {
       const zip = await JSZip.loadAsync(bytes);
       const f = zip.file('word/document.xml');
-      const meta = { eqs: [], wraps: null, first: null, styles: {} };
+      const meta = { eqs: [], fields: [], wraps: null, first: null, styles: {} };
       if (!f) return { bytes, meta };
       let xml = await f.async('string');
       const mark = s => `<w:r><w:t xml:space="preserve">${s}</w:t></w:r>`;
@@ -472,15 +481,22 @@
       xml = xml.replace(/<m:oMathPara\b[\s\S]*?<\/m:oMathPara>/g, takeMath(true));
       xml = xml.replace(/<m:oMath\b[\s\S]*?<\/m:oMath>/g, takeMath(false));
       // Fields Isadek Write keeps live; the others (TOC, links…) are left alone.
-      xml = xml.replace(/<w:fldSimple\b[^>]*w:instr="([^"]*)"[^>]*(?:\/>|>[\s\S]*?<\/w:fldSimple>)/g, (all, instr) => {
-        const k = FIELD_OF_INSTR(instr.replace(/&quot;/g, '"'));
-        return k ? mark(MK.fS + k + MK.fE) : all;
-      });
+      // A field keeps what Word last showed in it (its result) and its instruction, so it reads
+      // the same as in Word and is saved back as it was.
+      const unXml = t => t.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+      const resultOf = x => [...x.matchAll(/<w:t(?:\s[^>]*)?>([^<]*)<\/w:t>/g)].map(m => unXml(m[1])).join('');
+      const field = (instr, result) => {
+        const k = FIELD_OF_INSTR(instr);
+        if (!k) return null;
+        meta.fields.push({ kind: k, instr: instr.trim(), text: result });
+        return mark(MK.fS + (meta.fields.length - 1) + MK.fE);
+      };
+      xml = xml.replace(/<w:fldSimple\b[^>]*w:instr="([^"]*)"[^>]*(?:\/>|>([\s\S]*?)<\/w:fldSimple>)/g, (all, instr, inner) => field(unXml(instr), resultOf(inner || '')) || all);
       xml = xml.replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:fldChar w:fldCharType="begin"[^>]*\/>[\s\S]*?<w:fldChar w:fldCharType="end"[^>]*\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, all => {
         if ((all.match(/fldCharType="begin"/g) || []).length > 1) return all;
-        const instr = [...all.matchAll(/<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g)].map(m => m[1]).join('');
-        const k = FIELD_OF_INSTR(instr);
-        return k ? mark(MK.fS + k + MK.fE) : all;
+        const instr = unXml([...all.matchAll(/<w:instrText\b[^>]*>([^<]*)<\/w:instrText>/g)].map(m => m[1]).join(''));
+        const sep = all.search(/<w:fldChar w:fldCharType="separate"/);
+        return field(instr, sep >= 0 ? resultOf(all.slice(sep)) : '') || all;
       });
       // Section breaks: a paragraph that ends a section carries that section's properties; the
       // break we put after it gets the properties of the section that follows.
@@ -581,8 +597,11 @@
           } else if (fld !== undefined) {
             const s = d.createElement('span');
             s.className = 'fld';
-            s.dataset.fld = fld;
-            s.textContent = ' ';
+            const fd = /^\d+$/.test(fld) ? (meta.fields || [])[+fld] : { kind: fld, text: '' };
+            if (!fd) return m;
+            s.dataset.fld = fd.kind;
+            if (fd.instr && fd.instr !== FIELDS[fd.kind].instr.trim()) s.dataset.instr = fd.instr.slice(0, 500);
+            s.textContent = fd.text || ' ';
             frag.appendChild(s);
           } else section = { orient, cols };
           return m;
