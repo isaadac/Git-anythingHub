@@ -8,6 +8,7 @@ const settings = require('./settings');
 const updater = require('./updater');
 const recovery = require('./recovery');
 const cloud = require('./cloud');
+require('./assistant');
 const os = require('os');
 const { createCollabServer } = require('./collab-server');
 

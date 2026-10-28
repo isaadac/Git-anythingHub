@@ -1361,5 +1361,59 @@ ${rules}</style></head>
   document.addEventListener('selectionchange', () => live.moved());
   doc.addEventListener('input', () => setTimeout(drawLivePeers, 0));
 
+  // ---------- Assistant ----------
+  function aiContext() {
+    const r = savedRange && doc.contains(savedRange.commonAncestorContainer) ? savedRange.cloneRange() : null;
+    const selection = r && !r.collapsed ? r.toString() : '';
+    return { document: htmlToMarkdown(doc.cloneNode(true)), selection, hasSelection: !!selection.trim(), range: r };
+  }
+  /** Puts a reply (Markdown) into the document at the range, or in place of it. */
+  function aiInsert(text, ctx, replace) {
+    let r = ctx && ctx.range && doc.contains(ctx.range.startContainer) ? ctx.range.cloneRange() : null;
+    if (!r) { r = document.createRange(); r.selectNodeContents(doc); r.collapse(false); }
+    if (!replace) r.collapse(false);
+    const t = document.createElement('template');
+    t.innerHTML = sanitize(markdownToHtml(text.trim()));
+    const kids = [...t.content.children];
+    doc.focus();
+    const sel = getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    if (kids.length === 1 && kids[0].tagName === 'P') {
+      Platform.insertInline(kids[0].innerHTML);
+    } else {
+      // Several paragraphs, a list or a table go after the paragraph the cursor is in.
+      if (replace) r.deleteContents();
+      const block = topBlock(r.endContainer) || doc.lastElementChild;
+      const frag = t.content;
+      const last = frag.lastChild;
+      if (block) block.after(frag); else doc.appendChild(frag);
+      if (block && !block.textContent.trim() && !block.querySelector('img,table,hr')) block.remove();
+      const after = document.createRange();
+      after.setStartAfter(last); after.collapse(true);
+      sel.removeAllRanges(); sel.addRange(after);
+      changed();
+    }
+    UI.toast(replace ? 'Replaced' : 'Inserted');
+  }
+  Assistant.attach({
+    app: 'write',
+    context: aiContext,
+    format: 'In Atlas Write you may use Markdown (# headings, **bold**, *italic*, - and 1. lists, tables); it becomes formatting when inserted.',
+    actions: [
+      { label: 'Summarize', prompt: 'Summarize this document in a short paragraph followed by its key points as a bulleted list.' },
+      { label: 'Improve writing', prompt: 'Rewrite the selected text so it reads more clearly and naturally. Keep its meaning, tone and language.', selection: true },
+      { label: 'Fix spelling & grammar', prompt: 'Correct the spelling, grammar and punctuation of the selected text. Change nothing else.', selection: true },
+      { label: 'Make shorter', prompt: 'Rewrite the selected text to about half its length, keeping the essential points.', selection: true },
+      { label: 'Make more formal', prompt: 'Rewrite the selected text in a more formal, professional tone.', selection: true },
+      { label: 'Continue writing', prompt: 'Continue the document from where it ends with one or two paragraphs in the same style. Reply with only the new text.' },
+      { label: 'Suggest a title', prompt: 'Suggest a short, fitting title for this document. Reply with only the title.' }
+    ],
+    buttons: [
+      { label: 'Replace selection', selection: true, run: (text, ctx) => aiInsert(text, ctx, true) },
+      { label: 'Insert', run: text => aiInsert(text, aiContext(), false) }
+    ]
+  });
+
   window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; } };
 })();

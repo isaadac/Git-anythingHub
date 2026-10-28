@@ -3044,6 +3044,76 @@
     showPeers(list) { peers = list; drawPeers(); }
   });
 
+  // ---------- Assistant ----------
+  function rangeTsv(g, limit) {
+    const lines = [];
+    let n = 0;
+    for (let r = g.r1; r <= g.r2 && n < limit; r++) {
+      const row = [];
+      for (let c = g.c1; c <= g.c2; c++, n++) {
+        const raw = rawAt(r, c);
+        const shown = raw === '' ? '' : String(raw)[0] === '=' ? `${raw} → ${valueAt(r, c)}` : raw;
+        row.push(String(shown).replace(/[\t\n]/g, ' '));
+      }
+      lines.push(`${r + 1}\t${row.join('\t')}`);
+    }
+    const head = [];
+    for (let c = g.c1; c <= g.c2; c++) head.push(indexToCol(c));
+    return `\t${head.join('\t')}\n${lines.join('\n')}`;
+  }
+  function aiContext() {
+    commitEdit();
+    const u = usedBounds();
+    const all = { r1: 0, c1: 0, r2: u.r, c2: u.c };
+    const g = selRange();
+    const multi = g.r1 !== g.r2 || g.c1 !== g.c2;
+    return {
+      document: `Sheet "${sheet().name}" (other sheets: ${book.sheets.filter(x => x !== sheet()).map(x => x.name).join(', ') || 'none'}). ` +
+        `Cells are tab-separated with column letters across the top and row numbers down the side; formulas are shown as "=FORMULA → value".\n` + rangeTsv(all, 20000),
+      selection: `${rangeText(g)}${multi ? '\n' + rangeTsv(opRange(g), 5000) : ''}`,
+      extra: `The active cell is ${addr(active.r, active.c)}.`,
+      hasSelection: true
+    };
+  }
+  /** Writes a reply into the sheet from the active cell: one value or formula, or a table. */
+  function aiPut(text) {
+    let lines = text.trim().replace(/^```\w*\n?|\n?```$/g, '').split('\n').map(l => l.trimEnd()).filter(l => l.trim());
+    // A formula with an explanation after it: just the formula.
+    if (lines.length && lines[0][0] === '=') lines = [lines[0]];
+    let rows;
+    if (lines.length && lines.every(l => /^\s*\|/.test(l))) {
+      rows = lines.filter(l => !/^\s*\|?\s*:?-{3,}/.test(l)).map(l => l.replace(/^\s*\||\|\s*$/g, '').split('|').map(x => x.trim()));
+    } else if (lines.some(l => l.includes('\t'))) rows = lines.map(l => l.split('\t'));
+    else if (lines.length > 1 && lines.every(l => l.includes(',') && l[0] !== '=')) rows = lines.map(l => l.split(',').map(x => x.trim()));
+    else rows = lines.length === 1 ? [[lines[0]]] : lines.map(l => [l]);
+    if (!rows.length) return;
+    if (rows.length * Math.max(...rows.map(r => r.length)) > 100000) return UI.toast('That is too much to paste at once', 4000);
+    snapshot();
+    rows.forEach((row, i) => row.forEach((v, j) => {
+      const r = active.r + i, c = active.c + j;
+      setCell(r, c, { v: v.replace(/\*\*/g, '') });
+      autoFormat(r, c, v);
+      ensureSize(r, c);
+    }));
+    anchor = { r: active.r + rows.length - 1, c: active.c + Math.max(...rows.map(r => r.length)) - 1 };
+    changed();
+    drawSelection();
+    UI.toast(rows.length === 1 && rows[0].length === 1 ? 'Put in ' + addr(active.r, active.c) : 'Pasted into ' + rangeText(selRange()));
+  }
+  Assistant.attach({
+    app: 'sheets',
+    context: aiContext,
+    format: 'In Atlas Sheets, give a formula as one line starting with = using Excel syntax and A1 references (Atlas supports Excel\'s functions, including dynamic arrays such as FILTER, SORT, UNIQUE and XLOOKUP). Give a table as a Markdown table or tab-separated lines; it is pasted starting at the active cell.',
+    actions: [
+      { label: 'Write a formula', prompt: 'Write a formula for the active cell that does what the selection and nearby headers suggest. If it is unclear, give your best formula and explain it in one short sentence after a blank line.' },
+      { label: 'Explain this formula', prompt: 'Explain what the formula in the active cell does, step by step, in plain language.' },
+      { label: 'Analyze the selection', prompt: 'Analyze the selected data: give the main patterns, totals or averages that matter, outliers, and anything that looks wrong. Be brief.' },
+      { label: 'Find problems', prompt: 'Check this sheet for likely mistakes: broken or inconsistent formulas, hard-coded numbers that should be formulas, mismatched ranges, typos in labels. List each with its cell.' },
+      { label: 'Suggest a chart', prompt: 'Which chart would show the selected data best, and why? Answer in two sentences.' }
+    ],
+    buttons: [{ label: 'Put in sheet', run: text => aiPut(text) }]
+  });
+
   window.AtlasSheets = {
     loadFile, serialize, select, refreshPivots, get live() { return live; },
     get book() { return book; },

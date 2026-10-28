@@ -38,5 +38,11 @@ contextBridge.exposeInMainWorld('atlas', {
   collabHost: () => ipcRenderer.invoke('collab:host'),
   collabJoin: (appName, link) => ipcRenderer.invoke('collab:join', appName, link),
   collabPending: () => ipcRenderer.invoke('collab:pending'),
+  aiStatus: () => ipcRenderer.invoke('ai:status'),
+  aiSetKey: k => ipcRenderer.invoke('ai:set-key', k),
+  aiSetModel: m => ipcRenderer.invoke('ai:set-model', m),
+  aiAsk: req => ipcRenderer.invoke('ai:ask', req),
+  aiCancel: id => ipcRenderer.invoke('ai:cancel', id),
+  onAiDelta: cb => ipcRenderer.on('ai:delta', (_e, d) => cb(d)),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });

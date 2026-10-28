@@ -2426,5 +2426,77 @@
     showPeers(list) { livePeers = list; drawLivePeers(); }
   });
 
+  // ---------- Assistant ----------
+  const plain = html => { const d = document.createElement('div'); d.innerHTML = html || ''; d.querySelectorAll('li, p, div, br').forEach(n => n.before('\n')); return d.textContent.replace(/\n{2,}/g, '\n').trim(); };
+  function aiContext() {
+    commitEditingQuietly();
+    const out = pres.slides.map((s, i) => {
+      const texts = s.elements.filter(e => e.type === 'text' || e.type === 'shape').map(e => plain(e.html)).filter(Boolean);
+      return `Slide ${i + 1}${i === current ? ' (current)' : ''}:\n${texts.map(t => '  ' + t.replace(/\n/g, '\n  ')).join('\n')}${s.notes ? `\n  Notes: ${s.notes}` : ''}`;
+    }).join('\n\n');
+    const el = selectedId && elById(selectedId);
+    const selection = el && el.html ? plain(el.html) : '';
+    return { document: out, selection, hasSelection: !!selection, elId: el ? el.id : null, slideId: slide().id };
+  }
+  function toListHtml(lines) {
+    return '<ul>' + lines.map(l => `<li>${escapeHtml(l.replace(/^\s*(?:[-*•]|\d+[.)])\s+/, '').replace(/\*\*([^*]+)\*\*/g, '$1'))}</li>`).join('') + '</ul>';
+  }
+  /** Turns an outline (## Title, then bullet lines; "Notes:" lines become speaker notes) into new slides. */
+  function aiSlides(text) {
+    const sections = [];
+    for (const raw of text.split('\n')) {
+      const line = raw.trim();
+      if (!line || /^---+$/.test(line)) continue;
+      const h = /^(?:#{1,3}\s+|\*\*)?(?:slide\s*\d+\s*[:.\-–]\s*)?(.*?)(?:\*\*)?$/i.exec(line);
+      if (/^#{1,3}\s/.test(line) || /^(\*\*)?slide\s*\d+/i.test(line)) { sections.push({ title: h[1].replace(/^#+\s*/, ''), body: [], notes: [] }); continue; }
+      if (!sections.length) sections.push({ title: line.replace(/^\s*[-*•]\s+/, ''), body: [], notes: [] });
+      else if (/^notes?:/i.test(line)) sections[sections.length - 1].notes.push(line.replace(/^notes?:\s*/i, ''));
+      else sections[sections.length - 1].body.push(line);
+    }
+    if (!sections.length) return UI.toast('No slides found in the reply', 3000);
+    if (masterTarget) return UI.toast('Close Master View to add slides');
+    commitEditing();
+    snapshot();
+    for (const sec of sections.slice(0, 50)) {
+      const sl = newSlide(sec.body.length ? 'content' : 'title');
+      const title = sl.elements.find(e => e.ph === 'title');
+      const body = sl.elements.find(e => e.ph === 'body' || e.ph === 'subtitle');
+      if (title) title.html = escapeHtml(sec.title);
+      if (body && sec.body.length) body.html = body.ph === 'body' ? toListHtml(sec.body) : escapeHtml(sec.body.join(' '));
+      sl.notes = sec.notes.join('\n');
+      pres.slides.splice(++current, 0, sl);
+    }
+    selectedId = null;
+    renderAll();
+    state.markDirty();
+    UI.toast(`Added ${Math.min(sections.length, 50)} slide${sections.length === 1 ? '' : 's'}`);
+  }
+  Assistant.attach({
+    app: 'slides',
+    context: aiContext,
+    beforeAsk: () => commitEditingQuietly(),
+    format: 'In Atlas Slides, write slides as an outline: a "## " heading line with each slide\'s title, then its points as "- " lines (at most six short points), and optionally a "Notes:" line with speaker notes.',
+    actions: [
+      { label: 'Draft slides', prompt: 'Draft 5 to 8 slides on the topic I describe next, as an outline. Topic: ', fill: true },
+      { label: 'Speaker notes', prompt: 'Write speaker notes for the current slide: what to say, in 3 to 5 natural sentences. Reply with only the notes.' },
+      { label: 'Improve this text', prompt: 'Rewrite the selected text box for a slide: shorter, punchier, parallel bullet points. Keep it as bullet lines if it has several points.', selection: true },
+      { label: 'Summarize the deck', prompt: 'Summarize this presentation in three sentences, then suggest anything missing.' },
+      { label: 'Add a closing slide', prompt: 'Write one closing slide that sums up the presentation, as an outline.' }
+    ],
+    buttons: [
+      { label: 'Add as slides', run: text => aiSlides(text) },
+      { label: 'Add to notes', run: text => { snapshot(); const s = slide(); s.notes = (s.notes ? s.notes + '\n' : '') + text.trim(); renderStage(); state.markDirty(); UI.toast('Added to the speaker notes'); } },
+      { label: 'Replace text box', selection: true, run: (text, ctx) => {
+        const s = pres.slides.find(x => x.id === ctx.slideId) || slide();
+        const el = s.elements.find(e => e.id === ctx.elId);
+        if (!el) return UI.toast('The text box is gone');
+        snapshot();
+        const lines = text.trim().split('\n').filter(l => l.trim());
+        el.html = lines.length > 1 || /^\s*[-*•]/.test(lines[0] || '') ? toListHtml(lines) : escapeHtml(lines[0] || '');
+        renderAll(); state.markDirty(); UI.toast('Replaced');
+      } }
+    ]
+  });
+
   window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide, get live() { return live; } };
 })();
