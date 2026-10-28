@@ -2426,6 +2426,37 @@
     showPeers(list) { livePeers = list; drawLivePeers(); }
   });
 
+  // ---------- Proofing ----------
+  const proofing = Proofing.attach({
+    app: 'slides',
+    roots: () => {
+      commitEditing();
+      const out = [];
+      pres.slides.forEach((s, si) => {
+        s.elements.forEach(e => {
+          if (!e.html || !(e.type === 'text' || e.type === 'shape')) return;
+          const el = document.createElement('div');
+          el.innerHTML = Platform.sanitizeHtml(e.html);
+          out.push({
+            el,
+            commit: () => { snapshot(); e.html = el.innerHTML; renderAll(); state.markDirty(); },
+            focus: () => { if (current !== si || masterTarget) goTo(si); select(e.id); }
+          });
+        });
+        if (s.notes && /\p{L}{2}/u.test(s.notes)) {
+          const el = document.createElement('div');
+          el.textContent = s.notes;
+          out.push({ el, commit: () => { snapshot(); s.notes = el.textContent; renderStage(); state.markDirty(); }, focus: () => { if (current !== si) goTo(si); } });
+        }
+      });
+      return out;
+    },
+    lang: () => pres.lang || '',
+    setLang: code => { pres.lang = code || undefined; state.markDirty(); }
+  });
+  document.getElementById('proofEditor').addEventListener('click', () => proofing.open());
+  document.getElementById('proofLang').addEventListener('click', () => proofing.languageDialog());
+
   // ---------- Assistant ----------
   const plain = html => { const d = document.createElement('div'); d.innerHTML = html || ''; d.querySelectorAll('li, p, div, br').forEach(n => n.before('\n')); return d.textContent.replace(/\n{2,}/g, '\n').trim(); };
   function aiContext() {

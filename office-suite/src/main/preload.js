@@ -1,6 +1,6 @@
 'use strict';
 // Exposes a small, safe API to the renderer. The renderer never gets Node access.
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('atlas', {
   isDesktop: true,
@@ -44,5 +44,10 @@ contextBridge.exposeInMainWorld('atlas', {
   aiAsk: req => ipcRenderer.invoke('ai:ask', req),
   aiCancel: id => ipcRenderer.invoke('ai:cancel', id),
   onAiDelta: cb => ipcRenderer.on('ai:delta', (_e, d) => cb(d)),
+  spellCheck: words => (Array.isArray(words) ? words.slice(0, 50000).map(w => typeof w === 'string' && webFrame.isWordMisspelled(w)) : []),
+  spellSuggest: word => (typeof word === 'string' ? webFrame.getWordSuggestions(word).slice(0, 8) : []),
+  spellLanguages: () => ipcRenderer.invoke('spell:languages'),
+  spellSetLanguages: l => ipcRenderer.invoke('spell:set-languages', l),
+  spellAddWord: w => ipcRenderer.invoke('spell:add-word', w),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });

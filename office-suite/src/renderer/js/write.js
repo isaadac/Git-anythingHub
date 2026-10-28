@@ -17,7 +17,7 @@
   ];
   const OPEN_FILTERS = [{ name: 'Documents', extensions: ['docx', 'html', 'htm', 'md', 'txt'] }, ...FILTERS];
   const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14] }; // inches
-  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false, citeStyle: 'apa' };
+  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false, citeStyle: 'apa', lang: '' };
   const setup = { ...DEFAULT_SETUP };
   /** Page setup read from a file is untrusted: keep only values the ribbon itself can produce. */
   function validSetup(v) {
@@ -395,6 +395,9 @@
     document.getElementById('differentFirst').checked = !!setup.differentFirst;
     if (review.tracking !== !!setup.trackChanges) setTracking(setup.trackChanges);
     document.getElementById('citeStyle').value = setup.citeStyle;
+    // The proofing language: the browser's own spellchecker follows lang too.
+    if (setup.lang) { doc.lang = setup.lang; HF.forEach(h => { h.lang = setup.lang; }); } else { doc.removeAttribute('lang'); HF.forEach(h => h.removeAttribute('lang')); }
+    document.getElementById('stLang').textContent = Proofing.langName(setup.lang || navigator.language);
     layout.run();
     updateStatus();
   }
@@ -1360,6 +1363,17 @@ ${rules}</style></head>
   });
   document.addEventListener('selectionchange', () => live.moved());
   doc.addEventListener('input', () => setTimeout(drawLivePeers, 0));
+
+  // ---------- Proofing ----------
+  const proofing = Proofing.attach({
+    app: 'write',
+    roots: () => [{ el: doc, live: true }],
+    lang: () => setup.lang || '',
+    setLang: code => { setup.lang = code; applySetup(); state.markDirty(); }
+  });
+  document.getElementById('proofEditor').addEventListener('click', () => proofing.open());
+  document.getElementById('proofLang').addEventListener('click', () => proofing.languageDialog());
+  document.getElementById('stLang').addEventListener('click', () => proofing.languageDialog());
 
   // ---------- Assistant ----------
   function aiContext() {

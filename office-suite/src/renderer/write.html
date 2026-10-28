@@ -223,7 +223,9 @@
   <!-- REVIEW -->
   <div class="ribbon-panel" data-panel="review">
     <div class="group"><div class="controls">
-      <button class="btn big" id="spellToggle"><span class="ico">✓</span>Spelling</button>
+      <button class="btn big" id="proofEditor" title="Spelling &amp; Grammar (F7)"><span class="ico">ABC✓</span>Spelling &amp;<br>Grammar</button>
+      <button class="btn big" id="proofLang" title="Proofing language"><span class="ico">🌐</span>Language</button>
+      <button class="btn big" id="spellToggle" title="Show or hide red underlines"><span class="ico">✓</span>Underline<br>Mistakes</button>
       <button class="btn big" id="wordCount"><span class="ico">#</span>Word<br>Count</button>
     </div><div class="label">Proofing</div></div>
     <div class="group"><div class="controls">
@@ -313,7 +315,7 @@
 <div class="statusbar">
   <span id="stPages">Page 1 of 1</span>
   <span id="stWords">0 words</span>
-  <span id="stLang">English</span>
+  <button id="stLang" class="st-btn" title="Proofing language">English</button>
   <span class="spacer"></span>
   <button class="btn" id="zoomOut" style="color:#fff">−</button>
   <input type="range" id="zoom" min="50" max="200" value="100">
@@ -351,6 +353,7 @@
 <script src="js/cloud.js"></script>
 <script src="js/collab.js"></script>
 <script src="js/assistant.js"></script>
+<script src="js/proofing.js"></script>
 <script src="js/write-layout.js"></script>
 <script src="js/write-review.js"></script>
 <script src="js/write-notes.js"></script>

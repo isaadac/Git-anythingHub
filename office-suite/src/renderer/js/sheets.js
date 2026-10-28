@@ -3044,6 +3044,33 @@
     showPeers(list) { peers = list; drawPeers(); }
   });
 
+  // ---------- Proofing ----------
+  let proofLang = '';
+  const proofing = Proofing.attach({
+    app: 'sheets',
+    roots: () => {
+      commitEdit();
+      const out = [];
+      book.sheets.forEach((s, si) => {
+        for (const [ref, cell] of Object.entries(s.cells)) {
+          if (typeof cell.v !== 'string' || !cell.v.trim() || cell.v[0] === '=' || !/\p{L}{2}/u.test(cell.v)) continue;
+          const el = document.createElement('div');
+          el.textContent = cell.v;
+          out.push({
+            el,
+            commit: () => { snapshot(); setCell(parseRef(ref).row, parseRef(ref).col, { v: el.textContent }, s); changed(); },
+            focus: () => { if (book.active !== si) { book.active = si; buildGrid(); } const p = parseRef(ref); select(p.row, p.col); }
+          });
+        }
+      });
+      return out;
+    },
+    lang: () => proofLang,
+    setLang: code => { proofLang = code; }
+  });
+  document.getElementById('proofEditor').addEventListener('click', () => proofing.open());
+  document.getElementById('proofLang').addEventListener('click', () => proofing.languageDialog());
+
   // ---------- Assistant ----------
   function rangeTsv(g, limit) {
     const lines = [];

@@ -79,6 +79,19 @@ function createWindow(appName = 'home', filePath = null) {
     if (SAFE_EXTERNAL.test(url)) shell.openExternal(url);
   });
   win.webContents.on('will-attach-webview', e => e.preventDefault());
+  // Right-click in text: spelling suggestions, Add to Dictionary, and the usual editing commands.
+  win.webContents.on('context-menu', (_e, p) => {
+    if (!p.isEditable) return;
+    const wc = win.webContents;
+    const items = [];
+    if (p.misspelledWord) {
+      p.dictionarySuggestions.slice(0, 6).forEach(w => items.push({ label: w, click: () => wc.replaceMisspelling(w) }));
+      if (!p.dictionarySuggestions.length) items.push({ label: 'No suggestions', enabled: false });
+      items.push({ type: 'separator' }, { label: 'Add to Dictionary', click: () => wc.session.addWordToSpellCheckerDictionary(p.misspelledWord) }, { type: 'separator' });
+    }
+    items.push({ role: 'cut', enabled: p.editFlags.canCut }, { role: 'copy', enabled: p.editFlags.canCopy }, { role: 'paste', enabled: p.editFlags.canPaste }, { type: 'separator' }, { role: 'selectAll' });
+    Menu.buildFromTemplate(items).popup({ window: win });
+  });
 
   // Ask the renderer whether there are unsaved changes before closing.
   let allowClose = false;
@@ -228,6 +241,26 @@ ipcMain.handle('collab:join', (_e, appName, link) => {
   return true;
 });
 ipcMain.handle('collab:pending', e => { const l = pendingCollab.get(e.sender.id) || null; pendingCollab.delete(e.sender.id); return l; });
+// ---------- Proofing languages ----------
+function applySpellLanguages() {
+  const want = settings.get('spellLanguages');
+  if (process.platform === 'darwin' || !Array.isArray(want) || !want.length) return; // macOS picks the language itself
+  const avail = new Set(session.defaultSession.availableSpellCheckerLanguages);
+  const langs = want.filter(l => avail.has(l)).slice(0, 4);
+  if (langs.length) session.defaultSession.setSpellCheckerLanguages(langs);
+}
+app.whenReady().then(applySpellLanguages);
+ipcMain.handle('spell:languages', () => ({
+  available: process.platform === 'darwin' ? [] : session.defaultSession.availableSpellCheckerLanguages,
+  current: process.platform === 'darwin' ? [] : session.defaultSession.getSpellCheckerLanguages()
+}));
+ipcMain.handle('spell:set-languages', (_e, langs) => {
+  if (!Array.isArray(langs)) return false;
+  settings.set('spellLanguages', langs.filter(l => typeof l === 'string' && /^[a-zA-Z-]{2,12}$/.test(l)).slice(0, 4));
+  applySpellLanguages();
+  return true;
+});
+ipcMain.handle('spell:add-word', (_e, w) => typeof w === 'string' && w.length < 100 && session.defaultSession.addWordToSpellCheckerDictionary(w));
 ipcMain.handle('app:open-path', (_e, p) => {
   if (!isApproved(p)) return false;
   openPath(p);

@@ -31,6 +31,7 @@
   <button data-tab="animations">Animations</button>
   <button data-tab="arrange">Arrange</button>
   <button data-tab="show">Slide Show</button>
+  <button data-tab="review">Review</button>
   <button data-tab="viewtab">View</button>
   <button data-tab="master" class="contextual" hidden>Slide Master</button>
 </div>
@@ -135,6 +136,12 @@
     </div><div class="label">Master</div></div>
   </div>
 
+  <div class="ribbon-panel" data-panel="review">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="proofEditor" title="Spelling &amp; Grammar (F7)"><span class="ico">ABC✓</span>Spelling</button>
+      <button class="btn big" id="proofLang" title="Proofing language"><span class="ico">🌐</span>Language</button>
+    </div><div class="label">Proofing</div></div>
+  </div>
   <div class="ribbon-panel" data-panel="viewtab">
     <div class="group"><div class="controls">
       <button class="btn big" id="masterView" title="Edit the master and layouts: shapes, backgrounds and placeholders shared by slides"><span class="ico">▤</span>Slide<br>Master</button>
@@ -293,6 +300,7 @@
 <script src="js/cloud.js"></script>
 <script src="js/collab.js"></script>
 <script src="js/assistant.js"></script>
+<script src="js/proofing.js"></script>
 <script src="js/slides-anim.js"></script>
 <script src="js/slides.js"></script>
 </body>

@@ -77,6 +77,8 @@ input.ctl[type=color] { width: 30px; padding: 1px; }
 /* Status bar */
 .statusbar { height: 26px; flex: none; background: var(--accent); color: #fff; display: flex; align-items: center; gap: 16px; padding: 0 12px; font-size: 12px; }
 .statusbar .spacer { flex: 1; }
+.statusbar .st-btn { background: none; border: 0; color: inherit; font: inherit; cursor: pointer; padding: 2px 4px; border-radius: 3px; }
+.statusbar .st-btn:hover { background: rgba(255,255,255,.18); }
 .statusbar input[type=range] { width: 120px; accent-color: #fff; }
 
 /* Backstage (File tab) */
@@ -175,3 +177,20 @@ input.ctl[type=color] { width: 30px; padding: 1px; }
 .ai-input .send { background: var(--accent); color: #fff; border: 0; border-radius: 4px; padding: 6px 14px; cursor: pointer; }
 .ai-ctx { color: var(--muted); font-size: 12px; display: flex; gap: 6px; align-items: center; }
 body.ai-open .canvas, body.ai-open .grid-wrap, body.ai-open .stage-wrap { margin-right: min(380px, 100vw); }
+
+/* Spelling & grammar pane */
+.proof-body { flex: 1; overflow: auto; padding: 12px; }
+.proof-sum { color: var(--muted); font-size: 12px; margin-bottom: 10px; }
+.proof-card { border: 1px solid var(--border); border-left: 4px solid #d13438; border-radius: 6px; padding: 12px; display: grid; gap: 10px; }
+.proof-card.grammar { border-left-color: #0078d4; }
+.proof-card .kind { font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.proof-card .ctx { line-height: 1.5; background: #faf9f8; padding: 8px; border-radius: 4px; }
+.proof-card mark { background: #fde7e9; border-bottom: 2px solid #d13438; padding: 0 1px; }
+.proof-card.grammar mark { background: #deecf9; border-bottom-color: #0078d4; }
+.proof-card .sugg, .proof-card .acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.proof-card button { border: 1px solid var(--border); background: #fff; border-radius: 3px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.proof-card .sugg button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.proof-card .nav { display: flex; align-items: center; justify-content: space-between; color: var(--muted); font-size: 12px; }
+.proof-done { text-align: center; color: var(--muted); padding: 30px 10px; }
+.proof-done .big { font-size: 40px; color: #107c10; }
+.proof-done b { color: var(--text); }
