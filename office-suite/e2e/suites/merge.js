@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const JSZip = require('/home/user/Git-anythingHub/office-suite/node_modules/jszip');
+const JSZip = require('jszip');
 const SP = process.env.E2E_WORK;
 (async () => {
   const b = await chromium.launch(); const ctx = await b.newContext({ viewport: { width: 1400, height: 900 } }); const p = await ctx.newPage();

@@ -49,8 +49,8 @@ const BASE = process.env.E2E_BASE + '/src/renderer/';
   await go(BASE + 'sheets.html');
   const hostileBytes = await (async () => {
     // Built in Node: SheetJS can't write a sheet whose declared range is the whole grid.
-    const XLSX = require('/home/user/Git-anythingHub/office-suite/node_modules/xlsx');
-    const JSZip = require('/home/user/Git-anythingHub/office-suite/node_modules/jszip');
+    const XLSX = require('xlsx');
+    const JSZip = require('jszip');
     const wb = XLSX.utils.book_new();
     const ws = { A1: { t: 's', v: 'hello' }, B2: { t: 'n', v: 5 }, '!ref': 'A1:B2' };
     XLSX.utils.book_append_sheet(wb, ws, 'Data');

@@ -1,5 +1,5 @@
 const { chromium } = require('playwright');
-const JSZip = require('/home/user/Git-anythingHub/office-suite/node_modules/jszip');
+const JSZip = require('jszip');
 const fs = require('fs');
 const { execFileSync } = require('child_process');
 const SP = process.env.E2E_WORK;

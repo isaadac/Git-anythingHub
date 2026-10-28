@@ -53,6 +53,8 @@ function runSuite(file, base) {
   const chosen = words.length ? all.filter(f => words.some(w => f.includes(w))) : all;
   // Electron suites start the desktop app: one at a time. Browser suites run side by side.
   const isElectron = f => /_electron/.test(fs.readFileSync(path.join(SUITES, f), 'utf8'));
+  // Electron fetches its binary the first time it is asked for (a fresh npm ci doesn't).
+  if (chosen.some(isElectron)) require('electron');
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = `http://127.0.0.1:${server.address().port}`;
   const results = [];
