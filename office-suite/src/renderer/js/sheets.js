@@ -429,6 +429,7 @@
     style.color = st.color || '';
     style.backgroundColor = st.bg || '';
     style.textAlign = st.align || '';
+    style.verticalAlign = st.valign || '';
     style.fontFamily = st.font || '';
     style.fontSize = st.size ? st.size + 'pt' : '';
     const bd = st.border || {};
@@ -2514,6 +2515,7 @@
     const out = {};
     ['b', 'i', 'u', 'wrap', 'unlocked'].forEach(k => { if (st[k] === true) out[k] = true; });
     if (['left', 'center', 'right'].includes(st.align)) out.align = st.align;
+    if (['top', 'middle'].includes(st.valign)) out.valign = st.valign;
     if (Platform.isColor(st.color)) out.color = st.color;
     if (Platform.isColor(st.bg)) out.bg = st.bg;
     if (typeof st.font === 'string' && /^[\w .-]{1,64}$/.test(st.font)) out.font = st.font;
@@ -2577,6 +2579,8 @@
     let meta = null;
     try { meta = typeof wb.AtlasMeta === 'string' ? JSON.parse(wb.AtlasMeta) : null; } catch { meta = null; }
     const usedNames = new Set();
+    let excelStyles = [];
+    try { excelStyles = wb.Extras ? SheetsStyles.fromXml(wb.Extras.styles, wb.Extras.theme) : []; } catch (err) { console.info('Cell styles skipped:', err); }
     const sheets = wb.SheetNames.map((sn, si) => {
       const ws = wb.Sheets[si] || {};
       let name = cleanSheetName(sn) || 'Sheet' + (si + 1);
@@ -2635,6 +2639,20 @@
         if (ms.freezeRow === true) s.freezeRow = true;
         if (ms.freezeCol === true) s.freezeCol = true;
       }
+      // Formatting from Excel's styles (Isadek's own copy above is used when present).
+      const exs = wb.Extras && Array.isArray(wb.Extras.sheets) ? wb.Extras.sheets[si] : null;
+      if (!(ms && ms.name === sn && ms.styles) && exs && exs.xf && excelStyles.length) {
+        for (const [k, idx] of Object.entries(exs.xf)) {
+          if (!CELL_KEY.test(k)) continue;
+          const st = cleanStyle(excelStyles[idx]);
+          if (!st) continue;
+          const p = parseRef(k);
+          if (p.row >= MAX_ROWS || p.col >= MAX_COLS) continue;
+          const cur = s.cells[k];
+          s.cells[k] = { v: cur ? cur.v : '', ...(cur && cur.n ? { n: cur.n } : {}), s: { ...((cur && cur.s) || {}), ...st } };
+        }
+      }
+      if (!(ms && ms.name === sn) && exs && exs.freeze) { if (exs.freeze.rows >= 1) s.freezeRow = true; if (exs.freeze.cols >= 1) s.freezeCol = true; }
       if (ms && ms.name === sn && Array.isArray(ms.pivots)) s.pivots = ms.pivots.map(SheetsPivot.clean).filter(Boolean).slice(0, 50);
       // Isadek's own copy of the rules is exact; otherwise read Excel's.
       const ex = wb.Extras && Array.isArray(wb.Extras.sheets) ? wb.Extras.sheets[si] : null;
@@ -2802,10 +2820,16 @@
     if (bookType !== 'xlsx') return bytes;
     // What SheetJS can't write goes into the XML afterwards.
     const dxfs = [];
-    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s),
-      sheetProtection: SheetsProtect.toXml(s.protect),
-      unlocked: Object.keys(s.cells).filter(k => s.cells[k].s && s.cells[k].s.unlocked) }));
-    return XlsxPatch.patch(bytes, { sheets, dxfs });
+    // Real Excel styles for every formatted cell, so other apps show the formatting too.
+    const styleTable = SheetsStyles.table();
+    const sheets = book.sheets.map(s => {
+      const cellStyles = new Map();
+      for (const [k, cell] of Object.entries(s.cells)) if (cell.s) { const i = styleTable.add(cell.s); if (i) cellStyles.set(k, i); }
+      return { conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s),
+        sheetProtection: SheetsProtect.toXml(s.protect), cellStyles,
+        freeze: s.freezeRow || s.freezeCol ? { rows: s.freezeRow ? 1 : 0, cols: s.freezeCol ? 1 : 0 } : null };
+    });
+    return XlsxPatch.patch(bytes, { sheets, dxfs, styles: SheetsStyles.toXml(styleTable.list) });
   }
 
   async function loadFile(f) {

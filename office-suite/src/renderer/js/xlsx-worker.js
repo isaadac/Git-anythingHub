@@ -76,6 +76,21 @@ function excelExtras(wb) {
     for (const m of xml.matchAll(/<c r="([A-Z]{1,3}\d{1,7})"[^>]{0,300}?\ss="(\d+)"/g)) { if (unlockedXfs.has(m[2])) out.push(m[1]); if (out.length >= 100000) break; }
     return out;
   };
+  /** Which style each cell uses (cells with the default style are left out). */
+  function styledCells(xml) {
+    const map = Object.create(null);
+    let n = 0;
+    for (const m of xml.matchAll(/<c r="([A-Z]{1,3}\d{1,7})"[^>]{0,300}?\ss="(\d{1,6})"/g)) {
+      if (m[2] !== '0') { map[m[1]] = +m[2]; if (++n >= 500000) break; }
+    }
+    return map;
+  }
+  /** Frozen panes: rows and columns kept in view. */
+  function frozen(xml) {
+    const p = /<pane\b[^>]{0,500}>/.exec(xml);
+    if (!p || !/state="frozen(Split)?"/.test(p[0])) return null;
+    return { rows: +((p[0].match(/ySplit="(\d+(?:\.\d+)?)"/) || [])[1] || 0), cols: +((p[0].match(/xSplit="(\d+(?:\.\d+)?)"/) || [])[1] || 0) };
+  }
   const sheetTags = text('xl/workbook.xml').match(/<sheet\b[^>]{0,2000}>/g) || [];
   for (const tag of sheetTags) {
     const id = (tag.match(/\br:id="([^"]{1,200})"/) || [])[1];
@@ -86,10 +101,17 @@ function excelExtras(wb) {
       cf: between(xml, '<conditionalFormatting', '</conditionalFormatting>', true),
       dv: between(xml, '<dataValidations', '</dataValidations>', false) + between(xml, '<x14:dataValidations', '</x14:dataValidations>', false),
       protection: (xml.match(/<sheetProtection\b[^>]{0,2000}>/) || [''])[0],
-      unlocked: unlockedIn(xml)
+      unlocked: unlockedIn(xml),
+      xf: styledCells(xml),
+      freeze: frozen(xml)
     });
   }
   out.dxfs = between(text('xl/styles.xml'), '<dxfs', '</dxfs>', false);
+  // The style table and theme colours, for the app to read as XML.
+  const st = text('xl/styles.xml');
+  out.styles = st.length < 5e6 ? st : '';
+  const themePath = Object.values(target).find(t => /theme\/theme\d*\.xml$/.test(t));
+  out.theme = themePath ? text(themePath).slice(0, 2e6) : '';
   return out;
 
   /** The sheet's drawing part and the chart parts it uses, as text. */

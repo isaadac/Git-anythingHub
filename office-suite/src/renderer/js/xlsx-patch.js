@@ -27,8 +27,52 @@
    * patch(bytes, { sheets: [{ conditionalFormatting, dataValidations, … }], dxfs: [xml] })
    * Each sheet entry maps a worksheet element name to the XML to add (sheets in workbook order).
    */
-  async function patch(bytes, { sheets = [], dxfs = [] } = {}) {
-    if (!sheets.some(s => s && Object.values(s).some(Boolean)) && !dxfs.length) return bytes;
+  const colNum = ref => [...ref.replace(/\d+$/, '')].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+  /** Adds empty cells (with the given XML) to their rows, keeping rows and cells in order. */
+  function insertCells(xml, cells) {
+    const byRow = new Map();
+    for (const [ref, x] of cells) { const m = /^([A-Z]+)(\d+)$/.exec(ref); if (!m) continue; const r = +m[2]; if (!byRow.has(r)) byRow.set(r, []); byRow.get(r).push({ ref, x }); }
+    if (!byRow.size) return xml;
+    if (/<sheetData\s*\/>/.test(xml)) xml = xml.replace(/<sheetData\s*\/>/, '<sheetData></sheetData>');
+    for (const [r, list] of [...byRow].sort((a, b) => a[0] - b[0])) {
+      list.sort((a, b) => colNum(a.ref) - colNum(b.ref));
+      const rowRe = new RegExp(`<row r="${r}"([^>]*?)(\\/?)>`);
+      const rm = rowRe.exec(xml);
+      if (rm && rm[2] === '/') { xml = xml.replace(rowRe, `<row r="${r}"${rm[1]}>${list.map(c => c.x).join('')}</row>`); continue; }
+      if (rm) {
+        const start = rm.index + rm[0].length, end = xml.indexOf('</row>', start);
+        let body = xml.slice(start, end);
+        for (const c of list) {
+          const after = [...body.matchAll(/<c r="([A-Z]+)\d+"/g)].find(m => colNum(m[1]) > colNum(c.ref));
+          body = after ? body.slice(0, after.index) + c.x + body.slice(after.index) : body + c.x;
+        }
+        xml = xml.slice(0, start) + body + xml.slice(end);
+        continue;
+      }
+      const next = [...xml.matchAll(/<row r="(\d+)"/g)].find(m => +m[1] > r);
+      const at = next ? next.index : xml.indexOf('</sheetData>');
+      xml = xml.slice(0, at) + `<row r="${r}">${list.map(c => c.x).join('')}</row>` + xml.slice(at);
+    }
+    return xml;
+  }
+  /** Frozen rows/columns as Excel panes. */
+  function freezePane(xml, rows, cols) {
+    if (!rows && !cols) return xml;
+    const ref = String.fromCharCode(65 + cols) + (rows + 1);
+    const pane = `<pane${cols ? ` xSplit="${cols}"` : ''}${rows ? ` ySplit="${rows}"` : ''} topLeftCell="${ref}" activePane="${rows && cols ? 'bottomRight' : rows ? 'bottomLeft' : 'topRight'}" state="frozen"/>`;
+    const view = `<sheetViews><sheetView workbookViewId="0">${pane}</sheetView></sheetViews>`;
+    if (/<sheetViews>[\s\S]*?<\/sheetViews>/.test(xml)) return xml.replace(/<sheetViews>[\s\S]*?<\/sheetViews>/, view);
+    if (/<sheetViews\s*\/>/.test(xml)) return xml.replace(/<sheetViews\s*\/>/, view);
+    const at = xml.search(/<sheetFormatPr[\s/>]|<cols[\s>]|<sheetData[\s/>]/);
+    return at < 0 ? xml : xml.slice(0, at) + view + xml.slice(at);
+  }
+
+  /**
+   * patch(bytes, { sheets: [{ conditionalFormatting, …, cellStyles, freeze }], dxfs: [xml], styles: xml })
+   * styles replaces styles.xml; each sheet's cellStyles maps a cell to its index in it.
+   */
+  async function patch(bytes, { sheets = [], dxfs = [], styles: stylesXml = null } = {}) {
+    if (!sheets.some(s => s && Object.values(s).some(Boolean)) && !dxfs.length && !stylesXml) return bytes;
     const zip = await JSZip.loadAsync(bytes);
     const rels = await zip.file('xl/_rels/workbook.xml.rels').async('string');
     const wbXml = await zip.file('xl/workbook.xml').async('string');
@@ -40,7 +84,7 @@
     const paths = [...wbXml.matchAll(/<sheet\b[^>]*>/g)].map(m => target[(m[0].match(/\br:id="([^"]+)"/) || [])[1]]);
     let drawingN = 0, chartN = 0;
     const overrides = [];
-    let styles = null; // styles.xml, loaded when needed
+    let styles = stylesXml; // styles.xml: given, or loaded when needed
     const xfClones = new Map();
     let xfs = null;
     for (let i = 0; i < sheets.length; i++) {
@@ -48,6 +92,24 @@
       if (!add || !paths[i] || !zip.file(paths[i])) continue;
       let xml = await zip.file(paths[i]).async('string');
       for (const tag of ORDER) if (typeof add[tag] === 'string' && add[tag]) xml = insertInSheet(xml, tag, add[tag]);
+      // Every cell gets its index in the new style table; cells that only carry formatting are added.
+      if (add.cellStyles) {
+        const want = add.cellStyles;
+        const seen = new Set();
+        xml = xml.replace(/<c r="([A-Z]+\d+)"([^>]*?)(\/?)>/g, (all, ref, attrs, close) => {
+          seen.add(ref);
+          const a = attrs.replace(/\ss="\d+"/, '');
+          const i = want.get(ref);
+          return `<c r="${ref}"${a}${i ? ` s="${i}"` : ''}${close}>`;
+        });
+        const missing = [];
+        for (const [ref, i] of want) if (i && !seen.has(ref)) missing.push([ref, `<c r="${ref}" s="${i}"/>`]);
+        xml = insertCells(xml, missing);
+        // Whole-row styles SheetJS may have written would point into the old table.
+        xml = xml.replace(/(<row\b[^>]*?)\s(s|customFormat)="\d+"/g, '$1');
+        xml = xml.replace(/(<row\b[^>]*?)\s(s|customFormat)="\d+"/g, '$1');
+      }
+      if (add.freeze) xml = freezePane(xml, add.freeze.rows || 0, add.freeze.cols || 0);
       // Unlocked cells (for protected sheets): a copy of each cell's style with <protection locked="0"/>.
       if (add.unlocked && add.unlocked.length) {
         if (!styles) styles = await zip.file('xl/styles.xml').async('string');
