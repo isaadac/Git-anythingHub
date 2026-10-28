@@ -2069,7 +2069,7 @@
 
   // ---------- Charts ----------
   const PALETTE = ['#4472c4', '#ed7d31', '#a5a5a5', '#ffc000', '#5b9bd5', '#70ad47', '#264478', '#9e480e'];
-  const CHART_TYPES = ['bar', 'line', 'pie', 'hbar'];
+  const CHART_TYPES = ['bar', 'line', 'pie', 'hbar', 'area', 'scatter', 'doughnut', 'combo'];
   function insertChart(type) {
     const g = opRange();
     if (g.r1 === g.r2 && g.c1 === g.c2) return UI.toast('Select the data for the chart first (include labels)');
@@ -2081,24 +2081,39 @@
     state.markDirty();
   }
   document.querySelectorAll('[data-chart]').forEach(b => b.addEventListener('click', () => insertChart(b.dataset.chart)));
-  function chartData(ch) {
+  const chartSheet = (ch, host = sheet()) => (ch.sheet && sheetByName(ch.sheet)) || host;
+  /** The chart's labels and series from its range, with where each part is (for Excel references). */
+  function chartData(ch, host) {
+    const src = chartSheet(ch, host);
     const [a, b] = ch.range.split(':');
     const p = parseRef(a), q = parseRef(b || a);
     if (!p || !q || (q.row - p.row + 1) * (q.col - p.col + 1) > 20000) return null;
     const rows = [];
-    for (let r = p.row; r <= q.row; r++) { const row = []; for (let c = p.col; c <= q.col; c++) row.push(valueAt(r, c)); rows.push(row); }
-    const hasRowLabels = rows.slice(1).some(r => typeof r[0] === 'string' && r[0] !== '') || (rows.length > 1 && rows.every(r => typeof r[0] !== 'number'));
+    for (let r = p.row; r <= q.row; r++) { const row = []; for (let c = p.col; c <= q.col; c++) row.push(engine.value(src.name, r, c)); rows.push(row); }
+    const scatter = ch.type === 'scatter';
+    const hasRowLabels = scatter ? rows[0].length > 1 : rows.slice(1).some(r => typeof r[0] === 'string' && r[0] !== '') || (rows.length > 1 && rows.every(r => typeof r[0] !== 'number'));
     const hasHeader = rows[0].slice(hasRowLabels ? 1 : 0).some(v => typeof v === 'string' && v !== '');
     const body = hasHeader ? rows.slice(1) : rows;
     const labels = body.map((r, i) => hasRowLabels ? String(r[0]) : String(i + 1));
+    // Like Excel, a scatter chart whose x values aren't numbers plots them as 1, 2, 3…
+    const numericX = hasRowLabels && body.every(r => typeof r[0] === 'number');
+    const xs = body.map((r, i) => (numericX ? r[0] : i + 1));
     const seriesCount = rows[0].length - (hasRowLabels ? 1 : 0);
+    const r1 = p.row + (hasHeader ? 1 : 0), r2 = q.row;
+    const ref = (c1, ra, c2, rb) => `${quoteSheet(src.name)}!$${F.indexToCol(c1)}$${ra + 1}` + (ra === rb && c1 === c2 ? '' : `:$${F.indexToCol(c2)}$${rb + 1}`);
     const series = [];
-    for (let s = 0; s < seriesCount; s++) {
-      const ci = s + (hasRowLabels ? 1 : 0);
-      series.push({ name: hasHeader ? String(rows[0][ci]) : 'Series ' + (s + 1), values: body.map(r => (typeof r[ci] === 'number' ? r[ci] : 0)) });
+    for (let k = 0; k < seriesCount; k++) {
+      const ci = k + (hasRowLabels ? 1 : 0), col = p.col + ci;
+      series.push({
+        name: hasHeader ? String(rows[0][ci]) : 'Series ' + (k + 1),
+        values: body.map(r => (typeof r[ci] === 'number' ? r[ci] : 0)),
+        nameRef: hasHeader ? ref(col, p.row, col, p.row) : null,
+        valRef: ref(col, r1, col, r2)
+      });
     }
-    return { labels, series };
+    return { labels, xs, series, catRef: hasRowLabels ? ref(p.col, r1, p.col, r2) : null, catNumeric: numericX };
   }
+  const quoteSheet = n => (/^[A-Za-z_][\w.]*$/.test(n) && !/^[A-Za-z]{1,3}\d+$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`);
   function drawChart(canvas, ch) {
     const dpr = window.devicePixelRatio || 1;
     const W = ch.w, H = ch.h - 22;
@@ -2113,7 +2128,7 @@
     ctx.fillStyle = '#404040'; ctx.textAlign = 'center'; ctx.font = '600 14px Calibri, Arial';
     ctx.fillText(title, W / 2, 20);
     ctx.font = '11px Calibri, Arial';
-    if (ch.type === 'pie') {
+    if (ch.type === 'pie' || ch.type === 'doughnut') {
       const vals = data.series[0].values.map(v => Math.max(0, v));
       const total = vals.reduce((a, b) => a + b, 0) || 1;
       const cx = W * 0.4, cy = H / 2 + 10, rad = Math.max(10, Math.min(W * 0.35, H / 2 - 30));
@@ -2125,6 +2140,7 @@
         ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
         a0 = a1;
       });
+      if (ch.type === 'doughnut') { ctx.beginPath(); ctx.arc(cx, cy, rad * 0.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); }
       ctx.textAlign = 'left';
       data.labels.forEach((l, i) => {
         const y = 44 + i * 18;
@@ -2134,6 +2150,7 @@
       });
       return;
     }
+    if (ch.type === 'scatter') return drawScatter(ctx, data, W, H);
     const all = data.series.flatMap(s => s.values);
     let max = Math.max(0, ...all), min = Math.min(0, ...all);
     if (max === min) max = min + 1;
@@ -2164,13 +2181,20 @@
     });
     data.series.forEach((s, si) => {
       ctx.fillStyle = ctx.strokeStyle = PALETTE[si % PALETTE.length];
-      if (ch.type === 'line') {
+      const asLine = ch.type === 'line' || (ch.type === 'combo' && si === data.series.length - 1 && data.series.length > 1);
+      if (ch.type === 'area') {
+        const pts = s.values.map((v, i) => [L + band * i + band / 2, B - (v - min) / (max - min) * (B - T)]);
+        ctx.globalAlpha = 0.45;
+        ctx.beginPath(); ctx.moveTo(pts[0][0], zero); pts.forEach(([x, y]) => ctx.lineTo(x, y)); ctx.lineTo(pts[pts.length - 1][0], zero); ctx.closePath(); ctx.fill();
+        ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+      } else if (asLine) {
         ctx.lineWidth = 2.25; ctx.beginPath();
         s.values.forEach((v, i) => { const x = L + band * i + band / 2, y = B - (v - min) / (max - min) * (B - T); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
         ctx.stroke();
         s.values.forEach((v, i) => { const x = L + band * i + band / 2, y = B - (v - min) / (max - min) * (B - T); ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); });
       } else {
-        const bw = band * 0.7 / data.series.length;
+        const nBars = ch.type === 'combo' && data.series.length > 1 ? data.series.length - 1 : data.series.length;
+        const bw = band * 0.7 / nBars;
         s.values.forEach((v, i) => {
           const off = band * 0.15 + bw * si;
           if (horizontal) {
@@ -2192,6 +2216,22 @@
         x += ctx.measureText(s.name).width + 32;
       });
     }
+  }
+  /** Scatter: numeric x and y axes, a point per row. */
+  function drawScatter(ctx, data, W, H) {
+    const pts = data.series.map(s => s.values.map((y, i) => [data.xs[i], y]).filter(([x]) => typeof x === 'number'));
+    const xsAll = pts.flat().map(p => p[0]), ysAll = pts.flat().map(p => p[1]);
+    if (!xsAll.length) return;
+    const scale = (lo, hi) => { if (lo === hi) { lo -= 1; hi += 1; } const st = niceStep((hi - lo) / 5); return [Math.floor(lo / st) * st, Math.ceil(hi / st) * st, st]; };
+    const [x0, x1, xs] = scale(Math.min(...xsAll), Math.max(...xsAll)), [y0, y1, ys] = scale(Math.min(0, ...ysAll), Math.max(...ysAll));
+    const legendH = data.series.length > 1 ? 20 : 0;
+    const L = 48, R = W - 14, T = 34, B = H - 26 - legendH;
+    const X = v => L + (v - x0) / (x1 - x0) * (R - L), Y = v => B - (v - y0) / (y1 - y0) * (B - T);
+    ctx.strokeStyle = '#e1e1e1'; ctx.fillStyle = '#595959'; ctx.lineWidth = 1;
+    for (let v = y0; v <= y1 + ys / 1e6; v += ys) { ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(R, Y(v)); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), L - 6, Y(v) + 4); }
+    for (let v = x0; v <= x1 + xs / 1e6; v += xs) { ctx.textAlign = 'center'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), X(v), B + 14); }
+    pts.forEach((list, si) => { ctx.fillStyle = PALETTE[si % PALETTE.length]; list.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(X(x), Y(y), 3.5, 0, Math.PI * 2); ctx.fill(); }); });
+    if (legendH) { let x = L; ctx.textAlign = 'left'; data.series.forEach((s, si) => { ctx.fillStyle = PALETTE[si % PALETTE.length]; ctx.fillRect(x, H - 16, 10, 10); ctx.fillStyle = '#404040'; ctx.fillText(s.name, x + 14, H - 7); x += ctx.measureText(s.name).width + 32; }); }
   }
   function niceStep(raw) {
     const p = Math.pow(10, Math.floor(Math.log10(raw || 1)));
@@ -2274,7 +2314,9 @@
   function cleanChart(ch) {
     if (!ch || typeof ch !== 'object' || !CHART_TYPES.includes(ch.type) || typeof ch.range !== 'string' || !/^[A-Z]{1,3}\d+(:[A-Z]{1,3}\d+)?$/.test(ch.range)) return null;
     const n = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
-    return { type: ch.type, range: ch.range, x: n(ch.x, 100, 0, 1e7), y: n(ch.y, 100, 0, 1e8), w: n(ch.w, 440, 200, 4000), h: n(ch.h, 280, 150, 4000), title: typeof ch.title === 'string' ? ch.title.slice(0, 200) : '' };
+    const out = { type: ch.type, range: ch.range, x: n(ch.x, 100, 0, 1e7), y: n(ch.y, 100, 0, 1e8), w: n(ch.w, 440, 200, 4000), h: n(ch.h, 280, 150, 4000), title: typeof ch.title === 'string' ? ch.title.slice(0, 200) : '' };
+    if (typeof ch.sheet === 'string' && ch.sheet.length <= 31) out.sheet = ch.sheet;
+    return out;
   }
   const cleanSizes = (obj, lo, hi) => {
     const out = {};
@@ -2385,6 +2427,9 @@
       else if (ex && typeof ex.cf === 'string' && ex.cf) {
         try { s.cf = SheetsCF.fromXlsx(ex.cf, typeof wb.Extras.dxfs === 'string' ? wb.Extras.dxfs : ''); } catch (err) { console.info('Conditional formatting skipped:', err); }
       }
+      if (!(ms && ms.name === sn) && ex && ex.drawing) {
+        try { s.charts = chartsFromExcel(ex, s); } catch (err) { console.info('Charts skipped:', err); }
+      }
       if (ms && ms.name === sn && Array.isArray(ms.dv)) s.dv = ms.dv.map(SheetsDV.clean).filter(Boolean).slice(0, 500);
       else if (ex && typeof ex.dv === 'string' && ex.dv) {
         try { s.dv = SheetsDV.fromXlsx(ex.dv); } catch (err) { console.info('Data validation skipped:', err); }
@@ -2453,6 +2498,63 @@
     wb.Custprops = { AtlasMeta: JSON.stringify(meta) };
     return wb;
   }
+  // Chart positions are grid pixels (including the headers); Excel anchors them to cells plus EMU offsets.
+  const EMU = 9525;
+  const colLeft = (s, c) => { let x = 0; for (let i = 0; i < c; i++) x += s.colWidths[i] || DEFAULT_COL_W; return x; };
+  const rowTopOf = (s, r) => { let y = r * ROW_H; for (const [k, h] of Object.entries(s.rowHeights || {})) if (+k < r) y += h - ROW_H; return y; };
+  function cellOfPx(s, px, axis) {
+    let i = 0, start = 0;
+    for (;;) {
+      const size = axis === 'col' ? s.colWidths[i] || DEFAULT_COL_W : (s.rowHeights || {})[i] || ROW_H;
+      if (start + size > px || i > (axis === 'col' ? 16383 : 1048575)) return { i, off: Math.round((px - start) * EMU) };
+      start += size; i++;
+    }
+  }
+  /** Excel drawing and chart parts for a sheet's charts. */
+  function chartParts(s) {
+    if (!s.charts || !s.charts.length) return null;
+    const anchors = [], parts = [];
+    s.charts.forEach((ch, i) => {
+      const data = chartData(ch, s);
+      if (!data || !data.series.length) return;
+      const series = (ch.type === 'pie' || ch.type === 'doughnut' ? data.series.slice(0, 1) : data.series).map((x, k) => ({
+        ...x, color: PALETTE[k % PALETTE.length], catRef: data.catRef, cats: ch.type === 'scatter' ? data.xs : data.labels, catNumeric: ch.type === 'scatter' || data.catNumeric
+      }));
+      parts.push(SheetsCharts.toXml({ type: ch.type, title: ch.title || (series.length === 1 && ch.type !== 'scatter' ? series[0].name : ''), series, palette: PALETTE }));
+      const at = (x, y) => { const c = cellOfPx(s, Math.max(0, x - RH_W), 'col'), r = cellOfPx(s, Math.max(0, y - HEAD_H), 'row'); return { col: c.i, colOff: c.off, row: r.i, rowOff: r.off }; };
+      anchors.push({ name: ch.title || 'Chart ' + (i + 1), from: at(ch.x, ch.y), to: at(ch.x + ch.w, ch.y + ch.h) });
+    });
+    return parts.length ? { drawing: SheetsCharts.drawingXml(anchors), parts } : null;
+  }
+  /** Charts read from an Excel sheet's drawing, as Atlas charts over the same data. */
+  function chartsFromExcel(ex, s) {
+    if (!ex || !ex.drawing || !Array.isArray(ex.charts)) return [];
+    const out = [];
+    SheetsCharts.anchorsFromDrawing(ex.drawing).slice(0, 50).forEach(a => {
+      const part = ex.charts.find(c => c && c.rid === a.rid);
+      const spec = part && typeof part.xml === 'string' && SheetsCharts.fromXml(part.xml);
+      if (!spec || !spec.series.length) return;
+      // The data range is the box around every reference (names, categories, values) on one sheet.
+      let sheetName = null, box = null, ok = true;
+      for (const sr of spec.series) for (const ref of [sr.nameRef, sr.catRef, sr.valRef]) {
+        if (!ref) continue;
+        const m = /^(?:(?:'((?:[^']|'')+)'|([^!]+))!)?\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?$/i.exec(ref.replace(/^\(|\)$/g, ''));
+        if (!m) { ok = false; continue; }
+        const sn = m[1] ? m[1].replace(/''/g, "'") : m[2] || s.name;
+        if (sheetName && sheetName.toLowerCase() !== sn.toLowerCase()) { ok = false; continue; }
+        sheetName = sn;
+        const g = SheetsCF.area((m[3] + m[4] + (m[5] ? ':' + m[5] + m[6] : '')).toUpperCase());
+        box = box ? { r1: Math.min(box.r1, g.r1), c1: Math.min(box.c1, g.c1), r2: Math.max(box.r2, g.r2), c2: Math.max(box.c2, g.c2) } : g;
+      }
+      if (!ok || !box) return;
+      const x = RH_W + colLeft(s, a.from.col) + a.from.colOff / EMU, y = HEAD_H + rowTopOf(s, a.from.row) + a.from.rowOff / EMU;
+      const w = a.to ? RH_W + colLeft(s, a.to.col) + a.to.colOff / EMU - x : a.ext ? a.ext.cx / EMU : 440;
+      const h = a.to ? HEAD_H + rowTopOf(s, a.to.row) + a.to.rowOff / EMU - y : a.ext ? a.ext.cy / EMU : 280;
+      const ch = cleanChart({ type: spec.type, range: SheetsCF.refOf(box), x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), title: spec.title, ...(sheetName.toLowerCase() !== s.name.toLowerCase() ? { sheet: sheetName } : {}) });
+      if (ch) out.push(ch);
+    });
+    return out;
+  }
   async function serialize(ext) {
     if (ext === 'csv') {
       const u = usedBounds();
@@ -2475,7 +2577,7 @@
     if (bookType !== 'xlsx') return bytes;
     // What SheetJS can't write goes into the XML afterwards.
     const dxfs = [];
-    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv) }));
+    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s) }));
     return XlsxPatch.patch(bytes, { sheets, dxfs });
   }
 

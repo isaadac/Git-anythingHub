@@ -69,11 +69,39 @@ function excelExtras(wb) {
   for (const tag of sheetTags) {
     const id = (tag.match(/\br:id="([^"]{1,200})"/) || [])[1];
     const xml = id && target[id] ? text(target[id]) : '';
+    const sheetPath = id && target[id] ? target[id] : '';
     out.sheets.push({
+      ...chartsOf(sheetPath),
       cf: between(xml, '<conditionalFormatting', '</conditionalFormatting>', true),
       dv: between(xml, '<dataValidations', '</dataValidations>', false) + between(xml, '<x14:dataValidations', '</x14:dataValidations>', false)
     });
   }
   out.dxfs = between(text('xl/styles.xml'), '<dxfs', '</dxfs>', false);
   return out;
+
+  /** The sheet's drawing part and the chart parts it uses, as text. */
+  function relsOf(path) {
+    const map = Object.create(null);
+    if (!path) return map;
+    const dir = path.replace(/[^/]*$/, ''), rels = text(dir + '_rels/' + path.slice(dir.length) + '.rels');
+    for (const m of rels.match(/<Relationship\b[^>]{0,2000}>/g) || []) {
+      const id = (m.match(/\bId="([^"]{1,200})"/) || [])[1], t = (m.match(/\bTarget="([^"]{1,500})"/) || [])[1];
+      if (!id || !t) continue;
+      const parts = (t[0] === '/' ? t.slice(1) : dir + t).split('/'), stack = [];
+      for (const p of parts) { if (p === '..') stack.pop(); else if (p !== '.') stack.push(p); }
+      map[id] = stack.join('/');
+    }
+    return map;
+  }
+  function chartsOf(sheetPath) {
+    const xml = sheetPath ? text(sheetPath) : '';
+    const m = /<drawing\b[^>]{0,500}?r:id="([^"]{1,200})"/.exec(xml);
+    if (!m) return {};
+    const dPath = relsOf(sheetPath)[m[1]];
+    const drawing = dPath ? text(dPath) : '';
+    if (!drawing || drawing.length > LIMIT) return {};
+    const dRels = relsOf(dPath);
+    const charts = Object.keys(dRels).filter(id => /charts\/chart\d+\.xml$/.test(dRels[id])).slice(0, 50).map(rid => ({ rid, xml: text(dRels[rid]).slice(0, LIMIT) }));
+    return { drawing, charts };
+  }
 }

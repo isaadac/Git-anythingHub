@@ -38,12 +38,38 @@
       if (id && t) target[id] = t.startsWith('/') ? t.slice(1) : 'xl/' + t;
     }
     const paths = [...wbXml.matchAll(/<sheet\b[^>]*>/g)].map(m => target[(m[0].match(/\br:id="([^"]+)"/) || [])[1]]);
+    let drawingN = 0, chartN = 0;
+    const overrides = [];
     for (let i = 0; i < sheets.length; i++) {
       const add = sheets[i];
       if (!add || !paths[i] || !zip.file(paths[i])) continue;
       let xml = await zip.file(paths[i]).async('string');
-      for (const tag of ORDER) if (add[tag]) xml = insertInSheet(xml, tag, add[tag]);
+      for (const tag of ORDER) if (typeof add[tag] === 'string' && add[tag]) xml = insertInSheet(xml, tag, add[tag]);
+      // Charts: a drawing part for the sheet, one chart part per chart, and the relationships between them.
+      if (add.charts && add.charts.parts.length) {
+        const dPath = `xl/drawings/drawing${++drawingN}.xml`;
+        zip.file(dPath, add.charts.drawing);
+        overrides.push(`<Override PartName="/${dPath}" ContentType="application/vnd.openxmlformats-officedocument.drawing+xml"/>`);
+        const dRels = add.charts.parts.map((part, j) => {
+          const cPath = `xl/charts/chart${++chartN}.xml`;
+          zip.file(cPath, part);
+          overrides.push(`<Override PartName="/${cPath}" ContentType="application/vnd.openxmlformats-officedocument.drawingml.chart+xml"/>`);
+          return `<Relationship Id="rId${j + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart${chartN}.xml"/>`;
+        });
+        zip.file(`xl/drawings/_rels/drawing${drawingN}.xml.rels`, `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${dRels.join('')}</Relationships>`);
+        const relsPath = paths[i].replace(/([^/]+)$/, '_rels/$1.rels');
+        const rel = `<Relationship Id="rIdAtlasDrawing" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/drawing" Target="../drawings/drawing${drawingN}.xml"/>`;
+        const existing = zip.file(relsPath) ? await zip.file(relsPath).async('string') : null;
+        zip.file(relsPath, existing ? existing.replace('</Relationships>', rel + '</Relationships>')
+          : `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rel}</Relationships>`);
+        if (!/<worksheet\b[^>]*xmlns:r=/.test(xml)) xml = xml.replace(/<worksheet\b/, '<worksheet xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"');
+        xml = insertInSheet(xml, 'drawing', '<drawing r:id="rIdAtlasDrawing"/>');
+      }
       zip.file(paths[i], xml);
+    }
+    if (overrides.length) {
+      const ct = await zip.file('[Content_Types].xml').async('string');
+      zip.file('[Content_Types].xml', ct.replace('</Types>', overrides.join('') + '</Types>'));
     }
     if (dxfs.length) {
       let st = await zip.file('xl/styles.xml').async('string');
