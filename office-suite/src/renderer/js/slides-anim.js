@@ -21,7 +21,7 @@
   };
   function off(d, n) { return { bottom: `0 ${n}px`, top: `0 -${n}px`, left: `-${n * 1.8}px 0`, right: `${n * 1.8}px 0` }[d] || `0 ${n}px`; }
   function wipeFrom(d) { return { bottom: 'inset(100% 0 0 0)', top: 'inset(0 0 100% 0)', left: 'inset(0 100% 0 0)', right: 'inset(0 0 0 100%)' }[d] || 'inset(100% 0 0 0)'; }
-  const TRANSITIONS = ['none', 'fade', 'push', 'wipe', 'split', 'cover', 'uncover', 'zoom'];
+  const TRANSITIONS = ['none', 'fade', 'push', 'wipe', 'split', 'cover', 'uncover', 'zoom', 'morph'];
 
   function clean(a) {
     if (!a || typeof a !== 'object' || !Object.hasOwn(EFFECTS, a.effect)) return null;
@@ -156,13 +156,19 @@
     const adv = typeof s.advance === 'number' ? ` advTm="${Math.round(s.advance * 1000)}"` : '';
     if ((!t || t === 'none') && !adv) return '';
     const spd = (s.transDur || 1) <= 0.5 ? 'fast' : (s.transDur || 1) <= 1 ? 'med' : 'slow';
+    // Morph is PowerPoint 2019's: older readers fall back to a fade.
+    if (t === 'morph') {
+      const ms = Math.round((s.transDur || 1) * 1000);
+      return '<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice xmlns:p159="http://schemas.microsoft.com/office/powerpoint/2015/09/main" xmlns:p14="http://schemas.microsoft.com/office/powerpoint/2010/main" Requires="p159">' +
+        `<p:transition spd="${spd}" p14:dur="${ms}"${adv}><p159:morph option="byObject"/></p:transition></mc:Choice><mc:Fallback><p:transition spd="${spd}"${adv}><p:fade/></p:transition></mc:Fallback></mc:AlternateContent>`;
+    }
     const inner = { fade: '<p:fade/>', push: '<p:push dir="l"/>', wipe: '<p:wipe dir="r"/>', split: '<p:split orient="vert" dir="out"/>', cover: '<p:cover dir="l"/>', uncover: '<p:pull dir="l"/>', zoom: '<p:zoom/>' }[t] || '';
     return `<p:transition spd="${spd}"${adv}>${inner}</p:transition>`;
   }
   function fromTransition(el) {
     if (!el) return null;
     const kidsAll = [...el.getElementsByTagName('*')];
-    const map = { fade: 'fade', push: 'push', wipe: 'wipe', split: 'split', cover: 'cover', pull: 'uncover', zoom: 'zoom', reveal: 'uncover', dissolve: 'fade', cut: 'none' };
+    const map = { morph: 'morph', fade: 'fade', push: 'push', wipe: 'wipe', split: 'split', cover: 'cover', pull: 'uncover', zoom: 'zoom', reveal: 'uncover', dissolve: 'fade', cut: 'none' };
     const k = kidsAll.find(e => map[e.localName]);
     const spd = el.getAttribute('spd'), dur = el.getAttribute('p14:dur') || el.getAttribute('dur');
     return {

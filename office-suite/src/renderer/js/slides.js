@@ -144,6 +144,8 @@
       if (!type) return null;
       const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
       if (typeof el.id === 'string') ids.set(el.id, out.id);
+      // Morph key: the same object on the next slide (kept from the copy it was duplicated from).
+      if (typeof el.mk === 'string' && /^[\w-]{1,60}$/.test(el.mk)) out.mk = el.mk;
       if (el.flipH === true) out.flipH = true;
       if (el.flipV === true) out.flipV = true;
       if (typeof el.alt === 'string' && el.alt.trim()) out.alt = el.alt.slice(0, 1000);
@@ -152,6 +154,7 @@
         if (depth >= 5) return null;
         out.children = cleanElements(el.children, phs, depth + 1).filter(c => c.type !== 'connector');
         if (!out.children.length) return null;
+        if (el.smart && typeof el.smart === 'object' && Object.hasOwn(SlidesExtras.SMART, el.smart.type) && typeof el.smart.text === 'string') out.smart = { type: el.smart.type, text: el.smart.text.slice(0, 5000) };
         if (el.rot) out.rot = num(el.rot, 0, -360, 360);
         const anim = SlidesAnim.clean(el.anim);
         if (anim) out.anim = anim;
@@ -171,7 +174,7 @@
         if (!out.src) return null;
         out.kind = /^data:audio/i.test(out.src) ? 'audio' : 'video';
         if (imageUrl(el.poster)) out.poster = el.poster;
-        ['autoplay', 'loop', 'hideIcon'].forEach(k => { if (el[k] === true) out[k] = true; });
+        ['autoplay', 'loop', 'hideIcon', 'narration'].forEach(k => { if (el[k] === true) out[k] = true; });
         if (el.rot) out.rot = num(el.rot, 0, -360, 360);
         const anim = SlidesAnim.clean(el.anim);
         if (anim) out.anim = anim;
@@ -577,6 +580,8 @@
   });
   document.getElementById('dupSlide').addEventListener('click', () => {
     snapshot();
+    // The copies share a morph key with the originals, so Morph moves them between the two slides.
+    slide().elements.forEach(el => { if (!el.mk) el.mk = el.id; });
     const copy = JSON.parse(JSON.stringify(slide()));
     copy.id = newId();
     copy.elements.forEach(el => { el.id = newId(); });
@@ -680,6 +685,7 @@
   stage.addEventListener('dblclick', e => {
     const elDiv = e.target.closest('.el');
     const el = elDiv && elById(elDiv.dataset.id);
+    if (el && el.type === 'group' && el.smart) { smartArtDialog(el); return; }
     if (!el || ['group', 'connector', 'image', 'media'].includes(el.type)) return;
     if (elDiv.dataset.id !== editingId) startEditing(elDiv.dataset.id);
   });
@@ -1224,6 +1230,14 @@
   document.getElementById('advanceOn').addEventListener('change', e => { snapshot(); slide().advance = e.target.checked ? Math.max(0, +document.getElementById('advanceAfter').value || 0) : null; state.markDirty(); });
   document.getElementById('advanceAfter').addEventListener('change', e => { snapshot(); if (document.getElementById('advanceOn').checked) slide().advance = Math.max(0, +e.target.value || 0); state.markDirty(); });
   function previewTransition() {
+    if (slide().transition === 'morph') {
+      if (masterTarget || current === 0) return UI.toast('Morph moves objects from the previous slide; add it to the second slide or later');
+      renderSlide(pres.slides[current - 1], stage, false);
+      const m = SlidesExtras.morph(stage, pres.slides[current - 1], slide(), (sl, c) => renderSlide(sl, c, false), (slide().transDur || 1) * 1000);
+      Promise.all(m.anims.map(a => a.finished.catch(() => {}))).then(() => renderStage());
+      if (!m.pairs.size) UI.toast('No objects match the previous slide. Duplicate a slide, then move or resize things on the copy.', 5000);
+      return;
+    }
     const frames = TRANSITION_FRAMES[slide().transition];
     if (frames) stage.animate(frames, { duration: (slide().transDur || 1) * 1000, easing: 'ease-out' });
   }
@@ -1321,11 +1335,17 @@
     zoom: [{ scale: '0.6', opacity: 0 }, { scale: '1', opacity: 1 }]
   };
   /** Shows slide i with its builds done up to `upTo` (0 = none, Infinity = all). */
+  let shownSlide = null; // what the show displays now, for Morph
   function showSlide(i, animate = true, upTo = 0) {
     finishRunning();
     clearTimeout(advanceTimer);
     const s = pres.slides[i];
-    renderSlide(s, presentSlide, false);
+    const from = shownSlide;
+    shownSlide = s;
+    const morphing = animate && s.transition === 'morph' && from && from !== s;
+    if (morphing) SlidesExtras.morph(presentSlide, from, s, (sl, c) => renderSlide(sl, c, false), (s.transDur || 1) * 1000);
+    else renderSlide(s, presentSlide, false);
+    if (recording) recordSlide(i);
     const k = Math.min(window.innerWidth / W, window.innerHeight / H);
     presentSlide.style.setProperty('--scale', `scale(${k})`);
     presentSlide.style.transform = `scale(${k})`;
@@ -1377,6 +1397,8 @@
   function endShow() {
     finishRunning();
     clearTimeout(advanceTimer);
+    shownSlide = null;
+    if (recording) finishRecording();
     presenter.hidden = true;
     Platform.fullscreen(false);
     goTo(showIndex);
@@ -1701,9 +1723,21 @@
   /** PptxGenJS doesn't write transitions or animations: add them to each slide's XML. */
   async function addTimingToPptx(bytes) {
     const zip = await JSZip.loadAsync(bytes);
+    // Morph keys along chains of morphing slides: slide index → [[element id, key]].
+    const morphNames = new Map(), keyOf = new Map();
+    let kn = 0;
+    for (let i = 1; i < pres.slides.length; i++) {
+      if (pres.slides[i].transition !== 'morph') continue;
+      for (const [bId, a] of SlidesExtras.pairs(pres.slides[i - 1], pres.slides[i])) {
+        const key = keyOf.get(a.id) || ('m' + (++kn));
+        keyOf.set(a.id, key); keyOf.set(bId, key);
+      }
+    }
+    pres.slides.forEach((sl, i) => { const list = sl.elements.filter(e => keyOf.has(e.id)).map(e => [e.id, keyOf.get(e.id)]); if (list.length) morphNames.set(i, list); });
     // The master, layouts and theme go in a custom document property so Isadek can restore them exactly.
     const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({
       layout: sl.layout, hideMaster: !!sl.hideMaster,
+      morph: Object.fromEntries((morphNames.get(pres.slides.indexOf(sl)) || []).map(([elId, key]) => [key, elId])),
       media: Object.fromEntries(sl.elements.flatMap(e => flattenGroup(e)).filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])),
       groups: sl.elements.filter(e => e.type === 'group').map(groupMeta),
       connectors: Object.fromEntries(sl.elements.filter(e => e.type === 'connector').map(c => [c.id, { kind: c.kind, arrow: c.arrow, color: c.color || null, width: c.width, from: c.from || null, to: c.to || null }]))
@@ -1722,6 +1756,8 @@
       const ids = {};
       for (const m of xml.matchAll(/<p:cNvPr id="(\d+)" name="atlas-([^"]+)"/g)) ids[m[2]] = m[1];
       const s = pres.slides[i];
+      // Morph: matched objects share a "!!" name, which is how PowerPoint pairs them.
+      for (const [elId, key] of morphNames.get(i) || []) xml = xml.replace(`name="atlas-${elId}"`, `name="!!${key}"`);
       // PptxGenJS writes audio as <a:videoFile>; PowerPoint wants <a:audioFile> for its audio relationships.
       if (s.elements.some(e => e.type === 'media' && e.kind === 'audio')) {
         const rels = await zip.file(`ppt/slides/_rels/slide${i + 1}.xml.rels`).async('string');
@@ -1772,14 +1808,14 @@
     });
   }
   /** Groups as {id, x, y, w, h, rot, kids: [id | group]} for the Isadek metadata in .pptx. */
-  const groupMeta = g => ({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0, anim: g.anim || null, kids: g.children.map(c => (c.type === 'group' ? groupMeta(c) : c.id)) });
+  const groupMeta = g => ({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0, anim: g.anim || null, smart: g.smart || null, kids: g.children.map(c => (c.type === 'group' ? groupMeta(c) : c.id)) });
   /** Rebuilds groups from that metadata out of the flattened elements Isadek wrote (matched by shape name). */
   function regroup(sl, metas) {
     const byName = new Map(sl.elements.filter(e => e.atlasName).map(e => [e.atlasName, e]));
     const build = m => {
       const kids = m.kids.map(k => (typeof k === 'string' ? byName.get(k) : build(k))).filter(Boolean);
       if (!kids.length) return null;
-      const g = { id: newId(), type: 'group', x: m.x, y: m.y, w: m.w, h: m.h, atlasName: m.id, ...(m.rot ? { rot: m.rot } : {}), ...(m.anim ? { anim: m.anim } : {}) };
+      const g = { id: newId(), type: 'group', x: m.x, y: m.y, w: m.w, h: m.h, atlasName: m.id, ...(m.rot ? { rot: m.rot } : {}), ...(m.anim ? { anim: m.anim } : {}), ...(m.smart ? { smart: m.smart } : {}) };
       const cx = g.x + g.w / 2, cy = g.y + g.h / 2, rad = -(g.rot || 0) * Math.PI / 180;
       g.children = kids.map(c => {
         let nx = c.x, ny = c.y;
@@ -2035,7 +2071,7 @@
       const spid = nv ? nv.getAttribute('id') : null;
       if (nv && /^atlas-master-/.test(nv.getAttribute('name') || '')) return null; // drawn from the master Isadek saved
       const nm = (nv && nv.getAttribute('name')) || '';
-      const tag = el => { if (el && spid) spids.set(spid, el); if (el && /^atlas-/.test(nm)) el.atlasName = nm.slice(6); if (el && raw && raw.flipH && el.type !== 'connector') el.flipH = true; if (el && raw && raw.flipV && el.type !== 'connector') el.flipV = true; return el; };
+      const tag = el => { if (el && spid) spids.set(spid, el); if (el && /^atlas-/.test(nm)) el.atlasName = nm.slice(6); if (el && /^!![\w-]{1,60}$/.test(nm)) { el.mk = nm.slice(2); el.morphName = nm.slice(2); } if (el && raw && raw.flipH && el.type !== 'connector') el.flipH = true; if (el && raw && raw.flipV && el.type !== 'connector') el.flipV = true; return el; };
       const phInfo = phOf(node);
       let phType = phInfo ? phInfo.type : null;
       const phIdx = phInfo ? phInfo.idx : null;
@@ -2194,6 +2230,8 @@
     if (meta && typeof meta === 'object') {
       (Array.isArray(meta.slides) ? meta.slides : []).forEach((m, i) => {
         if (!slides[i] || !m) return;
+        // Objects renamed for Morph get back the ids the rest of the metadata uses.
+        if (m.morph && typeof m.morph === 'object') slides[i].elements.forEach(e => { if (e.morphName && Object.hasOwn(m.morph, e.morphName)) e.atlasName = String(m.morph[e.morphName]); });
         slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true;
         // Playback options, matched by the shape names Isadek wrote.
         if (m.media && typeof m.media === 'object') slides[i].elements.forEach(e => { const o = e.type === 'media' && e.atlasName && Object.hasOwn(m.media, e.atlasName) ? m.media[e.atlasName] : null; if (o) ['autoplay', 'loop', 'hideIcon'].forEach(k => { e[k] = o[k] === true; }); });
@@ -2212,6 +2250,187 @@
     }
     return cleanPres({ theme: 'office', slides, ...imported });
   }
+
+
+  // ---------- Designer, SmartArt, handouts, recording ----------
+  /** Designer: other arrangements of this slide's content, as thumbnails to click. */
+  const designer = document.createElement('aside');
+  designer.className = 'designer-pane';
+  designer.hidden = true;
+  designer.setAttribute('aria-label', 'Designer');
+  designer.innerHTML = '<header><b>Designer</b><span class="sp"></span><button class="x" title="Close">✕</button></header><div class="ideas"></div>';
+  document.body.appendChild(designer);
+  designer.querySelector('.x').addEventListener('click', () => { designer.hidden = true; document.body.classList.remove('designer-open'); });
+  function showDesigner() {
+    commitEditing();
+    if (masterTarget) return UI.toast('Designer works on slides, not on the master');
+    const list = SlidesExtras.ideas(slide(), theme());
+    const box = designer.querySelector('.ideas');
+    box.innerHTML = '';
+    if (!list.length) box.innerHTML = '<p class="muted">Add a title, some text or a picture to get design ideas.</p>';
+    list.forEach(idea => {
+      const b = document.createElement('button');
+      b.className = 'idea';
+      b.title = idea.name;
+      b.setAttribute('aria-label', 'Design idea: ' + idea.name);
+      const frame = document.createElement('div');
+      frame.className = 'frame';
+      const sl = document.createElement('div');
+      sl.className = 'slide';
+      renderSlide({ ...slide(), elements: idea.elements }, sl, false);
+      frame.appendChild(sl);
+      b.appendChild(frame);
+      const cap = document.createElement('span');
+      cap.textContent = idea.name;
+      b.appendChild(cap);
+      b.addEventListener('click', () => {
+        snapshot();
+        slide().elements = cleanElements(JSON.parse(JSON.stringify(idea.elements)));
+        selectedId = null; extraSel.clear();
+        renderAll();
+        state.markDirty();
+      });
+      box.appendChild(b);
+    });
+    designer.hidden = false;
+    document.body.classList.add('designer-open');
+  }
+  document.getElementById('designIdeas').addEventListener('click', showDesigner);
+
+  /** SmartArt: a diagram from an outline; double-click it to change the text or the kind. */
+  async function smartArtDialog(existing) {
+    commitEditing();
+    const r = await UI.form(existing ? 'Edit SmartArt' : 'Insert SmartArt', [
+      { name: 'type', label: 'Kind', type: 'select', options: Object.entries(SlidesExtras.SMART).map(([value, label]) => ({ value, label })), value: existing ? existing.smart.type : 'process' },
+      { name: 'text', label: 'Text — one item per line; indent (two spaces) for sub-items', type: 'textarea', value: existing ? existing.smart.text : 'Plan\nBuild\nTest\nLaunch' }
+    ], existing ? 'Update' : 'Insert');
+    if (!r) return;
+    const box = existing ? { x: existing.x, y: existing.y, w: existing.w, h: existing.h } : { x: 80, y: 130, w: 800, h: 370 };
+    const g = SlidesExtras.smartArt(r.type, r.text, theme(), box);
+    if (!g) return UI.toast('Type at least one item', 3000);
+    snapshot();
+    const clean = cleanElements([g])[0];
+    const list = slide().elements;
+    if (existing) { clean.rot = existing.rot; if (!clean.rot) delete clean.rot; list.splice(list.indexOf(existing), 1, clean); }
+    else list.push(clean);
+    selectedId = clean.id;
+    renderAll();
+    state.markDirty();
+  }
+  document.getElementById('insSmartArt').addEventListener('click', () => {
+    const g = selectedId && elById(selectedId);
+    smartArtDialog(g && g.type === 'group' && g.smart ? g : null);
+  });
+
+  /** Handouts and notes pages, to print or save as PDF. */
+  async function handoutsDialog() {
+    commitEditing();
+    const r = await UI.form('Handouts', [
+      { name: 'per', label: 'Layout', type: 'select', options: [{ value: '1', label: '1 slide per page' }, { value: '2', label: '2 slides per page' }, { value: '3', label: '3 slides per page, with lines for notes' }, { value: '4', label: '4 slides per page' }, { value: '6', label: '6 slides per page' }, { value: '9', label: '9 slides per page' }, { value: 'notes', label: 'Notes pages (a slide and its notes)' }], value: '3' },
+      { name: 'out', label: 'Then', type: 'select', options: [{ value: 'print', label: 'Print' }, { value: 'pdf', label: 'Save as PDF' }] }
+    ], 'Go');
+    if (!r) return;
+    const box = document.getElementById('printSlides');
+    SlidesExtras.handouts(box, pres.slides, r.per === 'notes' ? 'notes' : +r.per, (sl, el) => renderSlide(sl, el, false), { title: Platform.baseName(state.name) });
+    // Portrait pages while the handouts print; the slides' own landscape pages afterwards.
+    const st = document.createElement('style');
+    st.textContent = '@media print { @page { size: 8.5in 11in; margin: 0; } }';
+    document.head.appendChild(st);
+    document.body.classList.add('printing-handouts');
+    handoutsPrinting = true;
+    try {
+      if (r.out === 'pdf') await Platform.exportPdf(Platform.baseName(state.name) + ' handouts.pdf', false);
+      else await Platform.print();
+    } finally {
+      handoutsPrinting = false;
+      st.remove();
+      document.body.classList.remove('printing-handouts');
+      box.innerHTML = '';
+    }
+  }
+  let handoutsPrinting = false;
+  document.getElementById('handouts').addEventListener('click', handoutsDialog);
+
+  /**
+   * Record Slide Show: narration from the microphone and the time spent on each slide. Each
+   * slide gets its narration as an audio clip that plays by itself, and advances after its time.
+   */
+  let recording = null;
+  async function recordShow(from) {
+    commitEditing();
+    let stream = null;
+    try { stream = await navigator.mediaDevices.getUserMedia({ audio: true }); } catch {
+      if (!(await UI.confirm('Record Slide Show', 'No microphone is available (or it was not allowed). Record the slide timings only?'))) return;
+    }
+    recording = { stream, clips: new Map(), times: new Map(), rec: null, slide: null, t0: 0 };
+    present(from);
+    document.getElementById('presentHint').textContent = stream ? '● Recording narration — Esc ends' : '● Recording timings — Esc ends';
+  }
+  function stopSegment() {
+    const R = recording;
+    if (!R || R.slide === null) return Promise.resolve();
+    const idx = R.slide, spent = (performance.now() - R.t0) / 1000;
+    R.times.set(idx, (R.times.get(idx) || 0) + spent);
+    if (!R.rec) return Promise.resolve();
+    const rec = R.rec, chunks = rec.chunks;
+    R.rec = null;
+    return new Promise(res => {
+      rec.onstop = () => { if (chunks.length) R.clips.set(idx, [...(R.clips.get(idx) || []), new Blob(chunks, { type: rec.mimeType })]); res(); };
+      try { rec.stop(); } catch { res(); }
+    });
+  }
+  function recordSlide(i) {
+    const R = recording;
+    if (R.slide === i) return;
+    R.pending = stopSegment();
+    R.slide = i;
+    R.t0 = performance.now();
+    if (R.stream) {
+      try {
+        // Each slide's recorder keeps its own data: the last of it arrives after the next slide starts.
+        const rec = new MediaRecorder(R.stream);
+        rec.chunks = [];
+        rec.ondataavailable = e => { if (e.data && e.data.size) rec.chunks.push(e.data); };
+        rec.start();
+        R.rec = rec;
+      } catch { R.rec = null; }
+    }
+  }
+  async function finishRecording() {
+    const R = recording;
+    await stopSegment();
+    recording = null;
+    await R.pending;
+    if (R.stream) R.stream.getTracks().forEach(t => t.stop());
+    snapshot();
+    let narrated = 0;
+    for (const [i, sec] of R.times) {
+      const sl = pres.slides[i];
+      if (!sl) continue;
+      sl.advance = Math.max(0.5, Math.round(sec * 10) / 10);
+      const blobs = R.clips.get(i);
+      if (!blobs || !blobs.length) continue;
+      try {
+        const wav = await SlidesExtras.toWav(new Blob(blobs, { type: blobs[0].type }));
+        const src = await Platform.bytesToDataUrl(wav, 'audio/wav');
+        sl.elements = sl.elements.filter(e => !e.narration);
+        sl.elements.push({ id: newId(), type: 'media', kind: 'audio', src, autoplay: true, hideIcon: true, narration: true, x: W - 60, y: H - 60, w: 40, h: 40, alt: 'Narration' });
+        narrated++;
+      } catch (err) { console.info('Narration skipped:', err); }
+    }
+    renderAll();
+    state.markDirty();
+    UI.toast(`Recorded ${R.times.size} slide timing${R.times.size === 1 ? '' : 's'}${narrated ? ` and narration on ${narrated} slide${narrated === 1 ? '' : 's'}` : ''}. The show now advances by itself.`, 5000);
+  }
+  document.getElementById('recordShow').addEventListener('click', () => recordShow(0));
+  document.getElementById('recordCurrent').addEventListener('click', () => recordShow(current));
+  document.getElementById('clearRecording').addEventListener('click', async () => {
+    if (!(await UI.confirm('Clear Recording', 'Remove the recorded narration and timings from every slide?'))) return;
+    snapshot();
+    pres.slides.forEach(sl => { sl.elements = sl.elements.filter(e => !e.narration); sl.advance = null; });
+    renderAll();
+    state.markDirty();
+  });
 
   // ---------- Files ----------
   async function loadFile(f) {
@@ -2258,6 +2477,7 @@
     }
   }
   function preparePrint() {
+    if (handoutsPrinting) return; // the handout pages are already there
     const box = document.getElementById('printSlides');
     box.innerHTML = '';
     pres.slides.forEach(s => { const d = document.createElement('div'); d.className = 'slide'; renderSlide(s, d, false); box.appendChild(d); });

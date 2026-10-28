@@ -452,10 +452,12 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
-    // Only the permissions the apps use: clipboard (Paste button) and full screen (slide show).
+    // Only the permissions the apps use: clipboard (Paste button), full screen (slide show) and the
+    // microphone (recording narration in Slides and audio notes) — never the camera or screen.
     const allowed = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen']);
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowed.has(permission)));
-    session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
+    const audioOnly = d => !!d && Array.isArray(d.mediaTypes) && d.mediaTypes.length > 0 && d.mediaTypes.every(t => t === 'audio');
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb, details) => cb(allowed.has(permission) || (permission === 'media' && audioOnly(details))));
+    session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => allowed.has(permission) || (permission === 'media' && (!details || !details.mediaType || details.mediaType === 'audio')));
     buildMenu();
     const files = [...fileArgs(process.argv), ...macOpenQueue];
     macOpenQueue = [];
