@@ -135,6 +135,7 @@
   document.getElementById('cloudSettings').addEventListener('click', () => Cloud.settingsDialog());
 
   document.getElementById('themeBtn').addEventListener('click', () => Theme.choose());
+  document.getElementById('langBtn').addEventListener('click', () => I18n.choose());
 
   render();
   renderRecovered();

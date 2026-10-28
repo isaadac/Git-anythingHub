@@ -1280,6 +1280,7 @@ ${rules}</style></head>
       }
       case 'save': save(false); break;
       case 'save-as': save(true); break;
+      case 'version-history': Platform.versionHistory({ state, app: 'write', load: loadFile }); break;
       case 'open-cloud': Cloud.openDialog({ app: 'write', load: loadFile, isEmpty: async () => Platform.shouldOpenInPlace(!state.dirty && !doc.innerText.trim()) && (!state.dirty || UI.confirm('Open file', 'Discard unsaved changes in this document?')) }); break;
       case 'save-cloud': Cloud.saveAsDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS }); break;
       case 'share': Cloud.shareDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, save: () => save(false) }); break;

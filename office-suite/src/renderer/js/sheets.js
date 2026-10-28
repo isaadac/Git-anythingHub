@@ -2550,7 +2550,7 @@
         if (a === 'png') {
           const blob = await new Promise(res => box.querySelector('canvas').toBlob(res));
           const name = (ch.title || 'Chart').replace(/[\\/:*?"<>|]/g, '_') + '.png';
-          await Platform.save({ data: new Uint8Array(await blob.arrayBuffer()), name, filters: [{ name: 'PNG image', extensions: ['png'] }], saveAs: true });
+          await Platform.save({ noVersion: true, data: new Uint8Array(await blob.arrayBuffer()), name, filters: [{ name: 'PNG image', extensions: ['png'] }], saveAs: true });
         }
       });
     });
@@ -3037,6 +3037,7 @@
       }
       case 'save': save(false); break;
       case 'save-as': save(true); break;
+      case 'version-history': Platform.versionHistory({ state, app: 'sheets', load: loadFile }); break;
       case 'open-cloud': Cloud.openDialog({ app: 'sheets', load: loadFile, isEmpty: async () => Platform.shouldOpenInPlace(!state.dirty && book.sheets.length === 1 && !Object.keys(sheet().cells).length) && (!state.dirty || UI.confirm('Open file', 'Discard unsaved changes in this workbook?')) }); break;
       case 'save-cloud': Cloud.saveAsDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEdit() }); break;
       case 'share': Cloud.shareDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEdit(), save: () => save(false) }); break;

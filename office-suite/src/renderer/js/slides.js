@@ -2500,6 +2500,7 @@
       }
       case 'save': save(false); break;
       case 'save-as': save(true); break;
+      case 'version-history': Platform.versionHistory({ state, app: 'slides', load: loadFile }); break;
       case 'open-cloud': Cloud.openDialog({ app: 'slides', load: loadFile, isEmpty: async () => Platform.shouldOpenInPlace(!state.dirty && pres.slides.length === 1 && !pres.slides[0].elements.some(e => e.html || e.type !== 'text')) && (!state.dirty || UI.confirm('Open file', 'Discard unsaved changes in this presentation?')) }); break;
       case 'save-cloud': Cloud.saveAsDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEditing() }); break;
       case 'share': Cloud.shareDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEditing(), save: () => save(false) }); break;

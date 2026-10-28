@@ -37,17 +37,11 @@
       return desktop ? window.atlas.openDialog(filters) : pickFileWeb(filters);
     },
     /** Saves bytes or text. Returns {name, path} or null if cancelled. */
-    async save({ data, name, path, filters, saveAs }) {
-      // A document opened from (or saved to) a cloud account goes back there.
-      if (Platform.isCloudPath(path) && window.Cloud) return window.Cloud.saveTo(path, name, data);
-      if (desktop) return window.atlas.save({ data, filePath: path, defaultName: name, filters, saveAs });
-      let fileName = name;
-      if (saveAs || !fileName) {
-        fileName = await UI.prompt('Save As', 'File name', name || 'Untitled');
-        if (!fileName) return null;
-      }
-      downloadWeb(data, fileName);
-      return { name: fileName, path: null };
+    async save(opts) {
+      const r = await saveNow(opts);
+      // Each save also keeps a version of the document (File → Version History).
+      if (r && opts.data && !opts.noVersion) Versions.add(r.path || opts.path || r.name || opts.name, r.name || opts.name, opts.data).catch(() => {});
+      return r;
     },
     async pending() {
       if (desktop) return window.atlas.pendingFile();
@@ -123,8 +117,11 @@
   function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
   function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
 
-  // File → Office Theme in every app.
-  Platform.onMenu(cmd => { if (cmd === 'theme' && window.Theme) Theme.choose(); });
+  // File → Office Theme and File → Language in every app.
+  Platform.onMenu(cmd => {
+    if (cmd === 'theme' && window.Theme) Theme.choose();
+    if (cmd === 'language' && window.I18n) I18n.choose();
+  });
   if (desktop) {
     window.atlas.onMenu(cmd => Platform.emit(cmd));
   } else {
@@ -262,8 +259,87 @@
       // Buttons with data-cmd anywhere in the chrome emit commands.
       document.querySelectorAll('.titlebar [data-cmd], .ribbon [data-cmd]').forEach(b =>
         b.addEventListener('click', () => Platform.emit(b.dataset.cmd)));
+      UI.commandSearch();
       // Keep focus in the editor when pressing ribbon buttons.
       document.querySelectorAll('.ribbon .btn, .titlebar .qa button').forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
+    },
+    /**
+     * Search box in the title bar (Alt+Q): finds ribbon and File commands by name or tooltip
+     * and runs them — switching to the right tab, then pressing the button (or focusing a list).
+     */
+    commandSearch() {
+      const bar = document.querySelector('.titlebar');
+      if (!bar || bar.querySelector('.tell-me')) return;
+      const box = document.createElement('div');
+      box.className = 'tell-me';
+      box.innerHTML = '<input type="search" placeholder="Search (Alt+Q)" aria-label="Search for a command" autocomplete="off" spellcheck="false"><div class="tm-list" role="listbox" hidden></div>';
+      bar.insertBefore(box, bar.querySelector('.status-saved') || bar.querySelector('.share-btn'));
+      const input = box.querySelector('input'), list = box.querySelector('.tm-list');
+      const clean = t => String(t || '').replace(/[^\p{L}\p{N}&%'’ .,:/+-]/gu, ' ').replace(/\s+/g, ' ').trim();
+      // A button's words, with a big button's two lines as one (and without its icon).
+      const words = el => { const c = el.cloneNode(true); c.querySelectorAll('.ico').forEach(n => n.remove()); c.querySelectorAll('br').forEach(n => n.replaceWith(' ')); return c.textContent; };
+      let index = null, hits = [], at = 0;
+      function build() {
+        index = [];
+        document.querySelectorAll('.ribbon-panel').forEach(panel => {
+          const tabBtn = document.querySelector(`.ribbon-tabs button[data-tab="${panel.dataset.panel}"]`);
+          if (!tabBtn) return;
+          const tab = clean(tabBtn.textContent);
+          panel.querySelectorAll('button, select, input[type=checkbox], input[type=color]').forEach(el => {
+            if (el.closest('[hidden]')) return;
+            const group = clean(el.closest('.group') && el.closest('.group').querySelector('.label') ? el.closest('.group').querySelector('.label').textContent : '');
+            const label = clean(el.tagName === 'SELECT' ? (el.title || el.options[0] && el.options[0].text) : el.tagName === 'INPUT' ? (el.closest('label') ? el.closest('label').textContent : el.title) : words(el)) || clean(el.title);
+            if (!label) return;
+            index.push({ el, tabBtn, label, extra: clean(el.title) + ' ' + group, where: tab + (group ? ' › ' + group : '') });
+          });
+        });
+        document.querySelectorAll('.backstage nav button[data-cmd]').forEach(el => index.push({ cmd: el.dataset.cmd, label: clean(el.textContent), extra: clean(el.title), where: 'File' }));
+      }
+      function search(q) {
+        const words = q.toLowerCase().split(/\s+/).filter(Boolean);
+        if (!words.length) return [];
+        return index.map(x => {
+          const hay = (x.label + ' ' + x.extra + ' ' + x.where).toLowerCase(), lab = x.label.toLowerCase();
+          if (!words.every(w => hay.includes(w))) return null;
+          const score = (lab.startsWith(words[0]) ? 0 : lab.includes(words[0]) ? 1 : 2) + (x.label.length / 100);
+          return { x, score };
+        }).filter(Boolean).sort((a, b) => a.score - b.score).slice(0, 8).map(h => h.x);
+      }
+      function draw() {
+        list.innerHTML = '';
+        hits.forEach((h, i) => {
+          const row = document.createElement('div');
+          row.className = 'tm-item' + (i === at ? ' on' : '');
+          row.setAttribute('role', 'option');
+          row.setAttribute('aria-selected', String(i === at));
+          row.innerHTML = '<span class="l"></span><span class="w"></span>';
+          row.querySelector('.l').textContent = h.label;
+          row.querySelector('.w').textContent = h.where;
+          row.addEventListener('mousedown', e => { e.preventDefault(); run(h); });
+          list.appendChild(row);
+        });
+        list.hidden = !hits.length;
+      }
+      function run(h) {
+        input.value = ''; hits = []; draw(); input.blur();
+        if (h.cmd) { Platform.emit(h.cmd); return; }
+        h.tabBtn.click();
+        if (h.el.tagName === 'SELECT' || h.el.tagName === 'INPUT') { h.el.focus(); if (h.el.showPicker) try { h.el.showPicker(); } catch { /* not allowed */ } }
+        else h.el.click();
+        h.el.classList.add('tm-flash');
+        setTimeout(() => h.el.classList.remove('tm-flash'), 1200);
+      }
+      input.addEventListener('focus', () => { build(); });
+      input.addEventListener('input', () => { at = 0; hits = search(input.value); draw(); });
+      input.addEventListener('keydown', e => {
+        e.stopPropagation();
+        if (e.key === 'ArrowDown' && hits.length) { e.preventDefault(); at = (at + 1) % hits.length; draw(); }
+        else if (e.key === 'ArrowUp' && hits.length) { e.preventDefault(); at = (at - 1 + hits.length) % hits.length; draw(); }
+        else if (e.key === 'Enter' && hits[at]) { e.preventDefault(); run(hits[at]); }
+        else if (e.key === 'Escape') { input.value = ''; hits = []; draw(); input.blur(); }
+      });
+      input.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 150));
+      document.addEventListener('keydown', e => { if (e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'q' || e.key === 'Q')) { e.preventDefault(); input.focus(); input.select(); } });
     },
     /** Tracks the document name, path and unsaved state, and keeps the window title in sync. */
     docState(appLabel, defaultName) {
@@ -291,6 +367,102 @@
       state.render();
       return state;
     }
+  };
+
+  async function saveNow({ data, name, path, filters, saveAs }) {
+    // A document opened from (or saved to) a cloud account goes back there.
+    if (Platform.isCloudPath(path) && window.Cloud) return window.Cloud.saveTo(path, name, data);
+    if (desktop) return window.atlas.save({ data, filePath: path, defaultName: name, filters, saveAs });
+    let fileName = name;
+    if (saveAs || !fileName) {
+      fileName = await UI.prompt('Save As', 'File name', name || 'Untitled');
+      if (!fileName) return null;
+    }
+    downloadWeb(data, fileName);
+    return { name: fileName, path: null };
+  }
+
+  // ---------- Version history ----------
+  // Desktop: the main process keeps copies in the app's data folder (src/main/versions.js).
+  // Web: IndexedDB, with the same rules (one copy per 10 minutes, the latest 30 per document).
+  const Versions = (() => {
+    if (desktop) return { add: (k, n, d) => window.atlas.versionsAdd(String(k), n, toU8(d)), list: k => window.atlas.versionsList(String(k)), read: (k, id) => window.atlas.versionsRead(String(k), id) };
+    let dbp = null;
+    const db = () => dbp || (dbp = new Promise((res, rej) => {
+      const r = indexedDB.open('atlas-versions', 1);
+      r.onupgradeneeded = () => { const st = r.result.createObjectStore('v', { keyPath: ['key', 'id'] }); st.createIndex('key', 'key'); };
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    }));
+    const all = async key => { const d = await db(); return new Promise((res, rej) => { const q = d.transaction('v').objectStore('v').index('key').getAll(key); q.onsuccess = () => res(q.result.sort((a, b) => a.saved - b.saved)); q.onerror = () => rej(q.error); }); };
+    const hashOf = async bytes => { try { return [...new Uint8Array(await crypto.subtle.digest('SHA-1', bytes))].map(b => b.toString(16).padStart(2, '0')).join(''); } catch { return String(bytes.length); } };
+    return {
+      async add(key, name, data) {
+        key = String(key);
+        const bytes = toU8(data);
+        if (bytes.length > 60e6) return false;
+        const list = await all(key), last = list[list.length - 1], hash = await hashOf(bytes), now = Date.now();
+        if (last && last.hash === hash) return true;
+        const d = await db();
+        const t = d.transaction('v', 'readwrite'), st = t.objectStore('v');
+        let created = now;
+        if (last && now - last.created < 600000) { st.delete([key, last.id]); list.pop(); created = last.created; }
+        st.put({ key, id: String(now), name: String(name || '').slice(0, 255), size: bytes.length, hash, created, saved: now, data: bytes });
+        list.slice(0, Math.max(0, list.length + 1 - 30)).forEach(v => st.delete([key, v.id]));
+        return new Promise(res => { t.oncomplete = () => res(true); t.onerror = () => res(false); });
+      },
+      async list(key) { return (await all(String(key))).map(v => ({ id: v.id, name: v.name, size: v.size, saved: v.saved })).reverse(); },
+      async read(key, id) { const d = await db(); return new Promise(res => { const q = d.transaction('v').objectStore('v').get([String(key), String(id)]); q.onsuccess = () => res(q.result ? q.result.data : null); q.onerror = () => res(null); }); }
+    };
+  })();
+  function toU8(d) { return d instanceof Uint8Array ? d : d instanceof ArrayBuffer ? new Uint8Array(d) : new TextEncoder().encode(String(d)); }
+  Platform.versions = Versions;
+  /**
+   * File → Version History: the saved versions of the open document, each to open as a copy
+   * or to restore. opts: { state, app, load(file) } (load is the app's own file loader).
+   */
+  Platform.versionHistory = async function ({ state, app, load }) {
+    const key = state.path || state.name;
+    let list = [];
+    try { list = await Versions.list(key); } catch { list = []; }
+    if (!list.length) return UI.toast('No earlier versions yet. Isadek Office keeps a version each time you save (at most one every 10 minutes).', 6000);
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = '<div class="modal versions" role="dialog" aria-label="Version History"><h2>Version History</h2><p class="muted"></p><div class="v-list" role="list"></div><div class="actions"><button class="cancel">Close</button></div></div>';
+    back.querySelector('.muted').textContent = `${state.name} — ${list.length} version${list.length === 1 ? '' : 's'}`;
+    const box = back.querySelector('.v-list');
+    const fmtSize = n => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(0) + ' KB' : (n / 1048576).toFixed(1) + ' MB');
+    const close = () => back.remove();
+    list.forEach((v, i) => {
+      const row = document.createElement('div');
+      row.className = 'v-row';
+      row.setAttribute('role', 'listitem');
+      const when = new Date(+v.saved);
+      row.innerHTML = '<span class="when"></span><span class="size"></span><button data-a="open">Open a copy</button><button data-a="restore">Restore</button>';
+      row.querySelector('.when').textContent = when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) + (i === 0 ? ' (latest)' : '');
+      row.querySelector('.size').textContent = fmtSize(v.size);
+      row.querySelectorAll('button').forEach(b => b.addEventListener('click', async () => {
+        const data = await Versions.read(key, v.id);
+        if (!data) return UI.toast('That version could not be read');
+        const ext = Platform.extOf(state.name) || Platform.extOf(v.name);
+        if (b.dataset.a === 'open') {
+          close();
+          const stamp = when.toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' }).replace(/[\\/:*?"<>|]/g, '-');
+          await Platform.openData(app, `${Platform.baseName(state.name)} (version ${stamp})${ext ? '.' + ext : ''}`, new Uint8Array(data));
+          return;
+        }
+        if (!(await UI.confirm('Restore Version', `Replace what is open with the version from ${when.toLocaleString()}? You can still undo by restoring the latest version.`))) return;
+        close();
+        await load({ name: state.name, path: state.path, data: new Uint8Array(data), recovered: true });
+        state.set({ dirty: true });
+        UI.toast('Version restored — save to keep it');
+      }));
+      box.appendChild(row);
+    });
+    back.querySelector('.cancel').addEventListener('click', close);
+    back.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    document.body.appendChild(back);
+    back.querySelector('.cancel').focus();
   };
 
   /** Records a file in the browser's recent list (desktop keeps its own list in the main process). */

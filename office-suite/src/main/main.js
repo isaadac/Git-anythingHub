@@ -2,6 +2,7 @@
 // Isadek Office — Electron main process.
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, screen, session, shell } = require('electron');
+const { LANGS, menuText } = require('./menu-i18n');
 const path = require('path');
 const fs = require('fs');
 const settings = require('./settings');
@@ -10,6 +11,7 @@ const recovery = require('./recovery');
 const cloud = require('./cloud');
 require('./assistant');
 require('./notes-store');
+require('./versions');
 const os = require('os');
 const { createCollabServer } = require('./collab-server');
 
@@ -355,6 +357,14 @@ ipcMain.handle('app:fullscreen', (e, on) => { BrowserWindow.fromWebContents(e.se
 
 recovery.init({ createWindow, approve, isApproved });
 
+// Interface language: the pages translate themselves; the native menus are rebuilt here.
+ipcMain.handle('app:set-language', (_e, lang) => {
+  if (!LANGS.includes(lang)) return false;
+  settings.set('language', lang);
+  buildMenu();
+  return true;
+});
+
 // ---------- Menu ----------
 function send(cmd) {
   const win = BrowserWindow.getFocusedWindow();
@@ -363,61 +373,63 @@ function send(cmd) {
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
+  const L = menuText(settings.get('language'));
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
     {
-      label: 'File',
+      label: L('File'),
       submenu: [
-        { label: 'New Document', accelerator: 'CmdOrCtrl+Shift+W', click: () => createWindow('write') },
-        { label: 'New Spreadsheet', accelerator: 'CmdOrCtrl+Shift+E', click: () => createWindow('sheets') },
-        { label: 'New Presentation', accelerator: 'CmdOrCtrl+Shift+P', click: () => createWindow('slides') },
-        { label: 'Isadek Notes', accelerator: 'CmdOrCtrl+Shift+O', click: () => createWindow('notes') },
+        { label: L('New Document'), accelerator: 'CmdOrCtrl+Shift+W', click: () => createWindow('write') },
+        { label: L('New Spreadsheet'), accelerator: 'CmdOrCtrl+Shift+E', click: () => createWindow('sheets') },
+        { label: L('New Presentation'), accelerator: 'CmdOrCtrl+Shift+P', click: () => createWindow('slides') },
+        { label: L('Isadek Notes'), accelerator: 'CmdOrCtrl+Shift+O', click: () => createWindow('notes') },
         { type: 'separator' },
-        { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => send('new') },
-        { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
-        { label: 'Save', accelerator: 'CmdOrCtrl+S', click: () => send('save') },
-        { label: 'Save As…', accelerator: 'CmdOrCtrl+Shift+S', click: () => send('save-as') },
+        { label: L('New'), accelerator: 'CmdOrCtrl+N', click: () => send('new') },
+        { label: L('Open…'), accelerator: 'CmdOrCtrl+O', click: () => send('open') },
+        { label: L('Save'), accelerator: 'CmdOrCtrl+S', click: () => send('save') },
+        { label: L('Save As…'), accelerator: 'CmdOrCtrl+Shift+S', click: () => send('save-as') },
         { type: 'separator' },
-        { label: 'Export as PDF…', click: () => send('export-pdf') },
-        { label: 'Print…', accelerator: 'CmdOrCtrl+P', click: () => send('print') },
+        { label: L('Export as PDF…'), click: () => send('export-pdf') },
+        { label: L('Print…'), accelerator: 'CmdOrCtrl+P', click: () => send('print') },
         { type: 'separator' },
-        { label: 'Home', click: () => createWindow('home') },
-        isMac ? { role: 'close' } : { role: 'quit' }
+        { label: L('Home'), click: () => createWindow('home') },
+        isMac ? { role: 'close', label: L('Close') } : { role: 'quit', label: L('Quit') }
       ]
     },
     {
-      label: 'Edit',
+      label: L('Edit'),
       submenu: [
-        { label: 'Undo', accelerator: 'CmdOrCtrl+Z', click: () => send('undo') },
-        { label: 'Redo', accelerator: isMac ? 'Cmd+Shift+Z' : 'Ctrl+Y', click: () => send('redo') },
+        { label: L('Undo'), accelerator: 'CmdOrCtrl+Z', click: () => send('undo') },
+        { label: L('Redo'), accelerator: isMac ? 'Cmd+Shift+Z' : 'Ctrl+Y', click: () => send('redo') },
         { type: 'separator' },
-        { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' },
+        { role: 'cut', label: L('Cut') }, { role: 'copy', label: L('Copy') }, { role: 'paste', label: L('Paste') }, { role: 'selectAll', label: L('Select All') },
         { type: 'separator' },
-        { label: 'Find and Replace…', accelerator: 'CmdOrCtrl+F', click: () => send('find') }
+        { label: L('Find and Replace…'), accelerator: 'CmdOrCtrl+F', click: () => send('find') }
       ]
     },
     {
-      label: 'View',
+      label: L('View'),
       submenu: [
-        { role: 'zoomIn' }, { role: 'zoomOut' }, { role: 'resetZoom' },
+        { role: 'zoomIn', label: L('Zoom In') }, { role: 'zoomOut', label: L('Zoom Out') }, { role: 'resetZoom', label: L('Actual Size') },
         { type: 'separator' },
-        { role: 'togglefullscreen' },
-        { role: 'toggleDevTools' }
+        { role: 'togglefullscreen', label: L('Toggle Full Screen') },
+        { role: 'toggleDevTools', label: L('Toggle Developer Tools') }
       ]
     },
-    { role: 'windowMenu' },
+    { role: 'windowMenu', label: L('Window') },
     {
       role: 'help',
+      label: L('Help'),
       submenu: [{
-        label: 'Check for Updates…',
+        label: L('Check for Updates…'),
         click: () => updater.check(true)
       }, {
-        label: 'Update Automatically',
+        label: L('Update Automatically'),
         type: 'checkbox',
         checked: !!settings.get('autoUpdate'),
         click: item => updater.setEnabled(item.checked)
       }, { type: 'separator' }, {
-        label: 'About Isadek Office',
+        label: L('About Isadek Office'),
         click: () => dialog.showMessageBox({
           type: 'info',
           title: 'About Isadek Office',

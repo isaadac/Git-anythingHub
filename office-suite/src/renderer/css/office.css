@@ -265,3 +265,21 @@ body.ai-open .canvas, body.ai-open .grid-wrap, body.ai-open .stage-wrap { margin
   .backstage main { padding: 16px; }
 }
 html.touch .btn, html.touch .ribbon-tabs button, html.touch .modal .actions button { min-height: 34px; }
+
+/* Command search (title bar) */
+.tell-me { position: relative; margin: 0 8px; }
+.tell-me input { width: 220px; max-width: 30vw; height: 24px; border-radius: 4px; border: 1px solid rgba(255,255,255,.35); background: rgba(255,255,255,.18); color: inherit; padding: 0 8px; font: 12px var(--font); }
+.tell-me input::placeholder { color: rgba(255,255,255,.8); }
+.tell-me input:focus { background: #fff; color: #222; outline: none; }
+.tell-me .tm-list { position: absolute; top: 28px; left: 0; width: 320px; background: var(--surface, #fff); color: var(--text, #222); border: 1px solid #c8c6c4; border-radius: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.18); z-index: 3000; padding: 4px 0; }
+.tell-me .tm-item { display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; cursor: pointer; font: 13px var(--font); }
+.tell-me .tm-item .w { color: #8a8886; font-size: 11px; white-space: nowrap; }
+.tell-me .tm-item.on, .tell-me .tm-item:hover { background: rgba(0,0,0,.06); }
+.tm-flash { outline: 2px solid #ffb900 !important; outline-offset: 1px; }
+@media (max-width: 760px) { .tell-me { display: none; } }
+/* Version History */
+.modal.versions { width: min(560px, 94vw); }
+.v-list { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; gap: 2px; margin: 8px 0; }
+.v-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center; padding: 6px 4px; border-bottom: 1px solid var(--border, #e1dfdd); }
+.v-row .size { color: #8a8886; font-size: 12px; }
+.modal .muted { color: #8a8886; }

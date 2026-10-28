@@ -538,7 +538,7 @@
       audio.play().catch(() => UI.toast('Could not play the recording'));
       return;
     }
-    await Platform.save({ data: fromB64(f.data), name: f.name, filters: [{ name: 'File', extensions: [Platform.extOf(f.name) || '*'] }], saveAs: true });
+    await Platform.save({ noVersion: true, data: fromB64(f.data), name: f.name, filters: [{ name: 'File', extensions: [Platform.extOf(f.name) || '*'] }], saveAs: true });
   });
   // Record audio: Record, then Stop; the recording goes where the cursor was.
   let recorder = null;
@@ -791,11 +791,11 @@
       }
       case 'save-as': {
         await flush();
-        await Platform.save({ data: new TextEncoder().encode(JSON.stringify(nb)), name: safeName(nb.name) + '.anote', filters: [{ name: 'Isadek Notes notebook', extensions: ['anote'] }], saveAs: true });
+        await Platform.save({ noVersion: true, data: new TextEncoder().encode(JSON.stringify(nb)), name: safeName(nb.name) + '.anote', filters: [{ name: 'Isadek Notes notebook', extensions: ['anote'] }], saveAs: true });
         break;
       }
-      case 'export-md': commit(); await Platform.save({ data: new TextEncoder().encode(`# ${page.title || 'Untitled page'}\n\n${toMarkdown(page.html)}`), name: safeName(page.title) + '.md', filters: [{ name: 'Markdown', extensions: ['md'] }], saveAs: true }); break;
-      case 'export-html': commit(); await Platform.save({ data: new TextEncoder().encode(pageHtmlDoc(page)), name: safeName(page.title) + '.html', filters: [{ name: 'Web page', extensions: ['html'] }], saveAs: true }); break;
+      case 'export-md': commit(); await Platform.save({ noVersion: true, data: new TextEncoder().encode(`# ${page.title || 'Untitled page'}\n\n${toMarkdown(page.html)}`), name: safeName(page.title) + '.md', filters: [{ name: 'Markdown', extensions: ['md'] }], saveAs: true }); break;
+      case 'export-html': commit(); await Platform.save({ noVersion: true, data: new TextEncoder().encode(pageHtmlDoc(page)), name: safeName(page.title) + '.html', filters: [{ name: 'Web page', extensions: ['html'] }], saveAs: true }); break;
       case 'open-in-write': {
         commit();
         // Write has no tags: they become text it keeps.
