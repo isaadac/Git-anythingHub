@@ -40,11 +40,62 @@
     const paths = [...wbXml.matchAll(/<sheet\b[^>]*>/g)].map(m => target[(m[0].match(/\br:id="([^"]+)"/) || [])[1]]);
     let drawingN = 0, chartN = 0;
     const overrides = [];
+    let styles = null; // styles.xml, loaded when needed
+    const xfClones = new Map();
+    let xfs = null;
     for (let i = 0; i < sheets.length; i++) {
       const add = sheets[i];
       if (!add || !paths[i] || !zip.file(paths[i])) continue;
       let xml = await zip.file(paths[i]).async('string');
       for (const tag of ORDER) if (typeof add[tag] === 'string' && add[tag]) xml = insertInSheet(xml, tag, add[tag]);
+      // Unlocked cells (for protected sheets): a copy of each cell's style with <protection locked="0"/>.
+      if (add.unlocked && add.unlocked.length) {
+        if (!styles) styles = await zip.file('xl/styles.xml').async('string');
+        if (!xfs) { const m = /<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/.exec(styles); xfs = m ? m[1].match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g) || [] : []; }
+        const unlockedXf = i => {
+          if (!xfClones.has(i)) {
+            let x = (xfs[i] || xfs[0] || '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>').replace(/<protection\b[^>]*\/>/, '').replace(/\sapplyProtection="[^"]*"/, '');
+            x = x.endsWith('/>') ? x.slice(0, -2) + ' applyProtection="1"><protection locked="0"/></xf>'
+              : x.replace(/^<xf\b/, '<xf applyProtection="1"').replace(/(<extLst\b|<\/xf>)/, '<protection locked="0"/>$1');
+            xfs.push(x);
+            xfClones.set(i, xfs.length - 1);
+          }
+          return xfClones.get(i);
+        };
+        const want = new Set(add.unlocked.slice(0, 100000));
+        xml = xml.replace(/<c r="([A-Z]+\d+)"([^>]*?)(\/?)>/g, (all, ref, attrs, close) => {
+          if (!want.has(ref)) return all;
+          want.delete(ref);
+          const sm = /\ss="(\d+)"/.exec(attrs);
+          const nx = unlockedXf(sm ? +sm[1] : 0);
+          return `<c r="${ref}"${sm ? attrs.replace(/\ss="\d+"/, ` s="${nx}"`) : attrs + ` s="${nx}"`}${close}>`;
+        });
+        // Empty unlocked cells get a cell element in their row (rows and cells in order).
+        const byRow = new Map();
+        for (const ref of want) { const m = /^([A-Z]+)(\d+)$/.exec(ref); const r = +m[2]; if (!byRow.has(r)) byRow.set(r, []); byRow.get(r).push(ref); }
+        const colNum = ref => [...ref.replace(/\d+$/, '')].reduce((n, ch) => n * 26 + ch.charCodeAt(0) - 64, 0);
+        if (/<sheetData\s*\/>/.test(xml)) xml = xml.replace(/<sheetData\s*\/>/, '<sheetData></sheetData>');
+        for (const [r, refs] of [...byRow].sort((a, b) => a[0] - b[0])) {
+          const cells = refs.sort((a, b) => colNum(a) - colNum(b)).map(ref => ({ ref, x: `<c r="${ref}" s="${unlockedXf(0)}"/>` }));
+          const rowRe = new RegExp(`<row r="${r}"([^>]*?)(\\/?)>`);
+          const rm = rowRe.exec(xml);
+          if (rm && rm[2] === '/') { xml = xml.replace(rowRe, `<row r="${r}"${rm[1]}>${cells.map(c => c.x).join('')}</row>`); continue; }
+          if (rm) {
+            const start = rm.index + rm[0].length, end = xml.indexOf('</row>', start);
+            let body = xml.slice(start, end);
+            for (const c of cells) {
+              const after = [...body.matchAll(/<c r="([A-Z]+)\d+"/g)].find(m => colNum(m[1]) > colNum(c.ref));
+              body = after ? body.slice(0, after.index) + c.x + body.slice(after.index) : body + c.x;
+            }
+            xml = xml.slice(0, start) + body + xml.slice(end);
+            continue;
+          }
+          const next = [...xml.matchAll(/<row r="(\d+)"/g)].find(m => +m[1] > r);
+          const rowXml = `<row r="${r}">${cells.map(c => c.x).join('')}</row>`;
+          const at = next ? next.index : xml.indexOf('</sheetData>');
+          xml = xml.slice(0, at) + rowXml + xml.slice(at);
+        }
+      }
       // Charts: a drawing part for the sheet, one chart part per chart, and the relationships between them.
       if (add.charts && add.charts.parts.length) {
         const dPath = `xl/drawings/drawing${++drawingN}.xml`;
@@ -71,6 +122,8 @@
       const ct = await zip.file('[Content_Types].xml').async('string');
       zip.file('[Content_Types].xml', ct.replace('</Types>', overrides.join('') + '</Types>'));
     }
+    if (xfs && xfClones.size) styles = styles.replace(/<cellXfs\b[^>]*>[\s\S]*?<\/cellXfs>/, `<cellXfs count="${xfs.length}">${xfs.join('')}</cellXfs>`);
+    if (styles) zip.file('xl/styles.xml', styles);
     if (dxfs.length) {
       let st = await zip.file('xl/styles.xml').async('string');
       const block = `<dxfs count="${dxfs.length}">${dxfs.join('')}</dxfs>`;

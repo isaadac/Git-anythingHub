@@ -74,7 +74,7 @@
     const cur = s.cells[key] || {};
     const next = { ...cur, ...props };
     if (props.s) next.s = { ...(cur.s || {}), ...props.s };
-    if ((next.v === undefined || next.v === '') && (!next.s || !Object.keys(next.s).length)) delete s.cells[key];
+    if ((next.v === undefined || next.v === '') && (!next.s || !Object.keys(next.s).length) && !next.n) delete s.cells[key];
     else s.cells[key] = next;
     if (r >= s.rows - 1) s.rows = Math.min(MAX_ROWS, r + 20);
     if (c >= s.cols - 1) s.cols = Math.min(MAX_COLS, c + 5);
@@ -213,6 +213,7 @@
     updateAggregate();
     updatePivotPane();
     updateDvUi();
+    updateProtectUi();
   }
   /** Excel's blue outline around the spill range of the selected cell. */
   const spillBox = document.createElement('div');
@@ -382,7 +383,7 @@
       d.style.maxHeight = Math.max(0, h - 1) + 'px';
       t.appendChild(d);
     }
-    t.className = [cls, st.wrap ? 'wrap' : '', s_fc(c)].filter(Boolean).join(' ');
+    t.className = [cls, st.wrap ? 'wrap' : '', s_fc(c), cell && cell.n ? 'has-note' : ''].filter(Boolean).join(' ');
     const style = t.style;
     style.fontWeight = st.b ? '700' : '';
     style.fontStyle = st.i ? 'italic' : '';
@@ -456,6 +457,7 @@
   }
   function changed(markDirty = true) {
     renderVisibleCells();
+    drawNotes();
     renderCharts();
     drawSelection();
     if (markDirty) state.markDirty();
@@ -571,6 +573,7 @@
   // ---------- Editing ----------
   let editing = false;
   function startEdit(initial) {
+    if (!guard({ r1: active.r, c1: active.c, r2: active.r, c2: active.c })) { fx.value = rawAt(active.r, active.c); return; }
     scrollIntoView(active.r, active.c);
     const m = mergeAt(active.r, active.c);
     const b = rangeBox(m || { r1: active.r, c1: active.c, r2: active.r, c2: active.c });
@@ -888,6 +891,7 @@
     }
     if (k === 'Enter') { e.preventDefault(); moveInSelection(e.shiftKey ? -1 : 1, 0); return; }
     if (k === 'Tab') { e.preventDefault(); moveInSelection(0, e.shiftKey ? -1 : 1); return; }
+    if (k === 'F2' && e.shiftKey) { e.preventDefault(); editNote(); return; }
     if (k === 'F2') { e.preventDefault(); startEdit(); return; }
     if (k === 'Home') { e.preventDefault(); select(mod ? 0 : active.r, 0); return; }
     if (k === 'End' && mod) { e.preventDefault(); const u = usedBounds(); select(u.r, u.c); return; }
@@ -906,7 +910,7 @@
     if (mod && k.toLowerCase() === 'r') { e.preventDefault(); fill('right'); return; }
     if (mod && k.toLowerCase() === 'z' && !Platform.desktop) { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (mod && k.toLowerCase() === 'y' && !Platform.desktop) { e.preventDefault(); redo(); return; }
-    if (mod && k === ';') { e.preventDefault(); snapshot(); setCell(active.r, active.c, { v: String(Math.floor(F.dateToSerial(new Date()))), s: { fmt: 'm/d/yyyy' } }); changed(); return; }
+    if (mod && k === ';') { e.preventDefault(); if (!guard({ r1: active.r, c1: active.c, r2: active.r, c2: active.c })) return; snapshot(); setCell(active.r, active.c, { v: String(Math.floor(F.dateToSerial(new Date()))), s: { fmt: 'm/d/yyyy' } }); changed(); return; }
     if (e.altKey && k === '=') { e.preventDefault(); autoSum(); return; }
     if (k.length === 1 && !mod && !e.altKey) { e.preventDefault(); startEdit(k); }
   });
@@ -970,6 +974,7 @@
   }
   function paste(text) {
     if (!text) return;
+    if (!guard({ r1: active.r, c1: active.c, r2: active.r + text.split('\n').length - 1, c2: active.c + Math.max(...text.split('\n').map(l => l.split('\t').length)) - 1 })) return;
     snapshot();
     const r0 = active.r, c0 = active.c;
     if (clip && text.replace(/\r/g, '') === clip.text.replace(/\r/g, '')) {
@@ -1007,6 +1012,7 @@
 
   // ---------- Formatting ----------
   function styleRange(fn) {
+    if (!guard(opRange(), 'formatCells')) return;
     snapshot();
     const g = opRange();
     forRange(g, (r, c) => {
@@ -1076,6 +1082,7 @@
   document.getElementById('decDec').addEventListener('click', () => changeDecimals(-1));
   document.getElementById('merge').addEventListener('click', () => {
     const g = opRange();
+    if (!guardSheet()) return;
     snapshot();
     const s = sheet();
     const existing = s.merges.filter(m => m.r1 <= g.r2 && m.r2 >= g.r1 && m.c1 <= g.c2 && m.c2 >= g.c1);
@@ -1103,6 +1110,7 @@
 
   // ---------- Cells: insert/delete ----------
   function shiftStructure(axis, index, count) {
+    if (!guardSheet((count > 0 ? 'insert' : 'delete') + (axis === 'row' ? 'Rows' : 'Columns'))) return;
     snapshot();
     const s = sheet();
     const moved = {};
@@ -1178,6 +1186,7 @@
   }
   async function conditionalFormat(cmd) {
     commitEdit();
+    if (!guardSheet('formatCells')) return;
     const [kind, arg] = cmd.split(':');
     const ops = { gt: ['Greater Than', 'greaterThan', 'Format cells that are GREATER THAN'], lt: ['Less Than', 'lessThan', 'Format cells that are LESS THAN'], eq: ['Equal To', 'equal', 'Format cells that are EQUAL TO'] };
     if (ops[kind]) {
@@ -1296,6 +1305,162 @@
   document.getElementById('condFmt').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) conditionalFormat(v); });
   document.getElementById('cfManage').addEventListener('click', manageCfRules);
 
+  // ---------- Notes (cell comments) ----------
+  const notePop = document.createElement('div');
+  notePop.className = 'note-pop';
+  notePop.hidden = true;
+  inner.appendChild(notePop);
+  const noteLayer = document.createElement('div');
+  noteLayer.className = 'note-layer';
+  inner.appendChild(noteLayer);
+  let showAllNotes = false, noteHover = null;
+  const author = () => { try { return localStorage.getItem('atlas-author') || 'Author'; } catch { return 'Author'; } };
+  function placeNote(el, r, c, n) {
+    el.textContent = '';
+    const who = document.createElement('b'); who.textContent = (n.author || 'Author') + ':';
+    const body = document.createElement('div'); body.textContent = n.text;
+    el.append(who, body);
+    const b = rangeBox({ r1: r, c1: c, r2: r, c2: c });
+    Object.assign(el.style, { left: (b.x + b.w + 8) + 'px', top: Math.max(0, b.y - 4) + 'px' });
+  }
+  function drawNotes() {
+    noteLayer.textContent = '';
+    if (!showAllNotes) return;
+    const s = sheet();
+    for (const [k, cell] of Object.entries(s.cells)) {
+      if (!cell.n) continue;
+      const p = parseRef(k);
+      if (!rowEls.has(p.row) || !colPos.has(p.col)) continue;
+      const el = document.createElement('div'); el.className = 'note-pop';
+      placeNote(el, p.row, p.col, cell.n);
+      noteLayer.appendChild(el);
+    }
+  }
+  grid.addEventListener('mouseover', e => {
+    const h = hit(e);
+    const cell = h && h.kind === 'cell' && cellAt(h.r, h.c);
+    if (!cell || !cell.n || showAllNotes) { if (noteHover) { notePop.hidden = true; noteHover = null; } return; }
+    if (noteHover === addr(h.r, h.c)) return;
+    noteHover = addr(h.r, h.c);
+    placeNote(notePop, h.r, h.c, cell.n);
+    notePop.hidden = false;
+  });
+  grid.addEventListener('mouseleave', () => { notePop.hidden = true; noteHover = null; });
+  async function editNote() {
+    commitEdit();
+    if (!guardSheet('objects')) return;
+    const cur = (cellAt(active.r, active.c) || {}).n;
+    const r = await UI.form(cur ? 'Edit Note' : 'New Note', [{ name: 't', label: `Note on ${addr(active.r, active.c)} (${author()})`, type: 'textarea', value: cur ? cur.text : '' }], 'Save');
+    if (!r) return;
+    snapshot();
+    const k = addr(active.r, active.c);
+    if (!r.t.trim()) { if (sheet().cells[k]) { delete sheet().cells[k].n; setCell(active.r, active.c, {}); } }
+    else setCell(active.r, active.c, { n: { text: r.t.slice(0, 32767), author: cur ? cur.author : author(), date: new Date().toISOString() } });
+    changed();
+  }
+  function deleteNotes() {
+    if (!guardSheet('objects')) return;
+    const g = opRange();
+    let n = 0;
+    snapshot();
+    forRange(g, (r, c) => { const cell = cellAt(r, c); if (cell && cell.n) { delete cell.n; setCell(r, c, {}); n++; } });
+    changed();
+    UI.toast(n ? `Deleted ${n} note${n === 1 ? '' : 's'}` : 'No notes in the selection');
+  }
+  function gotoNote(dir) {
+    const keys = Object.keys(sheet().cells).filter(k => sheet().cells[k].n).map(parseRef).sort((a, b) => a.row - b.row || a.col - b.col);
+    if (!keys.length) return UI.toast('There are no notes on this sheet');
+    const cur = active.r * 20000 + active.c;
+    const list = dir > 0 ? keys : keys.slice().reverse();
+    const next = list.find(p => (dir > 0 ? p.row * 20000 + p.col > cur : p.row * 20000 + p.col < cur)) || list[0];
+    select(next.row, next.col);
+    placeNote(notePop, next.row, next.col, cellAt(next.row, next.col).n);
+    notePop.hidden = false; noteHover = addr(next.row, next.col);
+  }
+  document.getElementById('noteNew').addEventListener('click', editNote);
+  document.getElementById('noteDel').addEventListener('click', deleteNotes);
+  document.getElementById('notePrev').addEventListener('click', () => gotoNote(-1));
+  document.getElementById('noteNext').addEventListener('click', () => gotoNote(1));
+  document.getElementById('noteShowAll').addEventListener('click', e => { showAllNotes = !showAllNotes; e.currentTarget.classList.toggle('on', showAllNotes); notePop.hidden = true; drawNotes(); });
+
+  // ---------- Sheet protection ----------
+  const PROTECTED_MSG = 'The cell or chart you\'re trying to change is on a protected sheet. To make a change, unprotect the sheet (Review > Unprotect Sheet).';
+  const isLocked = (r, c) => !(((cellAt(r, c) || {}).s || {}).unlocked);
+  /** Whether cells in g may change on this sheet; `allow` names an action the protection may permit. */
+  function guard(g, allow) {
+    const p = sheet().protect;
+    if (!p) return true;
+    if (allow && p.allow[allow]) return true;
+    const area = (g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1);
+    let ok = true;
+    if (area > 200000) ok = false;
+    else for (let r = g.r1; r <= g.r2 && ok; r++) for (let c = g.c1; c <= g.c2; c++) if (isLocked(r, c)) { ok = false; break; }
+    if (!ok) UI.toast(PROTECTED_MSG, 4500);
+    return ok;
+  }
+  function guardSheet(allow) {
+    const p = sheet().protect;
+    if (!p || (allow && p.allow[allow])) return true;
+    UI.toast(PROTECTED_MSG, 4500);
+    return false;
+  }
+  async function protectSheet() {
+    commitEdit();
+    const s = sheet();
+    if (s.protect) {
+      const needs = s.protect.hash || s.protect.algo;
+      const r = needs ? await UI.form('Unprotect Sheet', [{ name: 'pw', label: 'Password', type: 'password' }], 'Unprotect') : {};
+      if (!r) return;
+      if (needs && !(await SheetsProtect.check(s.protect, r.pw))) { UI.toast('The password you supplied is not correct.', 3500); return; }
+      snapshot();
+      delete s.protect;
+      UI.toast('Sheet unprotected');
+    } else {
+      const yesNo = [{ value: '', label: 'No' }, { value: '1', label: 'Yes' }];
+      const r = await UI.form('Protect Sheet', [
+        { name: 'pw', label: 'Password to unprotect sheet (optional)', type: 'password' },
+        { name: 'pw2', label: 'Reenter password', type: 'password' },
+        { name: 'formatCells', label: 'Allow formatting cells', type: 'select', options: yesNo },
+        { name: 'insertRows', label: 'Allow inserting and deleting rows', type: 'select', options: yesNo },
+        { name: 'insertColumns', label: 'Allow inserting and deleting columns', type: 'select', options: yesNo },
+        { name: 'sort', label: 'Allow sorting', type: 'select', options: yesNo }
+      ], 'Protect');
+      if (!r) return;
+      if (r.pw !== r.pw2) { UI.toast('The passwords don\'t match.', 3500); return; }
+      snapshot();
+      s.protect = SheetsProtect.clean({
+        hash: SheetsProtect.legacyHash(r.pw),
+        allow: { formatCells: !!r.formatCells, insertRows: !!r.insertRows, deleteRows: !!r.insertRows, insertColumns: !!r.insertColumns, deleteColumns: !!r.insertColumns, sort: !!r.sort }
+      });
+      UI.toast('Sheet protected. Only unlocked cells can be changed.', 3500);
+    }
+    updateProtectUi();
+    state.markDirty();
+  }
+  function updateProtectUi() {
+    const p = !!sheet().protect;
+    const b = document.getElementById('protectSheet');
+    b.classList.toggle('on', p);
+    b.querySelector('.lbl').textContent = p ? 'Unprotect Sheet' : 'Protect Sheet';
+    document.body.classList.toggle('sheet-protected', p);
+    const st = (cellAt(active.r, active.c) || {}).s || {};
+    document.getElementById('lockCell').classList.toggle('on', !st.unlocked);
+  }
+  document.getElementById('protectSheet').addEventListener('click', protectSheet);
+  document.getElementById('lockCell').addEventListener('click', () => {
+    if (!guardSheet()) return;
+    const g = opRange();
+    const lock = !isLocked(active.r, active.c);
+    snapshot();
+    forRange(g, (r, c) => {
+      const cell = cellAt(r, c);
+      if (lock) { if (cell && cell.s) { delete cell.s.unlocked; if (!Object.keys(cell.s).length) delete cell.s; setCell(r, c, {}); } }
+      else setCell(r, c, { s: { unlocked: true } });
+    });
+    changed();
+    UI.toast(lock ? 'Cells locked' : 'Cells unlocked: they can be edited when the sheet is protected');
+  });
+
   // ---------- Data validation ----------
   const dvArrow = document.getElementById('dvArrow');
   const dvList = document.getElementById('dvList');
@@ -1369,6 +1534,7 @@
   }
   function pickDv(text) {
     dvList.hidden = true;
+    if (!guard({ r1: active.r, c1: active.c, r2: active.r, c2: active.c })) return;
     snapshot();
     setCell(active.r, active.c, { v: typeof F.parseLiteral(text) !== 'string' && !/^(TRUE|FALSE)$/.test(text) ? text : (text[0] === '=' ? "'" + text : text) });
     changed();
@@ -1393,6 +1559,7 @@
 
   function validationDialog() {
     commitEdit();
+    if (!guardSheet()) return;
     const g = selRange();
     const ref = SheetsCF.refOf(g);
     const cur = dv.ruleAt(active.r, active.c) || { type: 'any', allowBlank: true, dropdown: true, error: { style: 'stop' } };
@@ -1554,6 +1721,7 @@
   const pivotAt = (r, c, s = sheet()) => (s.pivots || []).find(p => r >= p.r && c >= p.c && p.extent && r <= p.extent.r2 && c <= p.extent.c2);
   async function insertPivot() {
     commitEdit();
+    if (!guardSheet('pivotTables')) return;
     const g = dataRegion();
     if (g.r2 <= g.r1) { UI.toast('Select a range with a header row and at least one row of data'); return; }
     const srcRef = `${sheet().name}!${addr(g.r1, g.c1)}:${addr(g.r2, g.c2)}`;
@@ -1704,14 +1872,15 @@
 
   // ---------- Editing group ----------
   function clearRange(what) {
+    if (!guard(opRange(), what === 'formats' ? 'formatCells' : null)) return;
     snapshot();
     const g = opRange();
     forRange(g, (r, c) => {
       const cell = cellAt(r, c);
       if (!cell) return;
       if (what === 'all') delete sheet().cells[addr(r, c)];
-      else if (what === 'formats') { delete cell.s; if (!cell.v) delete sheet().cells[addr(r, c)]; }
-      else { cell.v = ''; if (!cell.s) delete sheet().cells[addr(r, c)]; }
+      else if (what === 'formats') { delete cell.s; if (!cell.v && !cell.n) delete sheet().cells[addr(r, c)]; }
+      else { cell.v = ''; if (!cell.s && !cell.n) delete sheet().cells[addr(r, c)]; }
     });
     if (what !== 'contents') fitRows(rowsOf(g));
     changed();
@@ -1772,6 +1941,7 @@
   });
   /** Extends the source range g over t, continuing series and shifting formulas. */
   function autoFill(g, t, ctrl) {
+    if (!guard(t)) return;
     snapshot();
     const s = sheet();
     const vertical = t.dir === 'down' || t.dir === 'up', reverse = t.dir === 'up' || t.dir === 'left';
@@ -1801,6 +1971,7 @@
   async function seriesDialog() {
     commitEdit();
     const g = opRange();
+    if (!guard(g)) return;
     const r = await UI.form('Series', [
       { name: 'dir', label: 'Series in', type: 'select', options: [{ value: 'cols', label: 'Columns' }, { value: 'rows', label: 'Rows' }] },
       { name: 'type', label: 'Type', type: 'select', options: [{ value: 'linear', label: 'Linear' }, { value: 'growth', label: 'Growth' }, { value: 'date', label: 'Date' }] },
@@ -1870,6 +2041,7 @@
 
   function autoSum() {
     const g = selRange();
+    if (!guard({ r1: g.r1, c1: g.c1, r2: g.r2 + 1, c2: g.c2 })) return;
     if (g.r1 !== g.r2 || g.c1 !== g.c2) {
       const o = opRange(g);
       snapshot();
@@ -1903,6 +2075,7 @@
   }
   async function sortData(desc) {
     const g = dataRegion();
+    if (!guard(g, 'sort')) return;
     const col = active.c;
     let hasHeader = false;
     if (g.r1 === 0 && g.r2 > 0) {
@@ -1966,6 +2139,7 @@
   document.getElementById('clearFilter').addEventListener('click', () => { sheet().hiddenRows = []; delete sheet().filterCol; buildGrid(); });
   document.getElementById('dedupe').addEventListener('click', () => {
     const g = dataRegion();
+    if (!guard(g)) return;
     snapshot();
     const seen = new Set();
     const keep = [];
@@ -1982,6 +2156,7 @@
     UI.toast(`${removed} duplicate row${removed === 1 ? '' : 's'} removed`);
   });
   document.getElementById('textToCols').addEventListener('click', async () => {
+    if (!guardSheet()) return;
     const r = await UI.form('Text to Columns', [{ name: 'd', label: 'Delimiter', type: 'select', options: [{ value: ',', label: 'Comma' }, { value: '\t', label: 'Tab' }, { value: ';', label: 'Semicolon' }, { value: ' ', label: 'Space' }, { value: '|', label: 'Pipe' }] }], 'Split');
     if (!r) return;
     const g = opRange();
@@ -2072,6 +2247,7 @@
   const CHART_TYPES = ['bar', 'line', 'pie', 'hbar', 'area', 'scatter', 'doughnut', 'combo'];
   function insertChart(type) {
     const g = opRange();
+    if (!guardSheet('objects')) return;
     if (g.r1 === g.r2 && g.c1 === g.c2) return UI.toast('Select the data for the chart first (include labels)');
     if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 20000) return UI.toast('Select a smaller range for the chart');
     snapshot();
@@ -2298,7 +2474,7 @@
   function cleanStyle(st) {
     if (!st || typeof st !== 'object') return null;
     const out = {};
-    ['b', 'i', 'u', 'wrap'].forEach(k => { if (st[k] === true) out[k] = true; });
+    ['b', 'i', 'u', 'wrap', 'unlocked'].forEach(k => { if (st[k] === true) out[k] = true; });
     if (['left', 'center', 'right'].includes(st.align)) out.align = st.align;
     if (Platform.isColor(st.color)) out.color = st.color;
     if (Platform.isColor(st.bg)) out.bg = st.bg;
@@ -2391,8 +2567,9 @@
         }
         const st = {};
         if (cell.z && cell.z !== 'General') st.fmt = String(cell.z).slice(0, 200);
-        if (v === '' && !Object.keys(st).length) continue;
-        s.cells[addr(p.row, p.col)] = Object.keys(st).length ? { v, s: st } : { v };
+        const note = Array.isArray(cell.c) && cell.c.length ? { text: cell.c.map(x => String(x.t || '')).join('\n').slice(0, 32767), author: String(cell.c[0].a || '').slice(0, 100) } : null;
+        if (v === '' && !Object.keys(st).length && !note) continue;
+        s.cells[addr(p.row, p.col)] = { v, ...(Object.keys(st).length ? { s: st } : {}), ...(note ? { n: note } : {}) };
         if (p.row > maxR) maxR = p.row;
         if (p.col > maxC) maxC = p.col;
       }
@@ -2430,6 +2607,10 @@
       if (!(ms && ms.name === sn) && ex && ex.drawing) {
         try { s.charts = chartsFromExcel(ex, s); } catch (err) { console.info('Charts skipped:', err); }
       }
+      // Protection: Atlas's copy, else Excel's (with its unlocked cells).
+      const prot = ms && ms.name === sn && ms.protect ? SheetsProtect.clean(ms.protect) : ex && ex.protection ? SheetsProtect.fromXml(ex.protection) : null;
+      if (prot) s.protect = prot;
+      if (!(ms && ms.name === sn) && ex && Array.isArray(ex.unlocked)) ex.unlocked.slice(0, 100000).forEach(k => { if (CELL_KEY.test(k)) s.cells[k] = { v: s.cells[k]?.v ?? '', ...(s.cells[k] || {}), s: { ...((s.cells[k] || {}).s || {}), unlocked: true } }; });
       if (ms && ms.name === sn && Array.isArray(ms.dv)) s.dv = ms.dv.map(SheetsDV.clean).filter(Boolean).slice(0, 500);
       else if (ex && typeof ex.dv === 'string' && ex.dv) {
         try { s.dv = SheetsDV.fromXlsx(ex.dv); } catch (err) { console.info('Data validation skipped:', err); }
@@ -2454,7 +2635,12 @@
         const visual = { ...st };
         delete visual.fmt;
         if (Object.keys(visual).length) styles[k] = visual;
-        if (cell.v === '' || cell.v === undefined) { if (st.fmt) { ws[k] = { t: 'z', z: st.fmt }; } return; }
+        const note = cell.n ? [{ a: cell.n.author || 'Author', t: cell.n.text }] : null;
+        if (note) note.hidden = true;
+        if (cell.v === '' || cell.v === undefined) {
+          if (st.fmt || note) { ws[k] = { t: 'z', ...(st.fmt ? { z: st.fmt } : {}), ...(note ? { c: note } : {}) }; maxR = Math.max(maxR, p.row); maxC = Math.max(maxC, p.col); }
+          return;
+        }
         maxR = Math.max(maxR, p.row); maxC = Math.max(maxC, p.col);
         const v = engine.value(s.name, p.row, p.col);
         const out = {};
@@ -2469,6 +2655,7 @@
         else if (typeof v === 'boolean') { out.t = 'b'; out.v = v; }
         else { out.t = 's'; out.v = String(v); }
         if (st.fmt) out.z = st.fmt;
+        if (note) out.c = note;
         ws[k] = out;
       });
       // Values a formula spilled into are stored too, as Excel does.
@@ -2491,7 +2678,7 @@
       if (rows.length) ws['!rows'] = rows;
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
-      meta.sheets.push({ name: s.name, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [] });
+      meta.sheets.push({ name: s.name, protect: s.protect || null, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [] });
     });
     // Cell styling and charts live in a custom document property so Atlas can restore them;
     // other apps ignore it and still get values, formulas, number formats, widths and merges.
@@ -2577,7 +2764,9 @@
     if (bookType !== 'xlsx') return bytes;
     // What SheetJS can't write goes into the XML afterwards.
     const dxfs = [];
-    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s) }));
+    const sheets = book.sheets.map(s => ({ conditionalFormatting: SheetsCF.toXlsx(s.cf, dxfs), dataValidations: SheetsDV.toXlsx(s.dv), charts: chartParts(s),
+      sheetProtection: SheetsProtect.toXml(s.protect),
+      unlocked: Object.keys(s.cells).filter(k => s.cells[k].s && s.cells[k].s.unlocked) }));
     return XlsxPatch.patch(bytes, { sheets, dxfs });
   }
 

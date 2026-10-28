@@ -26,6 +26,7 @@
   <button data-tab="insert">Insert</button>
   <button data-tab="formulas">Formulas</button>
   <button data-tab="data">Data</button>
+  <button data-tab="review">Review</button>
   <button data-tab="view">View</button>
 </div>
 
@@ -192,6 +193,22 @@
     </div><div class="label">Data Tools</div></div>
   </div>
 
+  <div class="ribbon-panel" data-panel="review">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="noteNew" title="New or edit note (Shift+F2)"><span class="ico">🗨</span>New/Edit<br>Note</button>
+      <div class="controls col">
+        <button class="btn" id="noteDel">✕ Delete</button>
+        <button class="btn" id="notePrev">↑ Previous</button>
+        <button class="btn" id="noteNext">↓ Next</button>
+      </div>
+      <button class="btn big" id="noteShowAll"><span class="ico">🗪</span>Show All<br>Notes</button>
+    </div><div class="label">Notes</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="protectSheet" title="Only unlocked cells can be changed while the sheet is protected"><span class="ico">🔒</span><span class="lbl">Protect Sheet</span></button>
+      <button class="btn big" id="lockCell" title="Locked cells can't be changed when the sheet is protected"><span class="ico">🔐</span>Lock<br>Cell</button>
+    </div><div class="label">Protect</div></div>
+  </div>
+
   <div class="ribbon-panel" data-panel="view">
     <div class="group"><div class="controls">
       <button class="btn big" id="freezeRow"><span class="ico">⎺</span>Freeze<br>Top Row</button>
@@ -277,6 +294,7 @@
 <script src="js/sheets-dv.js"></script>
 <script src="js/sheets-fill.js"></script>
 <script src="js/sheets-charts.js"></script>
+<script src="js/sheets-protect.js"></script>
 <script src="js/sheets.js"></script>
 </body>
 </html>

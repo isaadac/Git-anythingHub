@@ -18,7 +18,8 @@ self.onmessage = e => {
           continue;
         }
         // Plain values only: no prototypes, functions or getters cross back to the app.
-        out[k] = { t: c.t, v: c.v instanceof Date ? c.v.getTime() : c.v, f: c.f, F: typeof c.F === 'string' ? c.F : undefined, z: c.z, w: c.w, isDate: c.v instanceof Date };
+        out[k] = { t: c.t, v: c.v instanceof Date ? c.v.getTime() : c.v, f: c.f, F: typeof c.F === 'string' ? c.F : undefined, z: c.z, w: c.w, isDate: c.v instanceof Date,
+          c: Array.isArray(c.c) ? c.c.slice(0, 20).map(x => ({ a: String(x.a || '').slice(0, 100), t: String(x.t || '').slice(0, 32767) })) : undefined };
       }
       sheets.push(out);
     }
@@ -65,6 +66,16 @@ function excelExtras(wb) {
     const id = (m.match(/\bId="([^"]{1,200})"/) || [])[1], t = (m.match(/\bTarget="([^"]{1,500})"/) || [])[1];
     if (id && t) target[id] = t[0] === '/' ? t.slice(1) : 'xl/' + t.replace(/^\.\//, '');
   }
+  // Cell styles marked <protection locked="0"/>, and the cells that use them.
+  const xfBlock = (text('xl/styles.xml').match(/<cellXfs\b[^>]*>([\s\S]*?)<\/cellXfs>/) || ['', ''])[1];
+  const unlockedXfs = new Set();
+  (xfBlock.match(/<xf\b[^>]*\/>|<xf\b[^>]*>[\s\S]*?<\/xf>/g) || []).forEach((x, i) => { if (/<protection\b[^>]*\blocked="(0|false)"/.test(x)) unlockedXfs.add(String(i)); });
+  const unlockedIn = xml => {
+    if (!unlockedXfs.size) return [];
+    const out = [];
+    for (const m of xml.matchAll(/<c r="([A-Z]{1,3}\d{1,7})"[^>]{0,300}?\ss="(\d+)"/g)) { if (unlockedXfs.has(m[2])) out.push(m[1]); if (out.length >= 100000) break; }
+    return out;
+  };
   const sheetTags = text('xl/workbook.xml').match(/<sheet\b[^>]{0,2000}>/g) || [];
   for (const tag of sheetTags) {
     const id = (tag.match(/\br:id="([^"]{1,200})"/) || [])[1];
@@ -73,7 +84,9 @@ function excelExtras(wb) {
     out.sheets.push({
       ...chartsOf(sheetPath),
       cf: between(xml, '<conditionalFormatting', '</conditionalFormatting>', true),
-      dv: between(xml, '<dataValidations', '</dataValidations>', false) + between(xml, '<x14:dataValidations', '</x14:dataValidations>', false)
+      dv: between(xml, '<dataValidations', '</dataValidations>', false) + between(xml, '<x14:dataValidations', '</x14:dataValidations>', false),
+      protection: (xml.match(/<sheetProtection\b[^>]{0,2000}>/) || [''])[0],
+      unlocked: unlockedIn(xml)
     });
   }
   out.dxfs = between(text('xl/styles.xml'), '<dxfs', '</dxfs>', false);
