@@ -1,7 +1,8 @@
 'use strict';
 // Isadek Assistant pane: chat with Claude about the open document, with one-click actions and
 // buttons that put the reply into the document. Requests go through the desktop app's main
-// process (src/main/assistant.js), which holds the API key.
+// process (src/main/assistant.js) or, in a browser, an Isadek Office web server
+// (src/server/web-server.js); either holds the API key, which never reaches the page.
 (function () {
   const APP_NAMES = { write: 'Isadek Write (a word processor)', sheets: 'Isadek Sheets (a spreadsheet)', slides: 'Isadek Slides (a presentation editor)', notes: 'Isadek Notes (a note-taking app with notebooks, sections and pages)' };
   const MAX_CONTEXT = 200000; // characters of document sent with a request
@@ -43,24 +44,10 @@
       if (on) { refreshNote(); input.focus(); }
     }
     async function refreshNote() {
-      if (!Platform.desktop) { note.textContent = 'The assistant needs the desktop app.'; return; }
-      const s = await window.atlas.aiStatus();
-      note.textContent = s.hasKey ? (s.models.find(m => m.id === s.model) || {}).label || s.model : 'Add your API key (⚙) to start';
+      const s = await backend.status();
+      note.textContent = s.ready ? (s.models.find(m => m.id === s.model) || {}).label || s.model : s.message;
     }
-    async function settingsDialog() {
-      if (!Platform.desktop) return UI.toast('The assistant needs the desktop app', 4000);
-      const s = await window.atlas.aiStatus();
-      const v = await UI.form('Assistant settings', [
-        { name: 'key', label: s.hasKey ? 'Anthropic API key (saved — leave empty to keep it, type "remove" to delete it)' : 'Anthropic API key (from console.anthropic.com)', type: 'password' },
-        { name: 'model', label: 'Model', type: 'select', options: s.models.map(m => ({ value: m.id, label: m.label })), value: s.model }
-      ], 'Save');
-      if (!v) return;
-      if (v.key.trim().toLowerCase() === 'remove') await window.atlas.aiSetKey('');
-      else if (v.key.trim()) { const r = await window.atlas.aiSetKey(v.key); if (r.error) return UI.toast(r.error, 5000); }
-      await window.atlas.aiSetModel(v.model);
-      UI.toast('Saved');
-      refreshNote();
-    }
+    const settingsDialog = () => backend.settings().then(refreshNote);
 
     // Quick actions
     const acts = pane.querySelector('.ai-actions');
@@ -98,9 +85,7 @@
     async function ask(text, action) {
       text = String(text || '').trim();
       if (!text || busy) return;
-      if (!Platform.desktop) return UI.toast('The assistant needs the desktop app', 4000);
-      const st = await window.atlas.aiStatus();
-      if (!st.hasKey) { await settingsDialog(); if (!(await window.atlas.aiStatus()).hasKey) return; }
+      if (!(await backend.status()).ready) { await settingsDialog(); if (!(await backend.status()).ready) return; }
       if (o.beforeAsk) o.beforeAsk();
       const ctx = o.context();
       savedSel = ctx;
@@ -115,8 +100,7 @@
       busy = id;
       sendBtn.textContent = 'Stop';
       let shown = '';
-      const onDelta = d => { if (d.id === id) { shown += d.text; body.textContent = shown; log.scrollTop = log.scrollHeight; } };
-      listeners.add(onDelta);
+      const onDelta = text => { shown += text; body.textContent = shown; log.scrollTop = log.scrollHeight; };
       // The document goes with the newest question only, so earlier turns stay short.
       let doc = '';
       if (useDoc.checked || (action && action.selection)) {
@@ -127,8 +111,7 @@
         doc = parts.join('\n\n') + '\n\n';
       }
       const messages = history.map((h, i) => ({ role: h.role, content: i === history.length - 1 ? doc + h.content : h.content }));
-      const res = await window.atlas.aiAsk({ id, system: systemPrompt(), messages, effort: action && action.effort });
-      listeners.delete(onDelta);
+      const res = await backend.ask({ id, system: systemPrompt(), messages, effort: action && action.effort }, onDelta);
       busy = null;
       sendBtn.textContent = 'Send';
       m.classList.remove('pending');
@@ -147,13 +130,117 @@
         (o.format || '') +
         ' For questions, answer briefly and concretely, referring to the document where it helps.';
     }
-    sendBtn.addEventListener('click', () => { if (busy) window.atlas.aiCancel(busy); else ask(input.value); });
+    sendBtn.addEventListener('click', () => { if (busy) backend.cancel(busy); else ask(input.value); });
     input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!busy) ask(input.value); } e.stopPropagation(); });
 
     return { toggle, ask };
   }
+
+  // ---------- Where questions go ----------
+  // backend: { status() -> {ready, model, models, message}, settings(), ask(req, onText) -> result, cancel(id) }
   const listeners = new Set();
   if (window.atlas && window.atlas.onAiDelta) window.atlas.onAiDelta(d => listeners.forEach(f => f(d)));
+  const Desktop = {
+    async status() {
+      const s = await window.atlas.aiStatus();
+      return { ready: s.hasKey, model: s.model, models: s.models, message: 'Add your API key (⚙) to start' };
+    },
+    async settings() {
+      const s = await window.atlas.aiStatus();
+      const v = await UI.form('Assistant settings', [
+        { name: 'key', label: s.hasKey ? 'Anthropic API key (saved — leave empty to keep it, type "remove" to delete it)' : 'Anthropic API key (from console.anthropic.com)', type: 'password' },
+        { name: 'model', label: 'Model', type: 'select', options: s.models.map(m => ({ value: m.id, label: m.label })), value: s.model }
+      ], 'Save');
+      if (!v) return;
+      if (v.key.trim().toLowerCase() === 'remove') await window.atlas.aiSetKey('');
+      else if (v.key.trim()) { const r = await window.atlas.aiSetKey(v.key); if (r.error) return UI.toast(r.error, 5000); }
+      await window.atlas.aiSetModel(v.model);
+      UI.toast('Saved');
+    },
+    async ask(req, onText) {
+      const f = d => { if (d.id === req.id) onText(d.text); };
+      listeners.add(f);
+      try { return await window.atlas.aiAsk(req); } finally { listeners.delete(f); }
+    },
+    cancel(id) { window.atlas.aiCancel(id); }
+  };
+
+  // In a browser: an Isadek Office web server (by default the one the pages came from).
+  const store = {
+    get(k) { try { return localStorage.getItem(k) || ''; } catch { return ''; } },
+    set(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch { /* ignore */ } }
+  };
+  const serverUrl = () => (store.get('atlas-assistant-server') || (/^https?:$/.test(location.protocol) && !Platform.native ? location.origin : '')).replace(/\/+$/, '');
+  const auth = () => (store.get('atlas-assistant-code') ? { Authorization: 'Bearer ' + store.get('atlas-assistant-code') } : {});
+  const webRuns = new Map();
+  const Web = {
+    async status() {
+      const base = serverUrl();
+      const none = { ready: false, models: [], model: '' };
+      if (!base) return { ...none, message: 'Set the Assistant server (⚙) to start' };
+      try {
+        const r = await fetch(base + '/api/assistant/status', { headers: auth(), cache: 'no-store' });
+        if (!r.ok) throw new Error(r.status);
+        const s = await r.json();
+        const model = s.models.some(m => m.id === store.get('atlas-assistant-model')) ? store.get('atlas-assistant-model') : s.model;
+        if (!s.available) return { ...none, models: s.models, model, message: 'The Assistant is not set up on this server' };
+        return { ready: !!s.codeOk, models: s.models, model, needsCode: s.needsCode, message: 'Enter your access code (⚙) to start' };
+      } catch {
+        return { ...none, message: 'No Assistant server here. Set one (⚙) or use the desktop app.' };
+      }
+    },
+    async settings() {
+      const s = await Web.status();
+      const fields = [
+        { name: 'server', label: 'Isadek Office server with the Assistant (web address)', value: serverUrl() },
+        { name: 'code', label: store.get('atlas-assistant-code') ? 'Access code (saved — leave empty to keep it, type "remove" to delete it)' : 'Access code (ask whoever runs the server)', type: 'password' }
+      ];
+      if (s.models.length) fields.push({ name: 'model', label: 'Model', type: 'select', options: s.models.map(m => ({ value: m.id, label: m.label })), value: s.model });
+      const v = await UI.form('Assistant settings', fields, 'Save');
+      if (!v) return;
+      const server = v.server.trim().replace(/\/+$/, '');
+      if (server && !/^https?:\/\/[^\s/]+(\/[^\s]*)?$/i.test(server)) return UI.toast('Enter a web address such as https://office.example.com', 5000);
+      store.set('atlas-assistant-server', server && server !== location.origin ? server : '');
+      if (v.code.trim().toLowerCase() === 'remove') store.set('atlas-assistant-code', '');
+      else if (v.code.trim()) store.set('atlas-assistant-code', v.code.trim());
+      if (v.model) store.set('atlas-assistant-model', v.model);
+      const after = await Web.status();
+      UI.toast(after.ready ? 'Saved' : after.message, after.ready ? 2000 : 5000);
+    },
+    async ask(req, onText) {
+      const ctl = new AbortController();
+      webRuns.set(req.id, ctl);
+      try {
+        const st = await Web.status();
+        const r = await fetch(serverUrl() + '/api/assistant', {
+          method: 'POST', signal: ctl.signal, cache: 'no-store',
+          headers: { 'Content-Type': 'application/json', ...auth() },
+          body: JSON.stringify({ system: req.system, messages: req.messages, effort: req.effort, model: st.model })
+        });
+        if (!r.ok) { let e = ''; try { e = (await r.json()).error; } catch { /* not JSON */ } return { error: e || `The Assistant server returned an error (${r.status})` }; }
+        // Lines of JSON: {"t":"delta","text"} as the reply arrives, then {"t":"done",…}.
+        const reader = r.body.getReader(), dec = new TextDecoder();
+        let buf = '', done = null;
+        const line = l => { if (!l.trim()) return; const m = JSON.parse(l); if (m.t === 'delta') onText(m.text); else if (m.t === 'done') done = m; };
+        for (;;) {
+          const { value, done: end } = await reader.read();
+          if (end) break;
+          buf += dec.decode(value, { stream: true });
+          let i;
+          while ((i = buf.indexOf('\n')) >= 0) { line(buf.slice(0, i)); buf = buf.slice(i + 1); }
+        }
+        line(buf);
+        return done || { error: 'The reply was cut off. Try again.' };
+      } catch {
+        if (ctl.signal.aborted) return { cancelled: true };
+        return { error: 'Could not reach the Assistant server. Check the address in the Assistant settings.' };
+      } finally {
+        webRuns.delete(req.id);
+      }
+    },
+    cancel(id) { const c = webRuns.get(id); if (c) c.abort(); }
+  };
+  const backend = window.atlas && window.atlas.aiAsk ? Desktop : Web;
 
   window.Assistant = { attach };
 })();

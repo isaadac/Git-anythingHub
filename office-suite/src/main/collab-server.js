@@ -91,7 +91,8 @@ class Conn {
 function createCollabServer(opts = {}) {
   const limits = { ...LIMITS, ...opts.limits };
   const rooms = new Map();
-  const server = http.createServer((req, res) => {
+  // opts.server: share an existing HTTP server (the web server), else a server of its own.
+  const server = opts.server || http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('Isadek Office live editing server\n');
   });

@@ -14,6 +14,7 @@
     "test": "node --test test/*.test.js",
     "e2e": "node e2e/run.js",
     "live-server": "node src/main/collab-server.js",
+    "web-server": "node src/server/web-server.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -49,6 +50,7 @@
     },
     "files": [
       "src/**/*",
+      "!src/server/**",
       "build/icon.png",
       "package.json"
     ],
