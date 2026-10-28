@@ -27,6 +27,7 @@
   <button data-tab="insert">Insert</button>
   <button data-tab="design">Design</button>
   <button data-tab="transitions">Transitions</button>
+  <button data-tab="animations">Animations</button>
   <button data-tab="arrange">Arrange</button>
   <button data-tab="show">Slide Show</button>
 </div>
@@ -116,11 +117,41 @@
       <button class="btn big" data-trans="none"><span class="ico">▭</span>None</button>
       <button class="btn big" data-trans="fade"><span class="ico">◐</span>Fade</button>
       <button class="btn big" data-trans="push"><span class="ico">⇠</span>Push</button>
+      <button class="btn big" data-trans="wipe"><span class="ico">▤</span>Wipe</button>
+      <button class="btn big" data-trans="split"><span class="ico">◫</span>Split</button>
+      <button class="btn big" data-trans="cover"><span class="ico">⧉</span>Cover</button>
+      <button class="btn big" data-trans="uncover"><span class="ico">⬚</span>Uncover</button>
       <button class="btn big" data-trans="zoom"><span class="ico">⤢</span>Zoom</button>
     </div><div class="label">Transition to This Slide</div></div>
     <div class="group"><div class="controls col">
+      <label class="row">Duration <input class="ctl" id="transDur" type="number" min="0.1" max="30" step="0.25" value="1" style="width:60px"> s</label>
+      <label class="row"><input type="checkbox" id="advanceOn"> After <input class="ctl" id="advanceAfter" type="number" min="0" max="3600" step="0.5" value="0" style="width:60px"> s</label>
       <button class="btn" id="transAll">Apply to all</button>
     </div><div class="label">Timing</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="animations">
+    <div class="group"><div class="controls col">
+      <select class="ctl" id="animEffect" style="width:150px" title="Animation">
+        <option value="">None</option>
+        <optgroup label="Entrance"><option value="appear">Appear</option><option value="fade">Fade</option><option value="fly">Fly In</option><option value="float">Float In</option><option value="wipe">Wipe</option><option value="zoom">Zoom</option></optgroup>
+        <optgroup label="Emphasis"><option value="pulse">Pulse</option><option value="spin">Spin</option></optgroup>
+        <optgroup label="Exit"><option value="fadeOut">Fade Out</option><option value="flyOut">Fly Out</option><option value="zoomOut">Zoom Out</option></optgroup>
+      </select>
+      <select class="ctl" id="animDir" title="Effect options"><option value="bottom">From Bottom</option><option value="left">From Left</option><option value="right">From Right</option><option value="top">From Top</option></select>
+    </div><div class="label">Animation</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Start <select class="ctl" id="animStart"><option value="click">On Click</option><option value="with">With Previous</option><option value="after">After Previous</option></select></label>
+      <label class="row">Duration <input class="ctl" id="animDur" type="number" min="0" max="60" step="0.25" style="width:60px"> s</label>
+      <label class="row">Delay <input class="ctl" id="animDelay" type="number" min="0" max="600" step="0.25" style="width:60px"> s</label>
+    </div><div class="label">Timing</div></div>
+    <div class="group"><div class="controls">
+      <div class="controls col">
+        <button class="btn" id="animEarlier">▲ Move Earlier</button>
+        <button class="btn" id="animLater">▼ Move Later</button>
+      </div>
+      <button class="btn big" id="animPreview"><span class="ico">▶</span>Preview</button>
+    </div><div class="label">Order</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="arrange">
@@ -187,6 +218,7 @@
 <script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="../../node_modules/pptxgenjs/dist/pptxgen.min.js"></script>
 <script src="js/platform.js"></script>
+<script src="js/slides-anim.js"></script>
 <script src="js/slides.js"></script>
 </body>
 </html>

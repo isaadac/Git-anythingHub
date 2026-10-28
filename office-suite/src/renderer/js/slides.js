@@ -63,7 +63,9 @@
       s.layout = oneOf(sl.layout, ['title', 'content', 'section', 'two', 'titleonly', 'blank'], 'blank');
       s.bg = color(sl.bg);
       s.bgImage = imageUrl(sl.bgImage);
-      s.transition = oneOf(sl.transition, ['none', 'fade', 'push', 'zoom'], 'none');
+      s.transition = oneOf(sl.transition, SlidesAnim.TRANSITIONS, 'none');
+      s.transDur = num(sl.transDur, 1, 0.1, 30);
+      s.advance = typeof sl.advance === 'number' && isFinite(sl.advance) ? Math.max(0, Math.min(3600, sl.advance)) : null;
       s.notes = typeof sl.notes === 'string' ? sl.notes.slice(0, 100000) : '';
       s.elements = (Array.isArray(sl.elements) ? sl.elements : []).slice(0, 500).map(el => {
         if (!el || typeof el !== 'object') return null;
@@ -71,6 +73,8 @@
         if (!type) return null;
         const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
         if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+        const anim = SlidesAnim.clean(el.anim);
+        if (anim) out.anim = anim;
         if (type === 'image') { out.src = imageUrl(el.src); return out.src ? out : null; }
         out.html = Platform.sanitizeHtml(el.html);
         out.size = num(el.size, 18, 4, 400);
@@ -88,7 +92,7 @@
     if (!slides.length) slides.push(newSlide('title'));
     return { theme: Object.prototype.hasOwnProperty.call(THEMES, p.theme) ? p.theme : 'office', slides };
   }
-  const newSlide = kind => ({ id: newId(), layout: kind, bg: null, bgImage: null, transition: 'none', notes: '', elements: makeLayout(kind) });
+  const newSlide = kind => ({ id: newId(), layout: kind, bg: null, bgImage: null, transition: 'none', transDur: 1, advance: null, notes: '', elements: makeLayout(kind) });
   const PLACEHOLDER = { title: 'Click to add title', subtitle: 'Click to add subtitle', body: 'Click to add text' };
 
   // ---------- Undo ----------
@@ -154,6 +158,12 @@
         if (interactive && el.type === 'text' && el.ph) c.dataset.placeholder = PLACEHOLDER[el.ph];
         else if (interactive && el.type === 'text') c.dataset.placeholder = 'Type here';
         div.appendChild(c);
+      }
+      if (interactive && el.anim && document.body.classList.contains('show-anims')) {
+        const b = document.createElement('span');
+        b.className = 'anim-badge';
+        b.textContent = animNumber(s, el);
+        div.appendChild(b);
       }
       if (interactive && el.id === selectedId) {
         div.classList.add('selected');
@@ -649,6 +659,13 @@
     if (el && el.type !== 'image') document.getElementById('fontName').value = fontOf(el);
     document.getElementById('slideBg').value = slide().bg || theme().bg;
     document.querySelectorAll('[data-trans]').forEach(b => b.classList.toggle('on', (slide().transition || 'none') === b.dataset.trans));
+    document.getElementById('transDur').value = slide().transDur || 1;
+    document.getElementById('advanceOn').checked = typeof slide().advance === 'number';
+    document.getElementById('advanceAfter').value = typeof slide().advance === 'number' ? slide().advance : 0;
+    const a = el && el.anim;
+    document.getElementById('animEffect').value = a ? a.effect : '';
+    ['animDir', 'animStart', 'animDur', 'animDelay', 'animEarlier', 'animLater'].forEach(id => { document.getElementById(id).disabled = !a; });
+    if (a) { document.getElementById('animDir').value = a.dir; document.getElementById('animStart').value = a.start; document.getElementById('animDur').value = a.dur; document.getElementById('animDelay').value = a.delay; document.getElementById('animDir').disabled = !SlidesAnim.EFFECTS[a.effect].dirs; }
     document.getElementById('layout').value = slide().layout && makeLayout(slide().layout) ? slide().layout : 'content';
   }
 
@@ -673,8 +690,83 @@
   document.getElementById('slideBg').addEventListener('change', e => { snapshot(); slide().bg = e.target.value; slide().bgImage = null; renderAll(); state.markDirty(); });
   document.getElementById('bgAll').addEventListener('click', () => { snapshot(); const { bg, bgImage } = slide(); pres.slides.forEach(s => { s.bg = bg; s.bgImage = bgImage; }); renderAll(); state.markDirty(); });
   document.getElementById('bgImage').addEventListener('click', async () => { const src = await pickImage(); if (!src) return; snapshot(); slide().bgImage = src; renderAll(); state.markDirty(); });
-  document.querySelectorAll('[data-trans]').forEach(b => b.addEventListener('click', () => { slide().transition = b.dataset.trans; syncToolbar(); state.markDirty(); UI.toast('Transition: ' + b.textContent.trim()); }));
-  document.getElementById('transAll').addEventListener('click', () => { const t = slide().transition; pres.slides.forEach(s => { s.transition = t; }); state.markDirty(); UI.toast('Applied to all slides'); });
+  document.querySelectorAll('[data-trans]').forEach(b => b.addEventListener('click', () => {
+    snapshot();
+    slide().transition = b.dataset.trans;
+    syncToolbar(); state.markDirty();
+    previewTransition();
+  }));
+  document.getElementById('transAll').addEventListener('click', () => { snapshot(); const { transition, transDur, advance } = slide(); pres.slides.forEach(s => Object.assign(s, { transition, transDur, advance })); state.markDirty(); UI.toast('Applied to all slides'); });
+  document.getElementById('transDur').addEventListener('change', e => { snapshot(); slide().transDur = Math.max(0.1, Math.min(30, +e.target.value || 1)); state.markDirty(); });
+  document.getElementById('advanceOn').addEventListener('change', e => { snapshot(); slide().advance = e.target.checked ? Math.max(0, +document.getElementById('advanceAfter').value || 0) : null; state.markDirty(); });
+  document.getElementById('advanceAfter').addEventListener('change', e => { snapshot(); if (document.getElementById('advanceOn').checked) slide().advance = Math.max(0, +e.target.value || 0); state.markDirty(); });
+  function previewTransition() {
+    const frames = TRANSITION_FRAMES[slide().transition];
+    if (frames) stage.animate(frames, { duration: (slide().transDur || 1) * 1000, easing: 'ease-out' });
+  }
+
+  // ---------- Animations ----------
+  /** The click an element's animation plays on (0 = as the slide appears), as PowerPoint numbers them. */
+  function animNumber(s, el) {
+    let n = 0;
+    for (const x of s.elements.filter(e => e.anim).sort((a, b) => a.anim.order - b.anim.order)) {
+      if (x.anim.start === 'click') n++;
+      if (x === el) return n;
+    }
+    return n;
+  }
+  function setAnim(fn) {
+    const el = selectedId && elById(selectedId);
+    if (!el) { UI.toast('Select an object to animate'); return; }
+    snapshot();
+    fn(el);
+    if (el.anim) el.anim = SlidesAnim.clean(el.anim);
+    renderAll(); state.markDirty();
+  }
+  document.getElementById('animEffect').addEventListener('change', e => {
+    const v = e.target.value;
+    setAnim(el => {
+      if (!v) { delete el.anim; return; }
+      const max = Math.max(-1, ...slide().elements.filter(x => x.anim && x !== el).map(x => x.anim.order));
+      el.anim = { ...(el.anim || { start: 'click', dur: v === 'appear' ? 0 : 0.5, delay: 0, dir: 'bottom', order: max + 1 }), effect: v };
+      if (v === 'appear') el.anim.dur = 0; else if (!el.anim.dur) el.anim.dur = 0.5;
+    });
+    previewAnim();
+  });
+  document.getElementById('animDir').addEventListener('change', e => setAnim(el => { if (el.anim) el.anim.dir = e.target.value; }));
+  document.getElementById('animStart').addEventListener('change', e => setAnim(el => { if (el.anim) el.anim.start = e.target.value; }));
+  document.getElementById('animDur').addEventListener('change', e => setAnim(el => { if (el.anim) el.anim.dur = +e.target.value || 0; }));
+  document.getElementById('animDelay').addEventListener('change', e => setAnim(el => { if (el.anim) el.anim.delay = +e.target.value || 0; }));
+  function moveAnim(d) {
+    setAnim(el => {
+      if (!el.anim) return;
+      const list = slide().elements.filter(x => x.anim).sort((a, b) => a.anim.order - b.anim.order);
+      const i = list.indexOf(el), j = i + d;
+      if (j < 0 || j >= list.length) return;
+      [list[i], list[j]] = [list[j], list[i]];
+      list.forEach((x, k) => { x.anim.order = k; });
+    });
+  }
+  document.getElementById('animEarlier').addEventListener('click', () => moveAnim(-1));
+  document.getElementById('animLater').addEventListener('click', () => moveAnim(1));
+  /** Plays the slide's builds one after another on the editing stage. */
+  function previewAnim() {
+    const groups = SlidesAnim.sequence(slide());
+    if (!groups.length) return;
+    let t = 0;
+    const timeline = { items: [] };
+    groups.forEach(g => {
+      g.items.forEach(x => timeline.items.push({ ...x, at: x.at + t }));
+      t += Math.max(...g.items.map(x => x.at + x.anim.dur * 1000)) + 200;
+    });
+    SlidesAnim.play(timeline, id => stage.querySelector(`[data-id="${id}"]`));
+    setTimeout(() => stage.querySelectorAll('.el').forEach(n => { n.style.visibility = ''; }), t + 50);
+  }
+  document.getElementById('animPreview').addEventListener('click', previewAnim);
+  document.querySelector('.ribbon-tabs').addEventListener('click', () => setTimeout(() => {
+    document.body.classList.toggle('show-anims', document.querySelector('.ribbon-panel[data-panel="animations"]').classList.contains('active'));
+    renderStage();
+  }));
   notes.addEventListener('input', () => { slide().notes = notes.value; state.markDirty(); });
   document.getElementById('toggleNotes').addEventListener('click', e => { document.body.classList.toggle('hide-notes'); e.currentTarget.classList.toggle('on', !document.body.classList.contains('hide-notes')); fitStage(); });
 
@@ -693,26 +785,73 @@
     document.getElementById('presentHint').textContent = '→ / Space: next   ← : previous   B: black   Esc: end';
     setTimeout(() => { document.getElementById('presentHint').textContent = ''; }, 3000);
   }
-  function showSlide(i, animate = true) {
+  let groups = [], built = 0, running = [], advanceTimer = null;
+  const showNode = id => presentSlide.querySelector(`[data-id="${id}"]`);
+  const TRANSITION_FRAMES = {
+    fade: [{ opacity: 0 }, { opacity: 1 }],
+    push: [{ translate: '100% 0' }, { translate: '0 0' }],
+    cover: [{ translate: '100% 0' }, { translate: '0 0' }],
+    uncover: [{ opacity: 0, scale: '1.04' }, { opacity: 1, scale: '1' }],
+    wipe: [{ clipPath: 'inset(0 100% 0 0)' }, { clipPath: 'inset(0 0 0 0)' }],
+    split: [{ clipPath: 'inset(0 50% 0 50%)' }, { clipPath: 'inset(0 0 0 0)' }],
+    zoom: [{ scale: '0.6', opacity: 0 }, { scale: '1', opacity: 1 }]
+  };
+  /** Shows slide i with its builds done up to `upTo` (0 = none, Infinity = all). */
+  function showSlide(i, animate = true, upTo = 0) {
+    finishRunning();
+    clearTimeout(advanceTimer);
     const s = pres.slides[i];
     renderSlide(s, presentSlide, false);
     const k = Math.min(window.innerWidth / W, window.innerHeight / H);
     presentSlide.style.setProperty('--scale', `scale(${k})`);
     presentSlide.style.transform = `scale(${k})`;
     presentSlide.className = 'slide';
-    if (animate && s.transition && s.transition !== 'none') { void presentSlide.offsetWidth; presentSlide.classList.add('t-' + s.transition); }
+    groups = SlidesAnim.sequence(s);
+    built = Math.min(upTo, groups.length);
+    applyVisibility(s);
+    const frames = TRANSITION_FRAMES[s.transition];
+    let wait = 0;
+    if (animate && frames) { presentSlide.animate(frames, { duration: (s.transDur || 1) * 1000, easing: 'ease-out' }); wait = (s.transDur || 1) * 1000; }
+    if (built === 0 && groups[0] && groups[0].auto) setTimeout(() => { if (built === 0 && pres.slides[showIndex] === s) build(); }, wait);
+    else scheduleAdvance();
+  }
+  function applyVisibility(s) {
+    const vis = SlidesAnim.visibilityAfter(s, groups, built);
+    vis.forEach((v, id) => { const n = showNode(id); if (n) n.style.visibility = v ? '' : 'hidden'; });
+  }
+  function finishRunning() { running.forEach(r => { try { r.a.finish(); } catch { /* gone */ } r.done(); }); running = []; }
+  /** Plays the next build; returns false when there is none. */
+  function build() {
+    if (built >= groups.length) return false;
+    finishRunning();
+    running = SlidesAnim.play(groups[built], showNode);
+    built++;
+    // A following group that starts "with/after previous" can't exist (groups start on a click), so wait for a click or the timer.
+    scheduleAdvance();
+    return true;
+  }
+  function scheduleAdvance() {
+    clearTimeout(advanceTimer);
+    const s = pres.slides[showIndex];
+    if (typeof s.advance !== 'number' || built < groups.length) return;
+    const end = Math.max(0, ...running.map(r => { const t = r.a.effect.getComputedTiming(); return (t.endTime || 0); }));
+    advanceTimer = setTimeout(() => { if (!presenter.hidden) step(1); }, end + s.advance * 1000);
   }
   function endShow() {
+    finishRunning();
+    clearTimeout(advanceTimer);
     presenter.hidden = true;
     Platform.fullscreen(false);
     goTo(showIndex);
   }
   function step(d) {
+    if (d > 0 && build()) return;
+    if (d < 0 && built > 0) { running.forEach(r => { r.a.dropped = true; r.a.cancel(); }); running = []; built--; applyVisibility(pres.slides[showIndex]); return; }
     const n = showIndex + d;
     if (n >= pres.slides.length) return endShow();
     if (n < 0) return;
     showIndex = n;
-    showSlide(n, d > 0);
+    showSlide(n, d > 0, d > 0 ? 0 : Infinity);
   }
   presenter.addEventListener('click', e => { if (e.button === 0) step(1); });
   presenter.addEventListener('contextmenu', e => { e.preventDefault(); step(-1); });
@@ -811,9 +950,8 @@
       const ps = pptx.addSlide();
       if (s.bgImage) ps.background = { data: s.bgImage };
       else ps.background = { color: hex(s.bg || theme().bg) };
-      if (s.transition && s.transition !== 'none') ps.transition = { type: s.transition };
       for (const el of s.elements) {
-        const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0 };
+        const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: 'atlas-' + el.id };
         if (el.type === 'image') { ps.addImage({ data: el.src, ...box }); continue; }
         if (el.type === 'table') {
           const tmp = document.createElement('div'); tmp.innerHTML = el.html;
@@ -843,7 +981,26 @@
       if (s.notes) ps.addNotes(s.notes);
     }
     const buf = await pptx.write({ outputType: 'arraybuffer', compression: true });
-    return new Uint8Array(buf);
+    return addTimingToPptx(new Uint8Array(buf));
+  }
+  /** PptxGenJS doesn't write transitions or animations: add them to each slide's XML. */
+  async function addTimingToPptx(bytes) {
+    if (!pres.slides.some(s => (s.transition && s.transition !== 'none') || typeof s.advance === 'number' || s.elements.some(e => e.anim))) return bytes;
+    const zip = await JSZip.loadAsync(bytes);
+    for (let i = 0; i < pres.slides.length; i++) {
+      const path = `ppt/slides/slide${i + 1}.xml`;
+      const f = zip.file(path);
+      if (!f) continue;
+      let xml = await f.async('string');
+      const ids = {};
+      for (const m of xml.matchAll(/<p:cNvPr id="(\d+)" name="atlas-([^"]+)"/g)) ids[m[2]] = m[1];
+      const s = pres.slides[i];
+      const extra = SlidesAnim.transitionXml(s) + SlidesAnim.timingXml(s, el => ids[el.id]);
+      if (!extra) continue;
+      xml = xml.includes('</p:clrMapOvr>') ? xml.replace('</p:clrMapOvr>', '</p:clrMapOvr>' + extra) : xml.replace('</p:cSld>', '</p:cSld>' + extra);
+      zip.file(path, xml);
+    }
+    return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
   }
 
   // ---------- PPTX import ----------
@@ -877,6 +1034,7 @@
       return null;
     };
     const slides = [];
+    let spids = new Map(); // PowerPoint shape id -> imported element, for animations
     const ids = [...presXml.getElementsByTagNameNS(P, 'sldId')];
     for (const sid of ids) {
       const target = pr[sid.getAttributeNS(R, 'id') || sid.getAttribute('r:id')];
@@ -894,12 +1052,16 @@
         else s.bg = colorOf(bg);
       }
       const spTree = xml.getElementsByTagNameNS(P, 'spTree')[0];
+      spids = new Map();
       if (spTree) {
         for (const node of [...spTree.children]) {
           const el = await importShape(node, zip, path, rels);
           if (el) slide_push(s, el);
         }
       }
+      // Transition and animations
+      Object.assign(s, SlidesAnim.fromTransition(xml.getElementsByTagNameNS(P, 'transition')[0]) || {});
+      SlidesAnim.fromTiming(xml.getElementsByTagNameNS(P, 'timing')[0]).forEach(({ spid, anim }) => { const el = spids.get(spid); if (el && !el.anim) el.anim = anim; });
       // Speaker notes
       const notesTarget = Object.values(rels).find(t => /notesSlide/.test(t));
       if (notesTarget) {
@@ -930,16 +1092,19 @@
         // Placeholder positions come from the layout; use sensible defaults.
         box = /title/i.test(phType) ? (phType === 'ctrTitle' ? { x: 80, y: 140, w: 800, h: 150 } : { x: 60, y: 28, w: 840, h: 90 }) : phType === 'subTitle' ? { x: 120, y: 305, w: 720, h: 80 } : { x: 60, y: 130, w: 840, h: 370 };
       } else return null;
+      const nv = node.getElementsByTagNameNS(P, 'cNvPr')[0];
+      const spid = nv ? nv.getAttribute('id') : null;
+      const tag = el => { if (el && spid) spids.set(spid, el); return el; };
       if (ln === 'pic') {
         const blip = node.getElementsByTagNameNS(A, 'blip')[0];
         const src = blip && await mediaUrl(zipF, path, rels[blip.getAttributeNS(R, 'embed')]);
-        return src ? { id: newId(), type: 'image', src, ...box } : null;
+        return src ? tag({ id: newId(), type: 'image', src, ...box }) : null;
       }
       if (ln === 'graphicFrame') {
         const tbl = node.getElementsByTagNameNS(A, 'tbl')[0];
         if (!tbl) return null;
         const html = '<table>' + [...tbl.getElementsByTagNameNS(A, 'tr')].map(tr => '<tr>' + [...tr.getElementsByTagNameNS(A, 'tc')].map(tc => `<td>${escapeHtml([...tc.getElementsByTagNameNS(A, 't')].map(t => t.textContent).join(' '))}</td>`).join('') + '</tr>').join('') + '</table>';
-        return { id: newId(), type: 'table', html, size: 14, align: 'left', valign: 'top', ...box };
+        return tag({ id: newId(), type: 'table', html, size: 14, align: 'left', valign: 'top', ...box });
       }
       if (ln !== 'sp' && ln !== 'cxnSp') return null;
       const spPr = node.getElementsByTagNameNS(P, 'spPr')[0];
@@ -1001,6 +1166,7 @@
       const isShape = (fill || line || (prst && prst !== 'rect')) && !phType;
       const el = { id: newId(), type: isShape ? 'shape' : 'text', html, size, align, valign, ...box };
       if (phType) el.ph = /title/i.test(phType) ? 'title' : phType === 'subTitle' ? 'subtitle' : 'body';
+      tag(el);
       if (isShape) { el.shape = { rect: 'rect', roundRect: 'roundRect', ellipse: 'ellipse', triangle: 'triangle', rightArrow: 'rightArrow', line: 'line', star5: 'star5', diamond: 'diamond', straightConnector1: 'line' }[prst] || 'rect'; el.fill = fill; el.line = line; }
       return el;
     }

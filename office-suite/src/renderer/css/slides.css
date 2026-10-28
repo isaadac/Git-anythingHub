@@ -78,3 +78,6 @@ body.hide-notes .notes { display: none; }
   .thumb .frame .slide { transform: scale(calc(90 / 960)); }
   .notes { height: 60px; }
 }
+
+/* Animation order badges (Animations tab) */
+.anim-badge { position: absolute; left: -22px; top: -2px; min-width: 18px; height: 18px; padding: 0 4px; background: #f3f2f1; border: 1px solid #a19f9d; color: #323130; font: 11px/16px var(--font); text-align: center; z-index: 4; pointer-events: none; }
