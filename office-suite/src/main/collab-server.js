@@ -9,7 +9,9 @@
 const http = require('http');
 const crypto = require('crypto');
 
-const LIMITS = { message: 32e6, roomBytes: 200e6, rooms: 200, clientsPerRoom: 50, idleMs: 60 * 60 * 1000, keyLen: 300 };
+// backlog: bytes waiting to go to one connection; a person whose connection stalls is dropped
+// beyond it (their app reconnects and catches up) instead of the server holding it all.
+const LIMITS = { message: 32e6, roomBytes: 200e6, rooms: 200, clientsPerRoom: 50, idleMs: 60 * 60 * 1000, keyLen: 300, backlog: 64e6 };
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 // ---------- WebSocket framing ----------
@@ -22,8 +24,9 @@ function encodeFrame(text, opcode = 1) {
 }
 
 class Conn {
-  constructor(socket, onMessage, onClose) {
+  constructor(socket, onMessage, onClose, backlog = LIMITS.backlog) {
     this.socket = socket;
+    this.backlog = backlog;
     this.buf = Buffer.alloc(0);
     this.parts = [];
     this.partBytes = 0;
@@ -71,7 +74,8 @@ class Conn {
   }
   send(obj, opcode = 1) {
     if (this.closed) return;
-    try { this.socket.write(encodeFrame(typeof obj === 'string' ? obj : JSON.stringify(obj), opcode)); } catch { this.end(); }
+    try { this.socket.write(encodeFrame(typeof obj === 'string' ? obj : JSON.stringify(obj), opcode)); } catch { this.end(); return; }
+    if (this.socket.writableLength > this.backlog) this.end();
   }
   close(code = 1000) {
     if (this.closed) return;
@@ -160,12 +164,13 @@ function createCollabServer(opts = {}) {
     if (!room.clients.size) room.idle = setTimeout(() => { if (!room.clients.size) rooms.delete(room.id); }, limits.idleMs);
   }
 
-  server.on('upgrade', (req, socket) => {
+  server.on('upgrade', (req, socket, head) => {
     const key = req.headers['sec-websocket-key'];
     if (!key || (req.headers.upgrade || '').toLowerCase() !== 'websocket') { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
     const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-    const c = new Conn(socket, onMessage, onClose);
+    const c = new Conn(socket, onMessage, onClose, limits.backlog);
+    if (head && head.length) c.data(head); // bytes that came with the handshake
     // Keep idle connections alive through proxies.
     const ping = setInterval(() => (c.closed ? clearInterval(ping) : c.send('', 9)), 30000);
   });
