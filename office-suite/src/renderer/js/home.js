@@ -136,6 +136,7 @@
 
   document.getElementById('themeBtn').addEventListener('click', () => Theme.choose());
   document.getElementById('langBtn').addEventListener('click', () => I18n.choose());
+  document.getElementById('helpBtn').addEventListener('click', () => Platform.help());
 
   render();
   renderRecovered();

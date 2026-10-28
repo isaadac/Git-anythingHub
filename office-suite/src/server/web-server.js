@@ -15,6 +15,8 @@
 //   ASSISTANT_MODEL        the default model
 //   ISADEK_GOOGLE_CLIENT_ID, ISADEK_MICROSOFT_CLIENT_ID, ISADEK_DROPBOX_APP_KEY, …
 //                          your cloud app registrations, offered to every page (scripts/cloud-apps.js)
+//   CRASH_DIR              keep crash reports the desktop app sends to /api/crash in this folder
+//                          (build the app with ISADEK_CRASH_URL=https://this-server/api/crash)
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
@@ -22,6 +24,7 @@ const crypto = require('crypto');
 const { Anthropic, MODELS, validModel, cleanMessages, ask } = require('../main/assistant-core');
 const { createCollabServer } = require('../main/collab-server');
 const { fromEnv: cloudAppsFromEnv } = require('../../scripts/cloud-apps');
+const { createCrashCollector } = require('./crash-collector');
 
 const ROOT = path.resolve(__dirname, '../..');
 const RENDERER = path.join(ROOT, 'src/renderer');
@@ -53,6 +56,8 @@ function createWebServer(opts = {}) {
   const client = opts.client || (cfg.key ? new Anthropic({ apiKey: cfg.key, ...(opts.baseURL ? { baseURL: opts.baseURL } : {}) }) : null);
   const libs = libraryFiles();
   const enabled = () => !!client && (cfg.open || cfg.codes.length > 0);
+  const crashDir = opts.crashDir !== undefined ? opts.crashDir : env.CRASH_DIR;
+  const crashes = crashDir ? createCrashCollector({ dir: path.resolve(crashDir) }) : null;
 
   // Questions per minute, per access code (or address when the Assistant is open).
   const hits = new Map();
@@ -135,6 +140,7 @@ function createWebServer(opts = {}) {
         const code = codeOf(req);
         return json(res, 200, { available: enabled(), needsCode: !cfg.open, codeOk: cfg.open || validCode(code), models: MODELS, model: cfg.model });
       }
+      if (url.pathname === '/api/crash' && crashes) return crashes.handle(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: 'Could not keep the report' }); });
       if (url.pathname === '/api/assistant' && req.method === 'POST') return assistant(req, res).catch(err => { if (!res.headersSent) json(res, 500, { error: String(err.message || err) }); else res.end(); });
       return json(res, 404, { error: 'Not found' });
     }

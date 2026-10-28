@@ -33,7 +33,7 @@
   'From Beginning': 'Do começo', 'From Bottom': 'De baixo', 'From Current Slide': 'Do slide atual', 'From Left': 'Da esquerda', 'From Right': 'Da direita',
   'From Top': 'De cima', 'From Web': 'Da web', 'Full Page View': 'Exibição de página inteira', 'Function': 'Função', 'Function Library': 'Biblioteca de funções', 'General': 'Geral',
   'Get & Transform Data': 'Obter e transformar dados', 'Goal Seek': 'Atingir meta', 'Good day': 'Bom dia', 'Greater Than…': 'É maior do que…', 'Green': 'Verde', 'Green - White': 'Verde - Branco',
-  'Green - Yellow - Red': 'Verde - Amarelo - Vermelho', 'Green Data Bar': 'Barra de dados verde', 'Gridlines': 'Linhas de grade', 'Group': 'Agrupar', 'Handouts': 'Folhetos', 'Header': 'Cabeçalho',
+  'Green - Yellow - Red': 'Verde - Amarelo - Vermelho', 'Green Data Bar': 'Barra de dados verde', 'Gridlines': 'Linhas de grade', 'Group': 'Agrupar', 'Handouts': 'Folhetos', 'Help': 'Ajuda', '? Help': '? Ajuda', 'Search help': 'Pesquisar na ajuda', 'Header': 'Cabeçalho',
   'Header & Footer': 'Cabeçalho e rodapé', 'Heading 1': 'Título 1', 'Heading 2': 'Título 2', 'Heading 3': 'Título 3', 'Hide icon during show': 'Ocultar ícone durante a apresentação',
   'Highlighter': 'Marca-texto', 'Home': 'Página inicial', 'Illustrations': 'Ilustrações', 'Ink': 'Tinta', 'Insert': 'Inserir', 'Insert Function': 'Inserir função', 'Insert Layout': 'Inserir layout',
   'Insert Merge Field…': 'Inserir campo de mesclagem…', 'Insert Placeholder…': 'Inserir espaço reservado…', 'Isadek Office Home': 'Início do Isadek Office', 'Isadek Office — signed in': 'Isadek Office — conectado',

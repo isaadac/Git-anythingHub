@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Mac App Store: the app runs in the sandbox. -->
+  <key>com.apple.security.app-sandbox</key>
+  <true/>
+  <!-- Files the person opens or saves with the file dialogs, and Downloads for exports. -->
+  <key>com.apple.security.files.user-selected.read-write</key>
+  <true/>
+  <key>com.apple.security.files.downloads.read-write</key>
+  <true/>
+  <!-- Cloud storage, the Assistant and updates of web data. -->
+  <key>com.apple.security.network.client</key>
+  <true/>
+  <!-- Cloud sign-in returns to a local address, and hosting a live-editing session listens. -->
+  <key>com.apple.security.network.server</key>
+  <true/>
+  <!-- Narration in Slides and audio notes in Notes. -->
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.print</key>
+  <true/>
+</dict>
+</plist>

@@ -6,6 +6,13 @@
   const desktop = !!(window.atlas && window.atlas.isDesktop);
   const menuHandlers = [];
 
+  // Script errors go to the crash log (desktop; kept on the computer unless crash reports are on).
+  if (desktop && window.atlas.reportError) {
+    const report = (kind, err, source) => { try { window.atlas.reportError({ kind, message: String(err && err.message || err || ''), stack: String(err && err.stack || ''), source: String(source || '') }).catch(() => {}); } catch { /* ignore */ } };
+    window.addEventListener('error', e => { if (e.error || e.message) report('error', e.error || e.message, e.filename ? `${e.filename.replace(/^.*\/(?=[^/]+$)/, '')}:${e.lineno}:${e.colno}` : ''); });
+    window.addEventListener('unhandledrejection', e => report('rejection', e.reason));
+  }
+
   function pickFileWeb(filters) {
     return new Promise(resolve => {
       const input = document.createElement('input');
@@ -103,6 +110,11 @@
       if (on) document.documentElement.requestFullscreen?.(); else if (document.fullscreenElement) document.exitFullscreen?.();
     },
     onMenu(cb) { menuHandlers.push(cb); },
+    /** The Help window (desktop) or page (web), at a section. */
+    help(section = 'start') {
+      if (desktop && window.atlas.help) return window.atlas.help(section);
+      window.open('help.html#' + encodeURIComponent(section), 'isadek-help');
+    },
     emit(cmd) {
       // Undo/redo inside an ordinary text box (find bar, notes, dialogs) belongs to that box.
       const a = document.activeElement;
@@ -121,11 +133,13 @@
   Platform.onMenu(cmd => {
     if (cmd === 'theme' && window.Theme) Theme.choose();
     if (cmd === 'language' && window.I18n) I18n.choose();
+    if (cmd === 'help') Platform.help();
   });
   if (desktop) {
     window.atlas.onMenu(cmd => Platform.emit(cmd));
   } else {
     // In the browser there is no native menu, so map the usual shortcuts ourselves.
+    document.addEventListener('keydown', e => { if (e.key === 'F1') { e.preventDefault(); Platform.help(); } });
     document.addEventListener('keydown', e => {
       const mod = e.ctrlKey || e.metaKey;
       if (!mod) return;

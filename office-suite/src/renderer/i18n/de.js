@@ -33,7 +33,7 @@
   'From Beginning': 'Von Beginn an', 'From Bottom': 'Von unten', 'From Current Slide': 'Ab aktueller Folie', 'From Left': 'Von links', 'From Right': 'Von rechts',
   'From Top': 'Von oben', 'From Web': 'Aus dem Web', 'Full Page View': 'Ganzseitenansicht', 'Function': 'Funktion', 'Function Library': 'Funktionsbibliothek', 'General': 'Standard',
   'Get & Transform Data': 'Daten abrufen und transformieren', 'Goal Seek': 'Zielwertsuche', 'Good day': 'Guten Tag', 'Greater Than…': 'Größer als…', 'Green': 'Grün', 'Green - White': 'Grün - Weiß',
-  'Green - Yellow - Red': 'Grün - Gelb - Rot', 'Green Data Bar': 'Grüner Datenbalken', 'Gridlines': 'Gitternetzlinien', 'Group': 'Gruppieren', 'Handouts': 'Handzettel', 'Header': 'Kopfzeile',
+  'Green - Yellow - Red': 'Grün - Gelb - Rot', 'Green Data Bar': 'Grüner Datenbalken', 'Gridlines': 'Gitternetzlinien', 'Group': 'Gruppieren', 'Handouts': 'Handzettel', 'Help': 'Hilfe', '? Help': '? Hilfe', 'Search help': 'Hilfe durchsuchen', 'Header': 'Kopfzeile',
   'Header & Footer': 'Kopf- und Fußzeile', 'Heading 1': 'Überschrift 1', 'Heading 2': 'Überschrift 2', 'Heading 3': 'Überschrift 3', 'Hide icon during show': 'Symbol bei Präsentation ausblenden',
   'Highlighter': 'Textmarker', 'Home': 'Start', 'Illustrations': 'Illustrationen', 'Ink': 'Freihand', 'Insert': 'Einfügen', 'Insert Function': 'Funktion einfügen', 'Insert Layout': 'Layout einfügen',
   'Insert Merge Field…': 'Seriendruckfeld einfügen…', 'Insert Placeholder…': 'Platzhalter einfügen…', 'Isadek Office Home': 'Isadek Office-Startseite', 'Isadek Office — signed in': 'Isadek Office — angemeldet',

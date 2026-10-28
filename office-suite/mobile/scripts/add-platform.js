@@ -6,6 +6,35 @@ const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
 
+/** app/build.gradle with the app's version and a release signing config read from the environment. */
+function androidGradle(src, version) {
+  const [a, b, c] = String(version).split(/[.-]/).map(n => parseInt(n, 10) || 0);
+  const code = process.env.ANDROID_VERSION_CODE ? parseInt(process.env.ANDROID_VERSION_CODE, 10) : a * 10000 + b * 100 + c;
+  let out = src.replace(/versionCode \d+/, `versionCode ${code}`).replace(/versionName "[^"]*"/, `versionName "${version}"`);
+  if (!out.includes('isadek-release-signing')) out += `
+// isadek-release-signing: release builds are signed with the keystore named in the environment.
+android {
+    signingConfigs {
+        release {
+            if (System.getenv("ANDROID_KEYSTORE_FILE")) {
+                storeFile file(System.getenv("ANDROID_KEYSTORE_FILE"))
+                storePassword System.getenv("ANDROID_KEYSTORE_PASSWORD")
+                keyAlias System.getenv("ANDROID_KEY_ALIAS")
+                keyPassword System.getenv("ANDROID_KEY_PASSWORD") ?: System.getenv("ANDROID_KEYSTORE_PASSWORD")
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (System.getenv("ANDROID_KEYSTORE_FILE")) signingConfig signingConfigs.release
+        }
+    }
+}
+`;
+  return out;
+}
+if (require.main !== module) { module.exports = { androidGradle }; return; }
+
 const platform = process.argv[2];
 if (!['android', 'ios'].includes(platform)) { console.error('Usage: add-platform.js android|ios'); process.exit(1); }
 const dir = path.resolve(__dirname, '..', platform);
@@ -67,6 +96,16 @@ ${types.map(t => `				<string>${t}</string>`).join('\n')}
     fs.writeFileSync(plist, xml);
     console.log('Info.plist: added document types');
   }
+}
+
+// ---------- Version and release signing (Android) ----------
+// The version comes from the desktop app's package.json (1.2.3 → versionName 1.2.3, versionCode
+// 10203). Release builds are signed when ANDROID_KEYSTORE_FILE (and its passwords) are set;
+// without them only debug builds can be installed.
+if (platform === 'android') {
+  const gradle = path.join(dir, 'app/build.gradle');
+  fs.writeFileSync(gradle, androidGradle(fs.readFileSync(gradle, 'utf8'), require('../../package.json').version));
+  console.log('build.gradle: version and release signing');
 }
 
 // ---------- Printing and PDF (native/) ----------

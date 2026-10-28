@@ -6,6 +6,8 @@ const { LANGS, menuText } = require('./menu-i18n');
 const path = require('path');
 const fs = require('fs');
 const settings = require('./settings');
+const crash = require('./crash');
+crash.start();
 const updater = require('./updater');
 const recovery = require('./recovery');
 const cloud = require('./cloud');
@@ -20,7 +22,8 @@ const APPS = {
   write: { page: 'write.html', title: 'Isadek Write', width: 1280, height: 860 },
   sheets: { page: 'sheets.html', title: 'Isadek Sheets', width: 1360, height: 860 },
   slides: { page: 'slides.html', title: 'Isadek Slides', width: 1360, height: 860 },
-  notes: { page: 'notes.html', title: 'Isadek Notes', width: 1280, height: 840 }
+  notes: { page: 'notes.html', title: 'Isadek Notes', width: 1280, height: 840 },
+  help: { page: 'help.html', title: 'Isadek Office Help', width: 1000, height: 760 }
 };
 
 const EXT_TO_APP = {
@@ -366,6 +369,17 @@ ipcMain.handle('app:set-language', (_e, lang) => {
 });
 
 // ---------- Menu ----------
+/** The Help window, at one of its sections. */
+function openHelp(section) {
+  const open = BrowserWindow.getAllWindows().find(w => !w.isDestroyed() && w.webContents.getURL().includes('help.html'));
+  const go = w => w.webContents.executeJavaScript(`location.hash = ${JSON.stringify('#' + section)}`).catch(() => {});
+  if (open) { open.focus(); go(open); return; }
+  const w = createWindow('help');
+  w.webContents.once('did-finish-load', () => go(w));
+}
+ipcMain.handle('app:help', (_e, section) => { openHelp(/^[\w-]{1,40}$/.test(String(section)) ? String(section) : 'start'); return true; });
+ipcMain.handle('app:crash-reports', (_e, on) => { if (typeof on === 'boolean') { crash.setEnabled(on); buildMenu(); } return crash.enabled(); });
+
 function send(cmd) {
   const win = BrowserWindow.getFocusedWindow();
   if (win) win.webContents.send('menu', cmd);
@@ -421,6 +435,21 @@ function buildMenu() {
       role: 'help',
       label: L('Help'),
       submenu: [{
+        label: L('Help and Support'),
+        accelerator: 'F1',
+        click: () => createWindow('help')
+      }, {
+        label: L('Privacy'),
+        click: () => openHelp('privacy')
+      }, { type: 'separator' }, {
+        label: L('Send Crash Reports'),
+        type: 'checkbox',
+        checked: crash.enabled(),
+        click: item => crash.setEnabled(item.checked)
+      }, {
+        label: L('Show Crash Reports'),
+        click: () => crash.openFolder()
+      }, { type: 'separator' }, {
         label: L('Check for Updates…'),
         click: () => updater.check(true)
       }, {
