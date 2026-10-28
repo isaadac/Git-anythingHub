@@ -1717,6 +1717,129 @@
     changed();
   }
   document.getElementById('clear').addEventListener('change', e => { const v = e.target.value; e.target.value = ''; if (v) clearRange(v); wrap.focus(); });
+  // ---------- Fill handle (Auto Fill) ----------
+  const fillHandle = document.createElement('div');
+  fillHandle.className = 'fill-handle';
+  fillHandle.title = 'Drag to fill a series (Ctrl: copy instead); double-click to fill down';
+  selBox.appendChild(fillHandle);
+  const fillPreview = document.createElement('div');
+  fillPreview.className = 'fill-preview';
+  fillPreview.hidden = true;
+  inner.appendChild(fillPreview);
+  let fillDrag = null;
+  const isDateFmt = f => !!f && /[dmy]/i.test(f.replace(/"[^"]*"|\[[^\]]*\]/g, ''));
+  function cellAtPoint(e) {
+    const b = inner.getBoundingClientRect(), z = zoomLevel();
+    return { r: rowAtY(Math.max(0, (e.clientY - b.top) / z - HEAD_H)), c: colAtX(Math.max(0, (e.clientX - b.left) / z - RH_W)) };
+  }
+  fillHandle.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    e.preventDefault(); e.stopPropagation();
+    commitEdit();
+    fillDrag = { g: opRange(), target: null };
+  });
+  document.addEventListener('mousemove', e => {
+    if (!fillDrag) return;
+    const p = cellAtPoint(e), g = fillDrag.g;
+    // The direction is the one the pointer has moved furthest outside the selection.
+    const d = { down: p.r - g.r2, up: g.r1 - p.r, right: p.c - g.c2, left: g.c1 - p.c };
+    const dir = Object.keys(d).reduce((a, b) => (d[b] > d[a] ? b : a));
+    let t = null;
+    if (d[dir] > 0) t = dir === 'down' ? { ...g, r2: p.r } : dir === 'up' ? { ...g, r1: p.r } : dir === 'right' ? { ...g, c2: p.c } : { ...g, c1: p.c };
+    if (t) t.dir = dir;
+    fillDrag.target = t;
+    const b = rangeBox(t || g);
+    Object.assign(fillPreview.style, { left: b.x + 'px', top: b.y + 'px', width: b.w + 'px', height: b.h + 'px' });
+    fillPreview.hidden = !t;
+  });
+  document.addEventListener('mouseup', e => {
+    if (!fillDrag) return;
+    const { g, target } = fillDrag;
+    fillDrag = null;
+    fillPreview.hidden = true;
+    if (target) autoFill(g, target, e.ctrlKey || e.metaKey);
+  });
+  fillHandle.addEventListener('dblclick', e => {
+    e.preventDefault(); e.stopPropagation();
+    // Fill down as far as the data in the column next to the selection goes.
+    const g = opRange(), s = sheet();
+    const filled = c => c >= 0 && rawAt(g.r2 + 1, c) !== '';
+    const col = filled(g.c1 - 1) ? g.c1 - 1 : filled(g.c2 + 1) ? g.c2 + 1 : -1;
+    if (col < 0) return;
+    let r = g.r2 + 1;
+    while (r + 1 < s.rows && rawAt(r + 1, col) !== '') r++;
+    autoFill(g, { ...g, r2: r, dir: 'down' }, false);
+  });
+  /** Extends the source range g over t, continuing series and shifting formulas. */
+  function autoFill(g, t, ctrl) {
+    snapshot();
+    const s = sheet();
+    const vertical = t.dir === 'down' || t.dir === 'up', reverse = t.dir === 'up' || t.dir === 'left';
+    const n = vertical ? (t.r2 - t.r1) - (g.r2 - g.r1) : (t.c2 - t.c1) - (g.c2 - g.c1);
+    const lines = vertical ? [g.c1, g.c2] : [g.r1, g.r2];
+    for (let line = lines[0]; line <= lines[1]; line++) {
+      const cellsOf = vertical ? Array.from({ length: g.r2 - g.r1 + 1 }, (_, i) => [g.r1 + i, line]) : Array.from({ length: g.c2 - g.c1 + 1 }, (_, i) => [line, g.c1 + i]);
+      const src = cellsOf.map(([r, c]) => { const cell = cellAt(r, c) || {}; return { raw: cell.v ?? '', isDate: isDateFmt(cell.s && cell.s.fmt), s: cell.s }; });
+      const k = src.length;
+      const out = SheetsFill.extend(src, n, { reverse, increment: ctrl && k === 1, copy: ctrl && k > 1 });
+      out.forEach((val, i) => {
+        const pos = reverse ? -1 - i : k + i;
+        const from = ((pos % k) + k) % k;
+        const [r, c] = vertical ? [reverse ? g.r1 - 1 - i : g.r2 + 1 + i, line] : [line, reverse ? g.c1 - 1 - i : g.c2 + 1 + i];
+        const [sr, sc] = cellsOf[typeof val === 'object' ? val.from : from];
+        const v = typeof val === 'object' ? F.shiftFormula(val.formula, r - sr, c - sc) : val;
+        const key = addr(r, c);
+        delete s.cells[key];
+        setCell(r, c, { v, s: src[from].s ? JSON.parse(JSON.stringify(src[from].s)) : undefined });
+      });
+    }
+    anchor = { r: t.r1, c: t.c1 };
+    active = { r: t.r2, c: t.c2 };
+    ensureSize(t.r2, t.c2);
+    changed();
+  }
+  async function seriesDialog() {
+    commitEdit();
+    const g = opRange();
+    const r = await UI.form('Series', [
+      { name: 'dir', label: 'Series in', type: 'select', options: [{ value: 'cols', label: 'Columns' }, { value: 'rows', label: 'Rows' }] },
+      { name: 'type', label: 'Type', type: 'select', options: [{ value: 'linear', label: 'Linear' }, { value: 'growth', label: 'Growth' }, { value: 'date', label: 'Date' }] },
+      { name: 'unit', label: 'Date unit', type: 'select', options: [{ value: 'day', label: 'Day' }, { value: 'weekday', label: 'Weekday' }, { value: 'month', label: 'Month' }, { value: 'year', label: 'Year' }] },
+      { name: 'step', label: 'Step value', value: '1' },
+      { name: 'stop', label: 'Stop value (optional)', value: '' }
+    ]);
+    if (!r) return;
+    const step = Number(r.step), stop = r.stop.trim() === '' ? null : Number(r.stop);
+    if (!isFinite(step) || (stop !== null && !isFinite(stop))) { UI.toast('Enter numbers for the step and stop values'); return; }
+    const start = valueAt(g.r1, g.c1);
+    if (typeof start !== 'number') { UI.toast('Put the first value of the series in the first selected cell'); return; }
+    const down = r.dir === 'cols';
+    const single = g.r1 === g.r2 && g.c1 === g.c2;
+    const len = single ? (stop === null ? 1 : 10000) : down ? g.r2 - g.r1 + 1 : g.c2 - g.c1 + 1;
+    const dates = {
+      add: (v, n, unit) => {
+        const d = F.serialToDate(v);
+        if (unit === 'day') return v + n;
+        if (unit === 'weekday') { let x = v, left = Math.abs(n); const st = n < 0 ? -1 : 1; while (left > 0) { x += st; const wd = F.serialToDate(x).getUTCDay(); if (wd !== 0 && wd !== 6) left--; } return x; }
+        const y = d.getUTCFullYear() + (unit === 'year' ? n : 0), m = d.getUTCMonth() + (unit === 'month' ? n : 0);
+        return F.dateToSerial(new Date(y, m, Math.min(d.getUTCDate(), new Date(y, m + 1, 0).getDate())));
+      }
+    };
+    const vals = SheetsFill.series(start, len, { type: r.type, step, stop, unit: r.unit }, dates);
+    snapshot();
+    const lines = down ? [g.c1, g.c2] : [g.r1, g.r2];
+    for (let line = lines[0]; line <= lines[1]; line++) {
+      const first = down ? valueAt(g.r1, line) : valueAt(line, g.c1);
+      if (typeof first !== 'number') continue;
+      const own = SheetsFill.series(first, vals.length, { type: r.type, step, stop, unit: r.unit }, dates);
+      const st = (cellAt(down ? g.r1 : line, down ? line : g.c1) || {}).s;
+      own.forEach((v, i) => { if (i) setCell(down ? g.r1 + i : line, down ? line : g.c1 + i, { v: String(v), s: st ? { ...st } : undefined }); });
+    }
+    ensureSize(g.r1 + (down ? vals.length : 1), g.c1 + (down ? 1 : vals.length));
+    changed();
+  }
+  document.getElementById('fillSeries').addEventListener('click', seriesDialog);
+
   function fill(dir) {
     const g = opRange();
     if (dir === 'down' ? (g.r1 === g.r2 && g.r1 === 0) : (g.c1 === g.c2 && g.c1 === 0)) return;

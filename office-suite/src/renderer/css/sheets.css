@@ -34,7 +34,9 @@
 body.no-grid .grid td { border-color: transparent; }
 
 .sel-box { position: absolute; border: 2px solid var(--accent); pointer-events: none; z-index: 4; display: none; }
-.sel-box::after { content: ""; position: absolute; right: -4px; bottom: -4px; width: 6px; height: 6px; background: var(--accent); border: 1px solid #fff; }
+.fill-handle { position: absolute; right: -5px; bottom: -5px; width: 8px; height: 8px; background: var(--accent); border: 1px solid #fff; cursor: crosshair; pointer-events: auto; }
+.fill-preview { position: absolute; border: 1px dashed #605e5c; pointer-events: none; z-index: 5; }
+.fill-preview[hidden] { display: none; }
 .cell-editor { position: absolute; z-index: 6; border: 2px solid var(--accent); padding: 0 2px; font-family: Calibri, Carlito, Arial, sans-serif; font-size: 11pt; resize: none; outline: none; overflow: hidden; line-height: 18px; background: #fff; box-shadow: 0 2px 8px rgba(0,0,0,.15); }
 .cell-editor[hidden] { display: none; }
 .copy-marquee { position: absolute; border: 2px dashed var(--accent); pointer-events: none; z-index: 3; }
