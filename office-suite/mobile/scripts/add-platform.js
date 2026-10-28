@@ -1,6 +1,7 @@
 'use strict';
 // Adds the native project once (npx cap add), then applies Isadek Office's settings to it:
-// on Android, open .docx/.xlsx/.pptx and friends from other apps ("Open with").
+// "Open with" for .docx/.xlsx/.pptx and friends, the print/PDF plugin (native/), and the
+// app icon and splash screen made from build/icon.png.
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
@@ -67,3 +68,45 @@ ${types.map(t => `				<string>${t}</string>`).join('\n')}
     console.log('Info.plist: added document types');
   }
 }
+
+// ---------- Printing and PDF (native/) ----------
+const NATIVE = path.resolve(__dirname, '../native');
+if (platform === 'android') {
+  const javaRoot = path.join(dir, 'app/src/main/java');
+  const main = fs.readdirSync(javaRoot, { recursive: true }).map(f => path.join(javaRoot, f)).find(f => f.endsWith(path.sep + 'MainActivity.java'));
+  let src = fs.readFileSync(main, 'utf8');
+  const pkg = src.match(/^package ([\w.]+);/m)[1];
+  fs.writeFileSync(path.join(path.dirname(main), 'PrintPlugin.java'), fs.readFileSync(path.join(NATIVE, 'android/PrintPlugin.java'), 'utf8').replace('__PACKAGE__', pkg));
+  if (!src.includes('PrintPlugin')) {
+    src = src.replace(/public class MainActivity extends BridgeActivity \{\s*\}/, `public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(android.os.Bundle savedInstanceState) {
+        registerPlugin(PrintPlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+}`);
+    if (!src.includes('PrintPlugin')) { console.error('MainActivity.java: could not register the print plugin'); process.exit(1); }
+    fs.writeFileSync(main, src);
+    console.log('MainActivity.java: registered the print plugin');
+  }
+}
+if (platform === 'ios') {
+  // In AppDelegate.swift, which is already part of the Xcode target.
+  const delegate = path.join(dir, 'App/App/AppDelegate.swift');
+  const swift = fs.readFileSync(delegate, 'utf8');
+  if (!swift.includes('isadek-print')) fs.writeFileSync(delegate, swift + fs.readFileSync(path.join(NATIVE, 'ios/IsadekPrint.swift'), 'utf8'));
+  const board = path.join(dir, 'App/App/Base.lproj/Main.storyboard');
+  const xml = fs.readFileSync(board, 'utf8');
+  if (!xml.includes('IsadekViewController')) {
+    const out = xml.replace(/customClass="CAPBridgeViewController" customModule="Capacitor"/, 'customClass="IsadekViewController" customModule="App" customModuleProvider="target"');
+    if (out === xml) { console.error('Main.storyboard: could not use the Isadek view controller'); process.exit(1); }
+    fs.writeFileSync(board, out);
+    console.log('Main.storyboard: uses the Isadek view controller (print plugin)');
+  }
+}
+
+// ---------- Icon and splash screen ----------
+const assets = path.resolve(__dirname, '../.assets');
+fs.mkdirSync(assets, { recursive: true });
+fs.copyFileSync(path.resolve(__dirname, '../../build/icon.png'), path.join(assets, 'logo.png'));
+execSync(`npx capacitor-assets generate --${platform} --assetPath .assets --iconBackgroundColor "#ffffff" --iconBackgroundColorDark "#1f1f1f" --splashBackgroundColor "#f3f2f1" --splashBackgroundColorDark "#1f1f1f"`, { cwd: path.resolve(__dirname, '..'), stdio: 'inherit' });

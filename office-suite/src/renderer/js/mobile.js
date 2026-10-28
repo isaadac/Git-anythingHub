@@ -89,8 +89,30 @@
     return { name: nm, path: 'device:' + nm };
   };
   Platform.canWriteBack = p => isDevicePath(p) || Platform.isCloudPath(p);
-  Platform.exportPdf = async () => { UI.toast('PDF export isn’t available in the mobile app yet. Save the file and share it instead.', 4000); return null; };
-  Platform.print = async () => UI.toast('Printing isn’t available in the mobile app. Share the file to a printing app instead.', 4000);
+  // Printing and PDF go through the app's own plugin (mobile/native): the system print dialog,
+  // which on Android also saves PDFs; on iOS the PDF is made directly and offered to share.
+  const Printer = C.registerPlugin ? C.registerPlugin('IsadekPrint') : C.Plugins.IsadekPrint;
+  const ios = C.getPlatform && C.getPlatform() === 'ios';
+  Platform.print = async () => {
+    try { await Printer.print({ name: document.title }); } catch (err) { UI.toast('Could not print: ' + (err.message || err), 4000); }
+  };
+  Platform.exportPdf = async (name, landscape) => {
+    try {
+      if (!ios) {
+        UI.toast('Choose “Save as PDF” as the printer');
+        await Printer.print({ name, landscape: !!landscape });
+        return null;
+      }
+      const { data } = await Printer.pdf({ landscape: !!landscape });
+      const fileName = String(name || 'Document.pdf').replace(/[\\/:*?"<>|]/g, '_');
+      await FS.writeFile({ path: `${FOLDER}/${fileName}`, data, directory: 'DOCUMENTS', recursive: true });
+      await shareDoc(fileName);
+      return 'device:' + fileName;
+    } catch (err) {
+      UI.toast('Could not make the PDF: ' + (err.message || err), 4000);
+      return null;
+    }
+  };
   Platform.shareCurrent = async (state, save) => {
     if (!isDevicePath(state.path)) { if (!(await save())) return; }
     else if (state.dirty) await save();

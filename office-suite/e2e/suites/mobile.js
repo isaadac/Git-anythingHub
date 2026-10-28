@@ -47,7 +47,12 @@ const B = process.env.E2E_BASE + '/src/renderer/';
     const listeners = {};
     window.Capacitor = {
       isNativePlatform: () => true,
+      getPlatform: () => sessionStorage.getItem('plat') || 'android',
       Plugins: {
+        IsadekPrint: {
+          print: async o => { calls.push(['print', o.name, !!o.landscape]); },
+          pdf: async o => { calls.push(['pdf', !!o.landscape]); return { data: btoa('%PDF-1.4 test') }; }
+        },
         Filesystem: {
           writeFile: async o => { calls.push(['write', o.path, o.directory, o.data.length]); sessionStorage.setItem('fs:' + o.path, o.data); return { uri: 'file:///docs/' + o.path }; },
           readFile: async o => { calls.push(['read', o.path]); return { data: o.path.startsWith('content://') ? b64 : sessionStorage.getItem('fs:' + o.path) }; },
@@ -85,6 +90,13 @@ const B = process.env.E2E_BASE + '/src/renderer/';
   await sleep(300);
   const writes = await a.evaluate(() => window.__calls.filter(c => c[0] === 'write').length);
   check('app: the next Save writes the same file without asking', writes === 2 && !(await a.$('.modal')), writes);
+  // printing and PDF through the app's plugin
+  await a.evaluate(() => Platform.emit('print'));
+  await sleep(200);
+  check('app: Print opens the system print dialog', await a.evaluate(() => window.__calls.some(c => c[0] === 'print')));
+  await a.evaluate(() => Platform.emit('export-pdf'));
+  await sleep(300);
+  check('app: Export PDF on Android uses the print dialog (Save as PDF)', await a.evaluate(() => window.__calls.some(c => c[0] === 'print' && /Notes\.pdf$/.test(c[1]))), await a.evaluate(() => JSON.stringify(window.__calls.filter(c => c[0] === 'print'))));
   // back button: closes a pane, then goes Home
   await a.evaluate(() => Platform.emit('theme'));
   await a.waitForSelector('.modal');
@@ -97,6 +109,13 @@ const B = process.env.E2E_BASE + '/src/renderer/';
   await sleep(500);
   await a.evaluate(() => window.__fire('backButton'));
   check('app: back on Home leaves the app', await a.evaluate(() => window.__calls.some(c => c[0] === 'exit')));
+  await a.evaluate(() => sessionStorage.setItem('plat', 'ios'));
+  await a.goto(B + 'write.html');
+  await a.waitForFunction(() => window.Platform && Platform.native);
+  await a.evaluate(() => { document.querySelector('.titlebar .docname input').value = 'Notes'; document.querySelector('.titlebar .docname input').dispatchEvent(new Event('change')); });
+  await a.evaluate(() => Platform.emit('export-pdf'));
+  await sleep(400);
+  check('app: Export PDF on iOS saves the PDF and offers to share it', await a.evaluate(() => window.__calls.some(c => c[0] === 'pdf') && window.__calls.some(c => c[0] === 'write' && /Isadek Office\/Notes\.pdf$/.test(c[1])) && window.__calls.some(c => c[0] === 'share' && /Notes\.pdf$/.test(c[1]))), await a.evaluate(() => JSON.stringify(window.__calls.slice(-4))));
   check('no page errors', errors.length === 0, errors.join(' | '));
   await b.close();
 })().then(() => process.exit(process.exitCode || 0)).catch(e => { console.log('FAIL exception', e); process.exit(1); });
