@@ -1,7 +1,7 @@
 # Signing the installers
 
 Unsigned installers work, but Windows SmartScreen and macOS Gatekeeper warn about them, and on macOS
-auto-update only works for signed apps. The **Atlas Office** workflow signs automatically as soon as you
+auto-update only works for signed apps. The **Isadek Office** workflow signs automatically as soon as you
 add these repository secrets (GitHub → Settings → Secrets and variables → Actions → New repository secret).
 Without them it builds unsigned, as before.
 
@@ -39,5 +39,5 @@ AppImage and `.deb` packages don't need signing.
 
 ## Checking
 
-Open the latest **Atlas Office** run in the Actions tab. An unsigned build shows the notice
+Open the latest **Isadek Office** run in the Actions tab. An unsigned build shows the notice
 "Building unsigned installers". A signed macOS build logs "Notarizing with Apple".

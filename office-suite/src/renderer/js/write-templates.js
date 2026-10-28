@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Write — document templates and the template gallery.
+// Isadek Write — document templates and the template gallery.
 // Each template is the HTML that Write saves (body + optional header/footer + page setup),
 // so opening one goes through the normal HTML loader.
 (function () {

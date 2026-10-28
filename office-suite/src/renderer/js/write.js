@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Write — word processor.
+// Isadek Write — word processor.
 (function () {
   const doc = document.getElementById('doc');
   const page = document.getElementById('page');
@@ -8,7 +8,7 @@
   const firstHeader = document.getElementById('firstHeader');
   const firstFooter = document.getElementById('firstFooter');
   const HF = [header, footer, firstHeader, firstFooter];
-  const state = UI.docState('Atlas Write', 'Document1');
+  const state = UI.docState('Isadek Write', 'Document1');
   const FILTERS = [
     { name: 'Word Document', extensions: ['docx'] },
     { name: 'Web Page', extensions: ['html', 'htm'] },
@@ -1082,7 +1082,7 @@
     if (Object.keys(headers).length) section.headers = headers;
     if (Object.keys(footers).length) section.footers = footers;
     const document_ = new D.Document({
-      creator: 'Atlas Write',
+      creator: 'Isadek Write',
       title: Platform.baseName(state.name),
       styles: { default: { document: { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { after: 160, line: 276 } } } } },
       background: setup.color !== '#ffffff' ? { color: setup.color.slice(1) } : undefined,
@@ -1124,7 +1124,7 @@
     try { rules = [...css.cssRules].map(r => r.cssText).filter(t => t.startsWith('.doc')).join('\n').replace(/\.doc\b/g, 'main.atlas-doc'); } catch { /* ignore */ }
     return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${escapeHtml(Platform.baseName(state.name))}</title>
-<meta name="generator" content="Atlas Write">
+<meta name="generator" content="Isadek Write">
 <meta name="atlas-setup" content="${escapeHtml(JSON.stringify(setup))}">
 ${notes.sources.length ? `<meta name="atlas-sources" content="${escapeHtml(JSON.stringify(notes.sources))}">` : ''}
 <style>body{max-width:8.5in;margin:auto;padding:1in;font-family:Calibri,Arial,sans-serif;font-size:11pt;line-height:1.15;background:${setup.color}}
@@ -1487,7 +1487,7 @@ ${rules}</style></head>
   Assistant.attach({
     app: 'write',
     context: aiContext,
-    format: 'In Atlas Write you may use Markdown (# headings, **bold**, *italic*, - and 1. lists, tables); it becomes formatting when inserted.',
+    format: 'In Isadek Write you may use Markdown (# headings, **bold**, *italic*, - and 1. lists, tables); it becomes formatting when inserted.',
     actions: [
       { label: 'Summarize', prompt: 'Summarize this document in a short paragraph followed by its key points as a bulleted list.' },
       { label: 'Improve writing', prompt: 'Rewrite the selected text so it reads more clearly and naturally. Keep its meaning, tone and language.', selection: true },

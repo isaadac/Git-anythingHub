@@ -1,8 +1,8 @@
 {
-  "name": "atlas-office-mobile",
+  "name": "isadek-office-mobile",
   "version": "1.0.0",
   "private": true,
-  "description": "Atlas Office for Android and iOS (Capacitor), built from the same pages as the desktop app.",
+  "description": "Isadek Office for Android and iOS (Capacitor), built from the same pages as the desktop app.",
   "license": "MIT",
   "scripts": {
     "build": "node scripts/build-web.js",

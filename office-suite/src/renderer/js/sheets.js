@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets — spreadsheet.
+// Isadek Sheets — spreadsheet.
 // The grid is virtual: only the rows and columns on screen exist in the DOM, and every
 // position (selection box, editor, scrolling) is computed from row heights and column widths.
 (function () {
@@ -14,7 +14,7 @@
   const editor = document.getElementById('cellEditor');
   const fx = document.getElementById('fx');
   const nameBox = document.getElementById('nameBox');
-  const state = UI.docState('Atlas Sheets', 'Book1');
+  const state = UI.docState('Isadek Sheets', 'Book1');
   const DEFAULT_COL_W = 80;
   const ROW_H = 22;          // default row height (px)
   const HEAD_H = 22;         // column header height
@@ -1513,7 +1513,7 @@
       changed(false);
     };
     const msg = rule.error.text || SheetsDV.defaultError(rule);
-    const title = rule.error.title || 'Atlas Sheets';
+    const title = rule.error.title || 'Isadek Sheets';
     const reopen = () => { select(r, c); startEdit(typed); };
     if (rule.error.style === 'stop') {
       undoRefused();
@@ -2508,7 +2508,7 @@
   }
 
   // ---------- File I/O ----------
-  /** Styling and charts saved by Atlas inside an .xlsx are untrusted input: keep only known, well-typed values. */
+  /** Styling and charts saved by Isadek inside an .xlsx are untrusted input: keep only known, well-typed values. */
   function cleanStyle(st) {
     if (!st || typeof st !== 'object') return null;
     const out = {};
@@ -2636,7 +2636,7 @@
         if (ms.freezeCol === true) s.freezeCol = true;
       }
       if (ms && ms.name === sn && Array.isArray(ms.pivots)) s.pivots = ms.pivots.map(SheetsPivot.clean).filter(Boolean).slice(0, 50);
-      // Atlas's own copy of the rules is exact; otherwise read Excel's.
+      // Isadek's own copy of the rules is exact; otherwise read Excel's.
       const ex = wb.Extras && Array.isArray(wb.Extras.sheets) ? wb.Extras.sheets[si] : null;
       if (ms && ms.name === sn && Array.isArray(ms.cf)) s.cf = ms.cf.map(SheetsCF.clean).filter(Boolean).slice(0, 500);
       else if (ex && typeof ex.cf === 'string' && ex.cf) {
@@ -2645,7 +2645,7 @@
       if (!(ms && ms.name === sn) && ex && ex.drawing) {
         try { s.charts = chartsFromExcel(ex, s); } catch (err) { console.info('Charts skipped:', err); }
       }
-      // Protection: Atlas's copy, else Excel's (with its unlocked cells).
+      // Protection: Isadek's copy, else Excel's (with its unlocked cells).
       const prot = ms && ms.name === sn && ms.protect ? SheetsProtect.clean(ms.protect) : ex && ex.protection ? SheetsProtect.fromXml(ex.protection) : null;
       if (prot) s.protect = prot;
       if (!(ms && ms.name === sn) && ex && Array.isArray(ex.unlocked)) ex.unlocked.slice(0, 100000).forEach(k => { if (CELL_KEY.test(k)) s.cells[k] = { v: s.cells[k]?.v ?? '', ...(s.cells[k] || {}), s: { ...((s.cells[k] || {}).s || {}), unlocked: true } }; });
@@ -2718,7 +2718,7 @@
       XLSX.utils.book_append_sheet(wb, ws, s.name);
       meta.sheets.push({ name: s.name, protect: s.protect || null, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [] });
     });
-    // Cell styling and charts live in a custom document property so Atlas can restore them;
+    // Cell styling and charts live in a custom document property so Isadek can restore them;
     // other apps ignore it and still get values, formulas, number formats, widths and merges.
     wb.Custprops = { AtlasMeta: JSON.stringify(meta) };
     return wb;
@@ -2751,7 +2751,7 @@
     });
     return parts.length ? { drawing: SheetsCharts.drawingXml(anchors), parts } : null;
   }
-  /** Charts read from an Excel sheet's drawing, as Atlas charts over the same data. */
+  /** Charts read from an Excel sheet's drawing, as Isadek charts over the same data. */
   function chartsFromExcel(ex, s) {
     if (!ex || !ex.drawing || !Array.isArray(ex.charts)) return [];
     const out = [];
@@ -3175,7 +3175,7 @@
   Assistant.attach({
     app: 'sheets',
     context: aiContext,
-    format: 'In Atlas Sheets, give a formula as one line starting with = using Excel syntax and A1 references (Atlas supports Excel\'s functions, including dynamic arrays such as FILTER, SORT, UNIQUE and XLOOKUP). Give a table as a Markdown table or tab-separated lines; it is pasted starting at the active cell.',
+    format: 'In Isadek Sheets, give a formula as one line starting with = using Excel syntax and A1 references (Isadek supports Excel\'s functions, including dynamic arrays such as FILTER, SORT, UNIQUE and XLOOKUP). Give a table as a Markdown table or tab-separated lines; it is pasted starting at the active cell.',
     actions: [
       { label: 'Write a formula', prompt: 'Write a formula for the active cell that does what the selection and nearby headers suggest. If it is unclear, give your best formula and explain it in one short sentence after a blank line.' },
       { label: 'Explain this formula', prompt: 'Explain what the formula in the active cell does, step by step, in plain language.' },

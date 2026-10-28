@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Assistant: Claude, with the user's own Anthropic API key. Requests are made here in the
+// Isadek Assistant: Claude, with the user's own Anthropic API key. Requests are made here in the
 // main process with the official SDK, so the key never reaches a page; replies stream to the
 // window that asked.
 const { app, ipcMain, safeStorage, BrowserWindow } = require('electron');

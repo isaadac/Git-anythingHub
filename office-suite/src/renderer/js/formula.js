@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets formula engine: tokenizer, parser, evaluator and ~80 Excel-compatible functions.
+// Isadek Sheets formula engine: tokenizer, parser, evaluator and ~80 Excel-compatible functions.
 // Pure JavaScript with no DOM access, so it runs in the app and under `node --test`.
 (function (root) {
   // ---------- Cell addressing ----------

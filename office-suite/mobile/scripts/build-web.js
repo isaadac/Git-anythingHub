@@ -33,7 +33,7 @@ fs.writeFileSync(path.join(OUT, 'index.html'), `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta http-equiv="refresh" content="0; url=src/renderer/index.html">
-<title>Atlas Office</title></head>
+<title>Isadek Office</title></head>
 <body style="background:#f3f2f1"></body></html>
 `);
 console.log(`www/ ready: pages + ${wanted.size} library files`);

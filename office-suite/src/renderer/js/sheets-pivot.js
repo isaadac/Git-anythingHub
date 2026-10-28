@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets — pivot tables.
+// Isadek Sheets — pivot tables.
 // A pivot is defined on the sheet that shows it:
 //   { id, src: { sheet, ref }, r, c, rows: [field], cols: [field], vals: [{ field, agg }],
 //     filters: [{ field, value }], extent: { r2, c2 } }

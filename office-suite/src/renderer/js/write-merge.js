@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Write — mail merge.
+// Isadek Write — mail merge.
 // A merge field is <span class="mergefield" data-field="First Name">«First Name»</span>.
 // Recipients come from a CSV or spreadsheet whose first row holds the field names.
 (function () {

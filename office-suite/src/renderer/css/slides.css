@@ -1,4 +1,4 @@
-/* Atlas Slides */
+/* Isadek Slides */
 .thumbs { width: 190px; flex: none; overflow-y: auto; background: var(--surface-2); border-right: 1px solid var(--border); padding: 10px 10px 40px 4px; }
 .thumb { display: flex; gap: 6px; margin-bottom: 12px; cursor: pointer; align-items: flex-start; }
 .thumb .num { width: 18px; text-align: right; color: var(--muted); font-size: 12px; padding-top: 2px; }

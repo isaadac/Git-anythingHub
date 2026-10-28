@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Notes — notebooks of sections and pages, like OneNote. Everything saves as you type:
+// Isadek Notes — notebooks of sections and pages, like OneNote. Everything saves as you type:
 // the desktop app keeps each notebook as a file in its data folder, the web version in the
 // browser's storage. Notebooks move between computers as .anote files.
 (function () {
@@ -42,7 +42,7 @@
 
   /** Checks a notebook from a file: known fields only, page HTML sanitized, sizes limited. */
   function cleanNotebook(x) {
-    if (!x || x.format !== 'atlas-notes' || !Array.isArray(x.sections)) throw new Error('This is not an Atlas Notes notebook');
+    if (!x || x.format !== 'atlas-notes' || !Array.isArray(x.sections)) throw new Error('This is not an Isadek Notes notebook');
     const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
     const color = v => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : COLORS[0]);
     const num = v => (Number.isFinite(v) ? v : Date.now());
@@ -103,7 +103,7 @@
     list.forEach(b => { const o = document.createElement('option'); o.value = b.id; o.textContent = b.id === nb.id ? nb.name : b.name; sel.appendChild(o); });
     sel.value = nb.id;
     $('nbName').value = nb.name;
-    Platform.setTitle(`${nb.name} — Atlas Notes`);
+    Platform.setTitle(`${nb.name} — Isadek Notes`);
   }
   function li(text, on, extra) {
     const el = document.createElement('li');
@@ -567,7 +567,7 @@
     let x;
     try { x = cleanNotebook(JSON.parse(new TextDecoder().decode(data))); } catch (err) { return UI.toast('Could not open the notebook: ' + err.message, 5000); }
     if (books.some(b => b.id === x.id)) {
-      const i = await UI.choose('Open notebook', `“${x.name}” is already in Atlas Notes.`, ['Replace it', 'Keep both', 'Cancel']);
+      const i = await UI.choose('Open notebook', `“${x.name}” is already in Isadek Notes.`, ['Replace it', 'Keep both', 'Cancel']);
       if (i === 2 || i < 0) return;
       if (i === 1) { x.id = newId('n'); x.name += ' (copy)'; }
     }
@@ -584,13 +584,13 @@
       case 'save': await flush(); UI.toast('Saved'); break;
       case 'save-and-close': await flush(); Platform.closeNow(); break;
       case 'open': {
-        const f = await Platform.open([{ name: 'Atlas Notes notebook', extensions: ['anote'] }]);
+        const f = await Platform.open([{ name: 'Isadek Notes notebook', extensions: ['anote'] }]);
         if (f) importNotebook(f.name, f.data);
         break;
       }
       case 'save-as': {
         await flush();
-        await Platform.save({ data: new TextEncoder().encode(JSON.stringify(nb)), name: safeName(nb.name) + '.anote', filters: [{ name: 'Atlas Notes notebook', extensions: ['anote'] }], saveAs: true });
+        await Platform.save({ data: new TextEncoder().encode(JSON.stringify(nb)), name: safeName(nb.name) + '.anote', filters: [{ name: 'Isadek Notes notebook', extensions: ['anote'] }], saveAs: true });
         break;
       }
       case 'export-md': commit(); await Platform.save({ data: new TextEncoder().encode(`# ${page.title || 'Untitled page'}\n\n${toMarkdown(page.html)}`), name: safeName(page.title) + '.md', filters: [{ name: 'Markdown', extensions: ['md'] }], saveAs: true }); break;
@@ -644,7 +644,7 @@
   Assistant.attach({
     app: 'notes',
     context: () => { commit(); const r = savedRange && !savedRange.collapsed ? savedRange.toString() : ''; return { document: `# ${page.title || 'Untitled page'}\n\n${toMarkdown(page.html)}`, selection: r, hasSelection: !!r.trim() }; },
-    format: 'In Atlas Notes you may use Markdown: # headings, **bold**, - lists, and "- [ ] " for to-do items.',
+    format: 'In Isadek Notes you may use Markdown: # headings, **bold**, - lists, and "- [ ] " for to-do items.',
     actions: [
       { label: 'Summarize page', prompt: 'Summarize this page in a few bullet points.' },
       { label: 'To-do list', prompt: 'Turn the action items on this page into a to-do list ("- [ ] " items). Reply with only the list.' },

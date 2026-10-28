@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets — conditional formatting.
+// Isadek Sheets — conditional formatting.
 // A sheet's rules live in sheet.cf, highest priority first:
 //   { ref: 'B2:B20', type, ...options, style: { bg, color, b, i } }
 // Types follow Excel's: cellIs, containsText, notContainsText, beginsWith, endsWith, top10,

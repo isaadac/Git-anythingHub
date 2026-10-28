@@ -74,7 +74,7 @@ test('collab server', async t => {
     const y = client(url);
     await y.opened;
     y.send({ t: 'hello', room: 'w'.repeat(20), app: 'sheets' });
-    assert.match((await y.next()).error, /Atlas Write/);
+    assert.match((await y.next()).error, /Isadek Write/);
     // Oversized message closes the connection
     const z = client(url);
     await z.opened;

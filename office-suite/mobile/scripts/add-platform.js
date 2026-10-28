@@ -1,5 +1,5 @@
 'use strict';
-// Adds the native project once (npx cap add), then applies Atlas Office's settings to it:
+// Adds the native project once (npx cap add), then applies Isadek Office's settings to it:
 // on Android, open .docx/.xlsx/.pptx and friends from other apps ("Open with").
 const fs = require('fs');
 const path = require('path');
@@ -22,7 +22,7 @@ if (platform === 'android') {
   let xml = fs.readFileSync(manifest, 'utf8');
   if (!xml.includes('atlas-open-with')) {
     const filters = `
-            <!-- atlas-open-with: offer Atlas Office for office documents -->
+            <!-- atlas-open-with: offer Isadek Office for office documents -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets — sheet protection, compatible with Excel's <sheetProtection>.
+// Isadek Sheets — sheet protection, compatible with Excel's <sheetProtection>.
 // sheet.protect = { hash, algo?: { name, hash, salt, spin }, allow: { formatCells, insertRows, … } }
 // hash is Excel's legacy 16-bit password hash (as Excel writes in the password attribute);
 // files from newer Excel use a salted SHA-512 (algo), which is checked with WebCrypto.

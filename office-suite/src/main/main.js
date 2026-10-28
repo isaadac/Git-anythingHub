@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Office — Electron main process.
+// Isadek Office — Electron main process.
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, screen, session, shell } = require('electron');
 const path = require('path');
@@ -14,11 +14,11 @@ const os = require('os');
 const { createCollabServer } = require('./collab-server');
 
 const APPS = {
-  home: { page: 'index.html', title: 'Atlas Office', width: 1100, height: 720 },
-  write: { page: 'write.html', title: 'Atlas Write', width: 1280, height: 860 },
-  sheets: { page: 'sheets.html', title: 'Atlas Sheets', width: 1360, height: 860 },
-  slides: { page: 'slides.html', title: 'Atlas Slides', width: 1360, height: 860 },
-  notes: { page: 'notes.html', title: 'Atlas Notes', width: 1280, height: 840 }
+  home: { page: 'index.html', title: 'Isadek Office', width: 1100, height: 720 },
+  write: { page: 'write.html', title: 'Isadek Write', width: 1280, height: 860 },
+  sheets: { page: 'sheets.html', title: 'Isadek Sheets', width: 1360, height: 860 },
+  slides: { page: 'slides.html', title: 'Isadek Slides', width: 1360, height: 860 },
+  notes: { page: 'notes.html', title: 'Isadek Notes', width: 1280, height: 840 }
 };
 
 const EXT_TO_APP = {
@@ -128,7 +128,7 @@ function openPath(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const appName = EXT_TO_APP[ext];
   if (!appName) {
-    dialog.showErrorBox('Unsupported file', `Atlas Office can't open "${path.basename(filePath)}".`);
+    dialog.showErrorBox('Unsupported file', `Isadek Office can't open "${path.basename(filePath)}".`);
     return;
   }
   createWindow(appName, approve(filePath));
@@ -351,7 +351,7 @@ function buildMenu() {
         { label: 'New Document', accelerator: 'CmdOrCtrl+Shift+W', click: () => createWindow('write') },
         { label: 'New Spreadsheet', accelerator: 'CmdOrCtrl+Shift+E', click: () => createWindow('sheets') },
         { label: 'New Presentation', accelerator: 'CmdOrCtrl+Shift+P', click: () => createWindow('slides') },
-        { label: 'Atlas Notes', accelerator: 'CmdOrCtrl+Shift+O', click: () => createWindow('notes') },
+        { label: 'Isadek Notes', accelerator: 'CmdOrCtrl+Shift+O', click: () => createWindow('notes') },
         { type: 'separator' },
         { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => send('new') },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
@@ -397,11 +397,11 @@ function buildMenu() {
         checked: !!settings.get('autoUpdate'),
         click: item => updater.setEnabled(item.checked)
       }, { type: 'separator' }, {
-        label: 'About Atlas Office',
+        label: 'About Isadek Office',
         click: () => dialog.showMessageBox({
           type: 'info',
-          title: 'About Atlas Office',
-          message: `Atlas Office ${app.getVersion()}`,
+          title: 'About Isadek Office',
+          message: `Isadek Office ${app.getVersion()}`,
           detail: 'Write, Sheets and Slides — a free cross-platform office suite.\nOpens and saves .docx, .xlsx, .csv and .pptx files.'
         })
       }]

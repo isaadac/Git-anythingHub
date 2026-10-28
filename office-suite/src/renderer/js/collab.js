@@ -1,5 +1,5 @@
 'use strict';
-// Live editing: several people in one document at once, through an Atlas Office relay server
+// Live editing: several people in one document at once, through an Isadek Office relay server
 // (src/main/collab-server.js — hosted by the desktop app on the local network, or your own).
 //
 // Each app describes its document as a map of keys to JSON values (a paragraph, a cell, a slide,
@@ -339,7 +339,7 @@
     }
     async function join(link, name) {
       const inv = parseInvite(link);
-      if (!inv) return UI.toast('That is not an Atlas Office live link', 4000);
+      if (!inv) return UI.toast('That is not an Isadek Office live link', 4000);
       if (inv.app && inv.app !== adapter.app) {
         // A link for another app: open that app and join there.
         if (Platform.desktop) return window.atlas.collabJoin(inv.app, link);

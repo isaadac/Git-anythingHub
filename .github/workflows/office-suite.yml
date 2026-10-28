@@ -1,7 +1,7 @@
-# Builds Atlas Office installers for Windows, macOS and Linux.
+# Builds Isadek Office installers for Windows, macOS and Linux.
 # - Every push/PR touching office-suite/: runs tests and uploads installers as workflow artifacts.
 # - Pushing a tag like "office-v1.0.0": also attaches the installers to a GitHub Release.
-name: Atlas Office
+name: Isadek Office
 
 on:
   push:
@@ -82,7 +82,7 @@ jobs:
           npx electron-builder $args
       - uses: actions/upload-artifact@v4
         with:
-          name: atlas-office-${{ runner.os }}
+          name: isadek-office-${{ runner.os }}
           path: |
             office-suite/dist/*.exe
             office-suite/dist/*.dmg
@@ -123,10 +123,10 @@ jobs:
         working-directory: office-suite/mobile/android
         run: |
           ./gradlew assembleDebug --no-daemon --stacktrace
-          mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/Atlas-Office-${GITHUB_SHA::7}-debug.apk"
+          mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/Isadek-Office-${GITHUB_SHA::7}-debug.apk"
       - uses: actions/upload-artifact@v4
         with:
-          name: atlas-office-android
+          name: isadek-office-android
           path: office-suite/mobile/android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 

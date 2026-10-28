@@ -1,13 +1,13 @@
 'use strict';
-// Atlas Slides — presentation editor and slide show.
+// Isadek Slides — presentation editor and slide show.
 (function () {
   const W = 960, H = 540; // logical slide size (10in × 5.625in at 96 px/in)
   const stage = document.getElementById('stage');
   const stageWrap = document.getElementById('stageWrap');
   const thumbs = document.getElementById('thumbs');
   const notes = document.getElementById('notes');
-  const state = UI.docState('Atlas Slides', 'Presentation1');
-  const SAVE_FILTERS = [{ name: 'PowerPoint Presentation', extensions: ['pptx'] }, { name: 'Atlas Presentation', extensions: ['aslides'] }];
+  const state = UI.docState('Isadek Slides', 'Presentation1');
+  const SAVE_FILTERS = [{ name: 'PowerPoint Presentation', extensions: ['pptx'] }, { name: 'Isadek Presentation', extensions: ['aslides'] }];
   const OPEN_FILTERS = [{ name: 'Presentations', extensions: ['pptx', 'aslides'] }];
 
   const THEMES = {
@@ -1650,7 +1650,7 @@
     const pptx = new PptxGenJS();
     pptx.layout = 'LAYOUT_16x9';
     pptx.title = Platform.baseName(state.name);
-    pptx.company = 'Atlas Office';
+    pptx.company = 'Isadek Office';
     for (const s of pres.slides) {
       const ps = pptx.addSlide();
       const L = pres.layouts[s.layout];
@@ -1701,7 +1701,7 @@
   /** PptxGenJS doesn't write transitions or animations: add them to each slide's XML. */
   async function addTimingToPptx(bytes) {
     const zip = await JSZip.loadAsync(bytes);
-    // The master, layouts and theme go in a custom document property so Atlas can restore them exactly.
+    // The master, layouts and theme go in a custom document property so Isadek can restore them exactly.
     const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({
       layout: sl.layout, hideMaster: !!sl.hideMaster,
       media: Object.fromEntries(sl.elements.flatMap(e => flattenGroup(e)).filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])),
@@ -1771,9 +1771,9 @@
       return flattenGroup(abs, el);
     });
   }
-  /** Groups as {id, x, y, w, h, rot, kids: [id | group]} for the Atlas metadata in .pptx. */
+  /** Groups as {id, x, y, w, h, rot, kids: [id | group]} for the Isadek metadata in .pptx. */
   const groupMeta = g => ({ id: g.id, x: g.x, y: g.y, w: g.w, h: g.h, rot: g.rot || 0, anim: g.anim || null, kids: g.children.map(c => (c.type === 'group' ? groupMeta(c) : c.id)) });
-  /** Rebuilds groups from that metadata out of the flattened elements Atlas wrote (matched by shape name). */
+  /** Rebuilds groups from that metadata out of the flattened elements Isadek wrote (matched by shape name). */
   function regroup(sl, metas) {
     const byName = new Map(sl.elements.filter(e => e.atlasName).map(e => [e.atlasName, e]));
     const build = m => {
@@ -1952,7 +1952,7 @@
         if (b && b.type !== 'connector') c.to = { id: b.id, site: 'auto' };
         delete c.stId; delete c.enId;
       });
-      // The layout as an Atlas layout, so new slides can use it.
+      // The layout as an Isadek layout, so new slides can use it.
       if (layoutPath) {
         if (!layoutsSeen.has(layoutPath)) {
           const key = 'L' + (layoutsSeen.size + 1);
@@ -2003,7 +2003,7 @@
     function ids_() { return [...presXml.getElementsByTagNameNS(P, 'sldId')]; }
     function slide_push(s, el) { if (Array.isArray(el)) s.elements.push(...el); else s.elements.push(el); }
     /**
-     * One shape as Atlas elements. ctx.tf maps a box from the shape's coordinates (inside groups)
+     * One shape as Isadek elements. ctx.tf maps a box from the shape's coordinates (inside groups)
      * to the slide's; ctx gives inherited placeholder positions and sizes. keepEmpty keeps empty
      * placeholders (for layouts and the master).
      */
@@ -2033,7 +2033,7 @@
       if (!['sp', 'cxnSp', 'pic', 'graphicFrame'].includes(ln)) return null;
       const nv = node.getElementsByTagNameNS(P, 'cNvPr')[0];
       const spid = nv ? nv.getAttribute('id') : null;
-      if (nv && /^atlas-master-/.test(nv.getAttribute('name') || '')) return null; // drawn from the master Atlas saved
+      if (nv && /^atlas-master-/.test(nv.getAttribute('name') || '')) return null; // drawn from the master Isadek saved
       const nm = (nv && nv.getAttribute('name')) || '';
       const tag = el => { if (el && spid) spids.set(spid, el); if (el && /^atlas-/.test(nm)) el.atlasName = nm.slice(6); if (el && raw && raw.flipH && el.type !== 'connector') el.flipH = true; if (el && raw && raw.flipV && el.type !== 'connector') el.flipV = true; return el; };
       const phInfo = phOf(node);
@@ -2195,7 +2195,7 @@
       (Array.isArray(meta.slides) ? meta.slides : []).forEach((m, i) => {
         if (!slides[i] || !m) return;
         slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true;
-        // Playback options, matched by the shape names Atlas wrote.
+        // Playback options, matched by the shape names Isadek wrote.
         if (m.media && typeof m.media === 'object') slides[i].elements.forEach(e => { const o = e.type === 'media' && e.atlasName && Object.hasOwn(m.media, e.atlasName) ? m.media[e.atlasName] : null; if (o) ['autoplay', 'loop', 'hideIcon'].forEach(k => { e[k] = o[k] === true; }); });
         if (m.connectors && typeof m.connectors === 'object') slides[i].elements.forEach(e => {
           const o = e.type === 'connector' && e.atlasName && Object.hasOwn(m.connectors, e.atlasName) ? m.connectors[e.atlasName] : null;
@@ -2204,7 +2204,7 @@
           ['from', 'to'].forEach(k => { if (o[k]) e[k] = { id: o[k].id, site: o[k].site }; });
         });
         regroup(slides[i], m.groups);
-        // Connector ends named by Atlas ids: point them at the reopened elements.
+        // Connector ends named by Isadek ids: point them at the reopened elements.
         const byName = new Map(slides[i].elements.filter(e => e.atlasName).map(e => [e.atlasName, e.id]));
         slides[i].elements.forEach(e => { if (e.type === 'connector') ['from', 'to'].forEach(k => { if (e[k] && byName.has(e[k].id)) e[k] = { ...e[k], id: byName.get(e[k].id) }; else if (e[k] && !slides[i].elements.some(x => x.id === e[k].id)) delete e[k]; }); });
       });
@@ -2596,7 +2596,7 @@
     app: 'slides',
     context: aiContext,
     beforeAsk: () => commitEditingQuietly(),
-    format: 'In Atlas Slides, write slides as an outline: a "## " heading line with each slide\'s title, then its points as "- " lines (at most six short points), and optionally a "Notes:" line with speaker notes.',
+    format: 'In Isadek Slides, write slides as an outline: a "## " heading line with each slide\'s title, then its points as "- " lines (at most six short points), and optionally a "Notes:" line with speaker notes.',
     actions: [
       { label: 'Draft slides', prompt: 'Draft 5 to 8 slides on the topic I describe next, as an outline. Topic: ', fill: true },
       { label: 'Speaker notes', prompt: 'Write speaker notes for the current slide: what to say, in 3 to 5 natural sentences. Reply with only the notes.' },

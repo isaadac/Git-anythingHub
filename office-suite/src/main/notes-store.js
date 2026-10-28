@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Notes storage: one JSON file per notebook in the app's data folder. Every change is
+// Isadek Notes storage: one JSON file per notebook in the app's data folder. Every change is
 // saved as you type, so there is no Save command. Deleted notebooks go to a trash folder.
 const { app, ipcMain } = require('electron');
 const fs = require('fs');

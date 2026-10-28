@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Write — page layout.
+// Isadek Write — page layout.
 // The document is one editable column. After each change this pass measures the blocks
 // and gives any block that would cross the bottom of a page a top margin that moves it to
 // the next page; page sheets, headers and footers are drawn behind and around the text.

@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets — data validation.
+// Isadek Sheets — data validation.
 // A sheet's rules live in sheet.dv:
 //   { ref, type: 'list'|'whole'|'decimal'|'date'|'time'|'textLength'|'custom', op, v1, v2,
 //     allowBlank, dropdown, prompt: { title, text }, error: { style: 'stop'|'warning'|'information', title, text } }

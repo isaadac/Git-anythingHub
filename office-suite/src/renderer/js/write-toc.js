@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Write — table of contents.
+// Isadek Write — table of contents.
 // <div class="toc"> holds a title and one entry per heading:
 //   <p class="toc-l2"><a href="#toc_x">Heading</a><span class="toc-pg">3</span></p>
 // Page numbers follow the layout; Update Table rebuilds the entries from the headings.
@@ -132,7 +132,7 @@
     return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
   };
 
-  /** Word's contents (links to _Toc bookmarks) opened as HTML becomes an Atlas table of contents. */
+  /** Word's contents (links to _Toc bookmarks) opened as HTML becomes an Isadek table of contents. */
   WriteToc.importHtml = function (html) {
     const d = new DOMParser().parseFromString(`<body>${html}</body>`, 'text/html');
     const b = d.body;

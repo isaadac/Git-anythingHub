@@ -1,8 +1,8 @@
 {
-  "name": "atlas-office",
-  "productName": "Atlas Office",
+  "name": "isadek-office",
+  "productName": "Isadek Office",
   "version": "1.0.0",
-  "description": "A free, cross-platform office suite: Atlas Write (documents), Atlas Sheets (spreadsheets) and Atlas Slides (presentations).",
+  "description": "A free, cross-platform office suite: Isadek Write (documents), Isadek Sheets (spreadsheets) and Isadek Slides (presentations).",
   "main": "src/main/main.js",
   "author": {
     "name": "isaadac",
@@ -37,8 +37,8 @@
     "url": "https://github.com/isaadac/Git-anythingHub.git"
   },
   "build": {
-    "appId": "io.github.isaadac.atlasoffice",
-    "productName": "Atlas Office",
+    "appId": "io.github.isaadac.isadekoffice",
+    "productName": "Isadek Office",
     "copyright": "Copyright © 2026 isaadac",
     "directories": {
       "output": "dist",
@@ -97,14 +97,14 @@
       },
       {
         "ext": "aslides",
-        "name": "Atlas Presentation",
+        "name": "Isadek Presentation",
         "role": "Editor",
         "mimeType": "application/x-atlas-slides"
       },
       {
         "ext": "anote",
-        "name": "Atlas Notes Notebook",
-        "description": "Atlas Notes Notebook",
+        "name": "Isadek Notes Notebook",
+        "description": "Isadek Notes Notebook",
         "role": "Editor",
         "mimeType": "application/x-atlas-notebook"
       }
@@ -136,11 +136,11 @@
       "perMachine": false,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
-      "shortcutName": "Atlas Office",
-      "artifactName": "Atlas-Office-Setup-${version}-${arch}.${ext}"
+      "shortcutName": "Isadek Office",
+      "artifactName": "Isadek-Office-Setup-${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "Atlas-Office-${version}-portable.${ext}"
+      "artifactName": "Isadek-Office-${version}-portable.${ext}"
     },
     "mac": {
       "target": [
@@ -191,7 +191,7 @@
       "provider": "generic",
       "url": "https://github.com/isaadac/Git-anythingHub/releases/latest/download"
     },
-    "artifactName": "Atlas-Office-${version}-${arch}.${ext}"
+    "artifactName": "Isadek-Office-${version}-${arch}.${ext}"
   },
   "desktopName": "atlas-office.desktop"
 }

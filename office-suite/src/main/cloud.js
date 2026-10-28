@@ -56,7 +56,7 @@ ipcMain.handle('cloud:oauth-begin', async () => {
     const u = new URL(req.url, redirectUri);
     if (u.pathname !== '/callback') { resp.writeHead(404); resp.end(); return; }
     resp.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" });
-    resp.end('<!doctype html><title>Atlas Office</title><body style="font:16px system-ui;margin:3em;text-align:center"><h2>Signed in</h2><p>You can close this tab and return to Atlas Office.</p>');
+    resp.end('<!doctype html><title>Isadek Office</title><body style="font:16px system-ui;margin:3em;text-align:center"><h2>Signed in</h2><p>You can close this tab and return to Isadek Office.</p>');
     clearTimeout(timer);
     settle({ code: u.searchParams.get('code'), state: u.searchParams.get('state'), error: u.searchParams.get('error') });
     setTimeout(() => server.close(), 100);
@@ -79,7 +79,7 @@ ipcMain.handle('cloud:oauth-wait', async (_e, { id, authUrl }) => {
 ipcMain.handle('cloud:fetch', async (_e, req) => {
   let u;
   try { u = new URL(String(req && req.url)); } catch { return { status: 0, error: 'bad address' }; }
-  if (!/^https?:$/.test(u.protocol) || !allowedHosts().has(u.host)) return { status: 0, error: `Atlas Office doesn't connect to ${u.host}` };
+  if (!/^https?:$/.test(u.protocol) || !allowedHosts().has(u.host)) return { status: 0, error: `Isadek Office doesn't connect to ${u.host}` };
   const method = /^(GET|POST|PUT|PATCH|DELETE|PROPFIND|MKCOL)$/.test(req.method || 'GET') ? req.method || 'GET' : 'GET';
   const headers = {};
   for (const [k, v] of Object.entries(req.headers || {})) if (/^[\w-]{1,60}$/.test(k) && typeof v === 'string' && v.length < 10000) headers[k] = v;

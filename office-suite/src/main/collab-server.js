@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Office live-editing relay. Each session (room) holds the document as a map of keys
+// Isadek Office live-editing relay. Each session (room) holds the document as a map of keys
 // (paragraphs, cells, slides, shapes) to their latest value; clients send changed keys and the
 // server puts every change in one order and relays it, so all copies converge (last write wins
 // per key). It has no dependencies: a small WebSocket (RFC 6455) server on Node's http module.
@@ -93,7 +93,7 @@ function createCollabServer(opts = {}) {
   const rooms = new Map();
   const server = http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Atlas Office live editing server\n');
+    res.end('Isadek Office live editing server\n');
   });
   const validRoom = r => typeof r === 'string' && /^[\w-]{16,64}$/.test(r);
   const peerList = room => [...room.clients].map(c => ({ id: c.id, name: c.name, color: c.color, presence: c.presence || null }));
@@ -113,7 +113,7 @@ function createCollabServer(opts = {}) {
           for (const [k, v] of Object.entries(m.init)) if (typeof k === 'string' && k.length <= limits.keyLen && v !== null) set(room, k, v);
         }
       } else if (!room) return c.send({ t: 'error', error: 'This live session has ended or the link is wrong' });
-      if (room.app && m.app && room.app !== m.app) return c.send({ t: 'error', error: `This session is for Atlas ${room.app[0].toUpperCase() + room.app.slice(1)}` });
+      if (room.app && m.app && room.app !== m.app) return c.send({ t: 'error', error: `This session is for Isadek ${room.app[0].toUpperCase() + room.app.slice(1)}` });
       if (room.clients.size >= limits.clientsPerRoom) return c.send({ t: 'error', error: 'This session is full' });
       clearTimeout(room.idle);
       c.room = room;
@@ -177,5 +177,5 @@ module.exports = { createCollabServer };
 if (require.main === module) {
   const arg = (n, d) => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : d; };
   const port = +arg('--port', process.env.PORT || 8787), host = arg('--host', '0.0.0.0');
-  createCollabServer().listen(port, host, () => console.log(`Atlas Office live editing server on ws://${host}:${port}/`));
+  createCollabServer().listen(port, host, () => console.log(`Isadek Office live editing server on ws://${host}:${port}/`));
 }

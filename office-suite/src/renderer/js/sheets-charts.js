@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets — charts as Excel DrawingML (xl/charts/chartN.xml), both ways.
+// Isadek Sheets — charts as Excel DrawingML (xl/charts/chartN.xml), both ways.
 // toXml(spec) writes a chart Excel, LibreOffice and Google Sheets open as a real, editable chart;
 // fromXml(xml) reads one back into { type, title, series: [{ nameRef, catRef, valRef }] }.
 (function (root) {

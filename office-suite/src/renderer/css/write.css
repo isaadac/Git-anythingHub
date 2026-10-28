@@ -1,4 +1,4 @@
-/* Atlas Write — document canvas */
+/* Isadek Write — document canvas */
 .canvas { flex: 1; overflow: auto; padding: 24px 16px 64px; background: var(--canvas); }
 .page {
   --page-w: 8.5in; --page-h: 11in; --margin: 1in;

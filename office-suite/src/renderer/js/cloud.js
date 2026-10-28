@@ -635,7 +635,7 @@
       UI.toast('Opening…', 10000);
       const f = await Cloud.fetchFile(t.account, t.item, t.folder);
       const target = appFor(f.name);
-      if (!target) return UI.toast('Atlas Office cannot open this kind of file');
+      if (!target) return UI.toast('Isadek Office cannot open this kind of file');
       if (target === app && isEmpty && await isEmpty()) { await load(f); UI.toast(t.item.native ? 'Opened a copy; Save creates an Office file next to it' : 'Opened', 3000); }
       else await Platform.openData(target, f.name, f.data, !Platform.desktop && !app, f.path);
     } catch (err) {

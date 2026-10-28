@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Write — footnotes, endnotes, citations and bibliography.
+// Isadek Write — footnotes, endnotes, citations and bibliography.
 //
 // A note is <sup class="note" data-kind="foot|end" title="text">n</sup>; its number is
 // recalculated from its position. A citation is <cite class="citation" data-src="id"

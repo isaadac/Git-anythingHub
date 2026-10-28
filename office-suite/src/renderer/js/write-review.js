@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Write — Review: tracked changes and comments, including their round trip through .docx.
+// Isadek Write — Review: tracked changes and comments, including their round trip through .docx.
 //
 // In the document a tracked insertion is <ins class="tc">, a deletion <del class="tc">, both
 // with data-author and datetime; a comment is <span class="comment" title="text"
@@ -319,7 +319,7 @@
           .replace(/<w:commentRangeEnd\b[^>]*w:id="(\d+)"[^>]*\/>/g, (all, id) => mk(MARK.cmtE, id))
           .replace(/<w:r\b[^>]*>(?:(?!<\/w:r>)[\s\S])*?<w:commentReference\b[^>]*\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/g, '');
       }
-      // Citation fields written by Atlas (CITATION <source> \p <pages>).
+      // Citation fields written by Isadek (CITATION <source> \p <pages>).
       meta.cites = {};
       xml = xml.replace(/<w:fldSimple\b[^>]*w:instr="\s*CITATION\s+(\S+)(?:\s+\\p\s+(\S+))?[^"]*"[^>]*>([\s\S]*?)<\/w:fldSimple>/g, (all, src, pages, inner) => {
         const id = ++n;

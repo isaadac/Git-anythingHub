@@ -1,6 +1,6 @@
 {
-  "appId": "io.github.isaadac.atlasoffice",
-  "appName": "Atlas Office",
+  "appId": "io.github.isaadac.isadekoffice",
+  "appName": "Isadek Office",
   "webDir": "www",
   "android": {
     "allowMixedContent": false,

@@ -1,5 +1,5 @@
 'use strict';
-// Shared runtime for all Atlas Office apps.
+// Shared runtime for all Isadek Office apps.
 // Wraps the desktop bridge (window.atlas, from preload.js) and falls back to plain
 // browser APIs so the same apps also run as a web page on phones, tablets and ChromeOS.
 (function () {

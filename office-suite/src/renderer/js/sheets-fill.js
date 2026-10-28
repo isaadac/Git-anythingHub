@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Sheets — Auto Fill series, as Excel's fill handle extends a selection.
+// Isadek Sheets — Auto Fill series, as Excel's fill handle extends a selection.
 // extend(source, n, opts) returns the raw values for the n cells after the source cells
 // (or before them with opts.reverse, nearest first). Formulas are returned with an offset
 // ({ formula, from }) so the caller can shift their references.

@@ -1,5 +1,5 @@
 'use strict';
-// Atlas Slides — animations and transitions.
+// Isadek Slides — animations and transitions.
 // An element's animation is el.anim = { effect, dir, start: 'click'|'with'|'after', dur, delay, order }.
 // A slide's transition is s.transition (+ s.transDur seconds, s.advance seconds or null).
 // Both play in the slide show and are saved as PowerPoint <p:timing> / <p:transition> XML.

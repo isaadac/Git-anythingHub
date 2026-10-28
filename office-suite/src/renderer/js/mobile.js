@@ -48,7 +48,7 @@
 
   // ---------- Native app ----------
   const { Filesystem: FS, Share, App } = C.Plugins;
-  const FOLDER = 'Atlas Office';
+  const FOLDER = 'Isadek Office';
   const toB64 = bytes => { let s = ''; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000)); return btoa(s); };
   const fromB64 = b64 => { const bin = atob(b64); const out = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i); return out; };
   const isDevicePath = p => typeof p === 'string' && p.startsWith('device:');
@@ -97,7 +97,7 @@
     if (isDevicePath(state.path)) await shareDoc(state.path.slice(7));
   };
 
-  // Files opened from other apps ("Open with Atlas Office").
+  // Files opened from other apps ("Open with Isadek Office").
   const KIND = [['word/', 'docx'], ['xl/', 'xlsx'], ['ppt/', 'pptx']];
   const APP = { docx: 'write', html: 'write', htm: 'write', md: 'write', txt: 'write', xlsx: 'sheets', xls: 'sheets', csv: 'sheets', tsv: 'sheets', ods: 'sheets', pptx: 'slides', aslides: 'slides', anote: 'notes' };
   function guessName(url, bytes) {
@@ -118,7 +118,7 @@
       const bytes = typeof data === 'string' ? fromB64(data) : new Uint8Array(await data.arrayBuffer());
       const name = guessName(url, bytes);
       const app = APP[Platform.extOf(name)];
-      if (!app) return UI.toast('Atlas Office can’t open this kind of file', 4000);
+      if (!app) return UI.toast('Isadek Office can’t open this kind of file', 4000);
       await Platform.openData(app, name, bytes, true);
     } catch (err) {
       UI.toast('Could not open the file: ' + (err.message || err), 5000);

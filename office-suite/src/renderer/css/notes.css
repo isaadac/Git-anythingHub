@@ -1,4 +1,4 @@
-/* Atlas Notes */
+/* Isadek Notes */
 body.app-notes { --accent: #7719aa; --accent-dark: #5c1385; --accent-light: #efe0f7; }
 :root[data-theme="dark"] body.app-notes { --accent-light: #3b1a4d; --accent-fg: #d29bf0; }
 

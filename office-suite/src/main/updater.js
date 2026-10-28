@@ -21,10 +21,10 @@ function updater() {
   if (process.env.ATLAS_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.ATLAS_UPDATE_URL });
 
   autoUpdater.on('update-available', info => {
-    if (manual) dialog.showMessageBox({ type: 'info', message: `Atlas Office ${info.version} is available`, detail: 'It is downloading in the background. You will be asked to restart when it is ready.' });
+    if (manual) dialog.showMessageBox({ type: 'info', message: `Isadek Office ${info.version} is available`, detail: 'It is downloading in the background. You will be asked to restart when it is ready.' });
   });
   autoUpdater.on('update-not-available', () => {
-    if (manual) dialog.showMessageBox({ type: 'info', message: 'Atlas Office is up to date', detail: `You have version ${app.getVersion()}.` });
+    if (manual) dialog.showMessageBox({ type: 'info', message: 'Isadek Office is up to date', detail: `You have version ${app.getVersion()}.` });
     manual = false;
   });
   autoUpdater.on('error', err => {
@@ -41,7 +41,7 @@ function updater() {
       buttons: ['Restart Now', 'Later'],
       defaultId: 0,
       cancelId: 1,
-      message: `Atlas Office ${info.version} is ready to install`,
+      message: `Isadek Office ${info.version} is ready to install`,
       detail: 'Restart to finish updating. If you choose Later, the update installs the next time you quit.'
     });
     // Windows ask to save unsaved work as usual when they close.
