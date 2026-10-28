@@ -1,7 +1,7 @@
 'use strict';
 // Atlas Office — Electron main process.
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
-const { app, BrowserWindow, Menu, dialog, ipcMain, session, shell } = require('electron');
+const { app, BrowserWindow, Menu, dialog, ipcMain, screen, session, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const settings = require('./settings');
@@ -201,6 +201,47 @@ ipcMain.handle('app:close-now', e => {
   if (win) { recovery.closedCleanly(e.sender); win.removeAllListeners('close'); win.close(); }
   return true;
 });
+// ---------- Presenter View: an audience window driven by the presenter's window ----------
+const showPairs = new Map(); // webContents id -> the other window of the pair
+function showWindowFor(presenter) {
+  const displays = screen.getAllDisplays();
+  const here = screen.getDisplayMatching(presenter.getBounds());
+  const other = displays.find(d => d.id !== here.id);
+  const audience = new BrowserWindow({
+    ...(other ? { x: other.bounds.x, y: other.bounds.y, width: other.bounds.width, height: other.bounds.height, fullscreen: true } : { width: 960, height: 580 }),
+    title: 'Slide Show', backgroundColor: '#000000', autoHideMenuBar: true,
+    icon: path.join(__dirname, '../../build/icon.png'),
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true }
+  });
+  audience.setMenuBarVisibility(false);
+  audience.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  audience.webContents.on('will-navigate', e => e.preventDefault());
+  const pid = presenter.webContents.id, aid = audience.webContents.id;
+  showPairs.set(pid, audience); showPairs.set(aid, presenter);
+  audience.on('closed', () => {
+    showPairs.delete(pid); showPairs.delete(aid);
+    if (!presenter.isDestroyed()) presenter.webContents.send('show:message', { cmd: 'closed' });
+  });
+  presenter.once('closed', () => { if (!audience.isDestroyed()) audience.close(); });
+  audience.loadFile(path.join(__dirname, '../renderer/slides.html'), { query: { audience: '1' } });
+  return audience;
+}
+ipcMain.handle('show:open', e => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  if (!win) return false;
+  const old = showPairs.get(e.sender.id);
+  if (old && !old.isDestroyed()) old.close();
+  showWindowFor(win);
+  return true;
+});
+ipcMain.handle('show:send', (e, msg) => {
+  if (!msg || typeof msg !== 'object' || typeof msg.cmd !== 'string') return false;
+  const to = showPairs.get(e.sender.id);
+  if (!to || to.isDestroyed()) return false;
+  to.webContents.send('show:message', msg);
+  return true;
+});
+ipcMain.handle('show:close', e => { const to = showPairs.get(e.sender.id); if (to && !to.isDestroyed()) to.close(); return true; });
 ipcMain.handle('app:fullscreen', (e, on) => { BrowserWindow.fromWebContents(e.sender)?.setFullScreen(!!on); return true; });
 
 recovery.init({ createWindow, approve, isApproved });

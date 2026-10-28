@@ -171,6 +171,7 @@
     <div class="group"><div class="controls">
       <button class="btn big" data-cmd="present"><span class="ico">▶</span>From<br>Beginning</button>
       <button class="btn big" data-cmd="present-current"><span class="ico">▷</span>From Current<br>Slide</button>
+      <button class="btn big" data-cmd="presenter-view" title="Your notes, the next slide and a timer on this screen; the slides on the other screen or window"><span class="ico">🖥</span>Presenter<br>View</button>
     </div><div class="label">Start Slide Show</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="toggleNotes"><span class="ico">🗒</span>Notes</button>
@@ -197,6 +198,19 @@
 </div>
 
 <div class="presenter" id="presenter" hidden><div class="slide" id="presentSlide"></div><div class="present-hint" id="presentHint"></div></div>
+<div class="presenter-view" id="presenterView" hidden>
+  <div class="pv-top"><span id="pvTimer" class="pv-timer">0:00:00</span><button class="pv-btn" id="pvPause" title="Pause timer">⏸</button><button class="pv-btn" id="pvReset" title="Restart timer">↺</button><span class="pv-spacer"></span><span id="pvClock"></span></div>
+  <div class="pv-main">
+    <div class="pv-current" id="pvCurrentBox"><div class="slide" id="pvCurrent"></div></div>
+    <div class="pv-side">
+      <div class="pv-label" id="pvNextLabel">Next slide</div>
+      <div class="pv-next" id="pvNextBox"><div class="slide" id="pvNext"></div></div>
+      <div class="pv-notes-bar"><span>Notes</span><button class="pv-btn" id="pvZoomOut" title="Smaller notes">A−</button><button class="pv-btn" id="pvZoomIn" title="Larger notes">A+</button></div>
+      <div class="pv-notes" id="pvNotes"></div>
+    </div>
+  </div>
+  <div class="pv-bottom"><button class="pv-btn" id="pvPrev" title="Previous (←)">◀</button><span id="pvCount"></span><button class="pv-btn" id="pvNextBtn" title="Next (→, Space)">▶</button><span class="pv-spacer"></span><button class="pv-btn" id="pvBlack" title="Black screen (B)">■ Black</button><button class="pv-btn" id="pvEnd" title="End show (Esc)">End Show</button></div>
+</div>
 <div class="print-slides" id="printSlides"></div>
 
 <div class="backstage">

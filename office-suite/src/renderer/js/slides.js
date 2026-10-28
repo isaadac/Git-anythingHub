@@ -30,6 +30,8 @@
   let selectedId = null;
   let editingId = null;
   const theme = () => THEMES[pres.theme] || THEMES.office;
+  // The audience window of Presenter View runs this page with ?audience=1 and only shows slides.
+  const AUDIENCE = new URLSearchParams(location.search).get('audience') === '1';
   const slide = () => pres.slides[current];
   const elById = id => slide().elements.find(e => e.id === id);
 
@@ -832,6 +834,7 @@
   }
   function scheduleAdvance() {
     clearTimeout(advanceTimer);
+    if (AUDIENCE) return; // the presenter's window decides when to move on
     const s = pres.slides[showIndex];
     if (typeof s.advance !== 'number' || built < groups.length) return;
     const end = Math.max(0, ...running.map(r => { const t = r.a.effect.getComputedTiming(); return (t.endTime || 0); }));
@@ -853,13 +856,14 @@
     showIndex = n;
     showSlide(n, d > 0, d > 0 ? 0 : Infinity);
   }
-  presenter.addEventListener('click', e => { if (e.button === 0) step(1); });
-  presenter.addEventListener('contextmenu', e => { e.preventDefault(); step(-1); });
+  presenter.addEventListener('click', e => { if (e.button !== 0) return; if (AUDIENCE) audience.toPresenter({ cmd: 'key', key: 'ArrowRight' }); else step(1); });
+  presenter.addEventListener('contextmenu', e => { e.preventDefault(); if (AUDIENCE) audience.toPresenter({ cmd: 'key', key: 'ArrowLeft' }); else step(-1); });
   presenter.addEventListener('mousemove', () => { presenter.classList.add('show-cursor'); clearTimeout(cursorTimer); cursorTimer = setTimeout(() => presenter.classList.remove('show-cursor'), 1500); });
   document.addEventListener('keydown', e => {
     if (presenter.hidden) return;
     e.preventDefault();
     const k = e.key;
+    if (AUDIENCE) { audience.toPresenter({ cmd: 'key', key: k }); return; }
     if (['ArrowRight', 'ArrowDown', ' ', 'PageDown', 'Enter', 'n', 'N'].includes(k)) step(1);
     else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace', 'p', 'P'].includes(k)) step(-1);
     else if (k === 'Home') { showIndex = 0; showSlide(0); }
@@ -869,6 +873,173 @@
   }, true);
   window.addEventListener('resize', () => { if (!presenter.hidden) showSlide(showIndex, false); });
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !presenter.hidden && !Platform.desktop) endShow(); });
+
+  // ---------- Presenter View ----------
+  // The presenter's window shows the current slide, the next one, notes and a timer; the
+  // audience window (another screen when there is one) shows the slides and follows along.
+  const audience = {
+    win: null,
+    open() {
+      if (Platform.desktop) return window.atlas.showOpen();
+      this.win = window.open('slides.html?audience=1', 'atlas-audience', 'popup,width=960,height=580');
+      return !!this.win;
+    },
+    send(msg) {
+      if (Platform.desktop) return window.atlas.showSend(msg);
+      if (this.win && !this.win.closed) this.win.postMessage(msg, location.origin);
+    },
+    close() { if (Platform.desktop) window.atlas.showClose(); else if (this.win && !this.win.closed) this.win.close(); this.win = null; },
+    listen(cb) {
+      if (Platform.desktop) { window.atlas.onShowMessage(cb); return; }
+      window.addEventListener('message', e => {
+        if (e.origin !== location.origin || !e.data || typeof e.data.cmd !== 'string') return;
+        if (AUDIENCE ? e.source !== window.opener : e.source !== this.win) return;
+        cb(e.data);
+      });
+    },
+    toPresenter(msg) { if (Platform.desktop) window.atlas.showSend(msg); else if (window.opener) window.opener.postMessage(msg, location.origin); }
+  };
+  const pv = { el: document.getElementById('presenterView'), index: 0, built: 0, groups: [], started: 0, paused: 0, pausedAt: 0, timer: null, advance: null, noteSize: 18 };
+  const pvq = id => document.getElementById(id);
+  async function presenterView(from) {
+    commitEditing();
+    pv.index = from;
+    pv.started = Date.now(); pv.paused = 0; pv.pausedAt = 0;
+    pv.el.hidden = false;
+    document.body.classList.add('presenting');
+    pvShow(0);
+    clearInterval(pv.timer);
+    pv.timer = setInterval(pvClock, 500);
+    pvClock();
+    try { await audience.open(); } catch { /* the presenter view still works for rehearsal */ }
+  }
+  /** Shows pv.index with `upTo` builds done (Infinity = all) and tells the audience window. */
+  function pvShow(upTo, animate = true) {
+    clearTimeout(pv.advance);
+    const s = pres.slides[pv.index];
+    pv.groups = SlidesAnim.sequence(s);
+    // A first build that starts by itself has already played once the slide is up.
+    const auto = pv.groups[0] && pv.groups[0].auto ? 1 : 0;
+    pv.built = Math.max(auto, Math.min(upTo, pv.groups.length));
+    pvRender();
+    audience.send({ cmd: 'goto', index: pv.index, built: pv.built === auto ? 0 : pv.built, animate });
+    pvScheduleAdvance();
+  }
+  function pvRender() {
+    const s = pres.slides[pv.index];
+    const cur = pvq('pvCurrent'), next = pvq('pvNext');
+    renderSlide(s, cur, false);
+    SlidesAnim.visibilityAfter(s, pv.groups, pv.built).forEach((v, id) => { const n = cur.querySelector(`[data-id="${id}"]`); if (n) n.style.visibility = v ? '' : 'hidden'; });
+    // "Next": the next build on this slide, else the next slide.
+    if (pv.built < pv.groups.length) {
+      renderSlide(s, next, false);
+      SlidesAnim.visibilityAfter(s, pv.groups, pv.built + 1).forEach((v, id) => { const n = next.querySelector(`[data-id="${id}"]`); if (n) n.style.visibility = v ? '' : 'hidden'; });
+      pvq('pvNextLabel').textContent = 'Next: animation';
+    } else if (pres.slides[pv.index + 1]) {
+      const ns = pres.slides[pv.index + 1];
+      renderSlide(ns, next, false);
+      SlidesAnim.visibilityAfter(ns, SlidesAnim.sequence(ns), 0).forEach((v, id) => { const n = next.querySelector(`[data-id="${id}"]`); if (n) n.style.visibility = v ? '' : 'hidden'; });
+      pvq('pvNextLabel').textContent = 'Next slide';
+    } else { next.innerHTML = ''; next.style.background = '#000'; pvq('pvNextLabel').textContent = 'End of slide show'; }
+    pvq('pvNotes').textContent = s.notes || 'No notes for this slide.';
+    pvq('pvNotes').classList.toggle('empty', !s.notes);
+    pvq('pvCount').textContent = `Slide ${pv.index + 1} of ${pres.slides.length}`;
+    pvFit();
+  }
+  function pvFit() {
+    [['pvCurrent', 'pvCurrentBox'], ['pvNext', 'pvNextBox']].forEach(([id, box]) => {
+      const b = pvq(box).getBoundingClientRect();
+      const k = Math.min(b.width / W, b.height / H) || 0.1;
+      Object.assign(pvq(id).style, { transform: `scale(${k})`, left: (b.width - W * k) / 2 + 'px', top: (b.height - H * k) / 2 + 'px' });
+    });
+  }
+  function pvStep(d) {
+    if (pv.el.hidden) return;
+    if (d > 0) {
+      if (pv.built < pv.groups.length) { pv.built++; pvRender(); audience.send({ cmd: 'build' }); pvScheduleAdvance(); return; }
+      if (pv.index + 1 >= pres.slides.length) return pvEnd();
+      pv.index++; pvShow(0);
+    } else {
+      const auto = pv.groups[0] && pv.groups[0].auto ? 1 : 0;
+      if (pv.built > auto) { pv.built--; pvRender(); audience.send({ cmd: 'goto', index: pv.index, built: pv.built, animate: false }); return; }
+      if (pv.index === 0) return;
+      pv.index--; pvShow(Infinity, false);
+    }
+  }
+  function pvScheduleAdvance() {
+    clearTimeout(pv.advance);
+    const s = pres.slides[pv.index];
+    if (typeof s.advance !== 'number' || pv.built < pv.groups.length) return;
+    const last = pv.groups[pv.built - 1];
+    const tail = last ? Math.max(0, ...last.items.map(x => x.at + x.anim.dur * 1000)) : (s.transition && s.transition !== 'none' ? (s.transDur || 1) * 1000 : 0);
+    pv.advance = setTimeout(() => pvStep(1), tail + s.advance * 1000);
+  }
+  function pvClock() {
+    const now = Date.now();
+    const ms = (pv.pausedAt || now) - pv.started - pv.paused;
+    const t = Math.max(0, Math.floor(ms / 1000));
+    pvq('pvTimer').textContent = `${String(Math.floor(t / 3600)).padStart(1, '0')}:${String(Math.floor(t / 60) % 60).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+    pvq('pvClock').textContent = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }
+  function pvEnd() {
+    clearInterval(pv.timer); clearTimeout(pv.advance);
+    pv.el.hidden = true;
+    document.body.classList.remove('presenting');
+    audience.send({ cmd: 'end' });
+    audience.close();
+    goTo(pv.index);
+  }
+  pvq('pvPrev').addEventListener('click', () => pvStep(-1));
+  pvq('pvNextBtn').addEventListener('click', () => pvStep(1));
+  pvq('pvBlack').addEventListener('click', e => { const on = e.currentTarget.classList.toggle('on'); pvq('pvCurrentBox').classList.toggle('black', on); audience.send({ cmd: 'black', on }); });
+  pvq('pvEnd').addEventListener('click', pvEnd);
+  pvq('pvPause').addEventListener('click', e => {
+    if (pv.pausedAt) { pv.paused += Date.now() - pv.pausedAt; pv.pausedAt = 0; e.currentTarget.textContent = '⏸'; }
+    else { pv.pausedAt = Date.now(); e.currentTarget.textContent = '▶'; }
+    pvClock();
+  });
+  pvq('pvReset').addEventListener('click', () => { pv.started = Date.now(); pv.paused = 0; pv.pausedAt = pv.pausedAt ? Date.now() : 0; pvClock(); });
+  pvq('pvZoomIn').addEventListener('click', () => { pv.noteSize = Math.min(48, pv.noteSize + 2); pvq('pvNotes').style.fontSize = pv.noteSize + 'px'; });
+  pvq('pvZoomOut').addEventListener('click', () => { pv.noteSize = Math.max(10, pv.noteSize - 2); pvq('pvNotes').style.fontSize = pv.noteSize + 'px'; });
+  pvq('pvCurrentBox').addEventListener('click', () => pvStep(1));
+  document.addEventListener('keydown', e => {
+    if (pv.el.hidden) return;
+    e.preventDefault(); e.stopPropagation();
+    pvKey(e.key);
+  }, true);
+  function pvKey(k) {
+    if (['ArrowRight', 'ArrowDown', ' ', 'PageDown', 'Enter', 'n', 'N'].includes(k)) pvStep(1);
+    else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace', 'p', 'P'].includes(k)) pvStep(-1);
+    else if (k === 'Home') { pv.index = 0; pvShow(0); }
+    else if (k === 'End') { pv.index = pres.slides.length - 1; pvShow(0); }
+    else if (k === 'b' || k === 'B' || k === '.') pvq('pvBlack').click();
+    else if (k === 'Escape') pvEnd();
+  }
+  window.addEventListener('resize', () => { if (!pv.el.hidden) pvFit(); });
+  audience.listen(msg => {
+    if (AUDIENCE) return audienceMessage(msg);
+    if (msg.cmd === 'ready') audience.send({ cmd: 'load', pres: JSON.parse(JSON.stringify(pres)), index: pv.index, built: pv.built });
+    else if (msg.cmd === 'key') pvKey(msg.key);
+    else if (msg.cmd === 'closed' && !pv.el.hidden) UI.toast('The audience window was closed', 3000);
+  });
+  /** Audience window: shows what the presenter's window says. */
+  function audienceMessage(msg) {
+    switch (msg.cmd) {
+      case 'load':
+        try { pres = cleanPres(msg.pres); } catch { return; }
+        showIndex = Math.max(0, Math.min(pres.slides.length - 1, msg.index | 0));
+        presenter.hidden = false;
+        showSlide(showIndex, false, msg.built === Infinity || msg.built > 1000 ? Infinity : msg.built | 0);
+        break;
+      case 'goto':
+        showIndex = Math.max(0, Math.min(pres.slides.length - 1, msg.index | 0));
+        showSlide(showIndex, !!msg.animate, msg.built === Infinity || msg.built > 1000 ? Infinity : msg.built | 0);
+        break;
+      case 'build': build(); break;
+      case 'black': presenter.classList.toggle('black', !!msg.on); break;
+      case 'end': window.close(); break;
+    }
+  }
 
   // ---------- PPTX export ----------
   const PX_PER_IN = 96;
@@ -1257,6 +1428,7 @@
       case 'undo': if (editingId) document.execCommand('undo'); else undo(); break;
       case 'redo': if (editingId) document.execCommand('redo'); else redo(); break;
       case 'present': present(0); break;
+      case 'presenter-view': presenterView(current); break;
       case 'present-current': present(current); break;
       case 'find': UI.toast('Find is available in Write and Sheets'); break;
       case 'home': Platform.desktop ? Platform.newWindow('home') : (location.href = 'index.html'); break;
@@ -1264,6 +1436,12 @@
   });
 
   (async () => {
+    if (AUDIENCE) {
+      document.body.classList.add('audience');
+      presenter.hidden = false;
+      audience.toPresenter({ cmd: 'ready' });
+      return;
+    }
     pres.slides = [newSlide('title')];
     renderAll();
     const f = await Platform.pending();
@@ -1273,7 +1451,7 @@
   })();
 
   // ---------- Crash recovery & AutoSave ----------
-  const recovery = Platform.enableRecovery({
+  const recovery = AUDIENCE ? { adopt() {} } : Platform.enableRecovery({
     app: 'slides', state,
     snapshot: () => { commitEditingQuietly(); return JSON.stringify(pres); },
     autosave: () => save(false, true),

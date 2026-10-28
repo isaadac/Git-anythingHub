@@ -24,5 +24,9 @@ contextBridge.exposeInMainWorld('atlas', {
   recoveryList: () => ipcRenderer.invoke('recovery:list'),
   recoveryOpen: id => ipcRenderer.invoke('recovery:open', id),
   recoveryDiscard: id => ipcRenderer.invoke('recovery:discard', id),
+  showOpen: () => ipcRenderer.invoke('show:open'),
+  showSend: msg => ipcRenderer.invoke('show:send', msg),
+  showClose: () => ipcRenderer.invoke('show:close'),
+  onShowMessage: cb => ipcRenderer.on('show:message', (_e, msg) => cb(msg)),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });
