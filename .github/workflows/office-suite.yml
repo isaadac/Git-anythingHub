@@ -74,6 +74,14 @@ jobs:
           cache: npm
           cache-dependency-path: office-suite/package-lock.json
       - run: npm ci
+      - name: Built-in cloud apps (optional repository variables, see README)
+        env:
+          ISADEK_GOOGLE_CLIENT_ID: ${{ vars.ISADEK_GOOGLE_CLIENT_ID }}
+          ISADEK_GOOGLE_CLIENT_SECRET: ${{ secrets.ISADEK_GOOGLE_CLIENT_SECRET }}
+          ISADEK_MICROSOFT_CLIENT_ID: ${{ vars.ISADEK_MICROSOFT_CLIENT_ID }}
+          ISADEK_MICROSOFT_TENANT: ${{ vars.ISADEK_MICROSOFT_TENANT }}
+          ISADEK_DROPBOX_APP_KEY: ${{ vars.ISADEK_DROPBOX_APP_KEY }}
+        run: node scripts/cloud-apps.js
       - name: Build installers
         shell: bash
         env:
@@ -138,6 +146,14 @@ jobs:
       - name: Install Capacitor
         working-directory: office-suite/mobile
         run: npm ci
+      - name: Built-in cloud apps (optional repository variables, see README)
+        env:
+          ISADEK_GOOGLE_CLIENT_ID: ${{ vars.ISADEK_GOOGLE_CLIENT_ID }}
+          ISADEK_GOOGLE_CLIENT_SECRET: ${{ secrets.ISADEK_GOOGLE_CLIENT_SECRET }}
+          ISADEK_MICROSOFT_CLIENT_ID: ${{ vars.ISADEK_MICROSOFT_CLIENT_ID }}
+          ISADEK_MICROSOFT_TENANT: ${{ vars.ISADEK_MICROSOFT_TENANT }}
+          ISADEK_DROPBOX_APP_KEY: ${{ vars.ISADEK_DROPBOX_APP_KEY }}
+        run: node scripts/cloud-apps.js
       - name: Build the web app and the Android project
         working-directory: office-suite/mobile
         run: npm run android
@@ -171,6 +187,14 @@ jobs:
       - name: Install Capacitor
         working-directory: office-suite/mobile
         run: npm ci
+      - name: Built-in cloud apps (optional repository variables, see README)
+        env:
+          ISADEK_GOOGLE_CLIENT_ID: ${{ vars.ISADEK_GOOGLE_CLIENT_ID }}
+          ISADEK_GOOGLE_CLIENT_SECRET: ${{ secrets.ISADEK_GOOGLE_CLIENT_SECRET }}
+          ISADEK_MICROSOFT_CLIENT_ID: ${{ vars.ISADEK_MICROSOFT_CLIENT_ID }}
+          ISADEK_MICROSOFT_TENANT: ${{ vars.ISADEK_MICROSOFT_TENANT }}
+          ISADEK_DROPBOX_APP_KEY: ${{ vars.ISADEK_DROPBOX_APP_KEY }}
+        run: node scripts/cloud-apps.js
       - name: Build the web app and the iOS project
         working-directory: office-suite/mobile
         run: npm run ios

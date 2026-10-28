@@ -226,6 +226,24 @@ const docText = async buf => (await (await JSZip.loadAsync(buf)).file('word/docu
   await page.click('.modal .ok');
   await page.waitForFunction(() => document.querySelectorAll('#cloud .row').length === 3);
   check('account disconnected', true);
+  // ---- Built-in app registrations (cloud-apps.json): nothing to set up
+  const ctx2 = await browser.newContext();
+  await ctx2.addInitScript(c => { localStorage.setItem('atlas-cloud-config', c); }, JSON.stringify({ endpoints: cfg.endpoints }));
+  await ctx2.route('**/src/renderer/cloud-apps.json', r => r.fulfill({ contentType: 'application/json', body: JSON.stringify({ dropbox: { clientId: 'did' } }) }));
+  const p2 = await ctx2.newPage();
+  p2.on('pageerror', e => errors.push(e.message));
+  await p2.goto(base + 'index.html');
+  await p2.click('#cloudAdd');
+  await p2.click('.modal .actions button:has-text("Dropbox")');
+  await p2.waitForSelector('#cloud .row', { timeout: 10000 });
+  check('built-in app: Dropbox connects without asking for an app key', (await p2.$$eval('#cloud .row .p', ns => ns.map(n => n.textContent))).includes('ada@dropbox.test'));
+  await p2.evaluate(() => { Cloud.settingsDialog('dropbox'); });
+  await p2.waitForSelector('.modal input');
+  const ph = await p2.$eval('.modal input', i => ({ v: i.value, p: i.placeholder }));
+  check('built-in app: settings show it is built in, and keep your own empty', ph.v === '' && /Built in/.test(ph.p), JSON.stringify(ph));
+  await p2.click('.modal .actions .primary');
+  check('built-in app: saving settings does not copy it into yours', await p2.evaluate(() => !JSON.parse(localStorage.getItem('atlas-cloud-config')).dropbox.clientId));
+  await ctx2.close();
   check('no page errors', errors.length === 0, errors.join(' | '));
   await browser.close();
   server.close();

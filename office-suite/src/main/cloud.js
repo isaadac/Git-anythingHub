@@ -95,7 +95,12 @@ ipcMain.handle('cloud:fetch', async (_e, req) => {
 });
 
 // ---------- Settings and tokens ----------
+// The publisher's own app registrations, built into this copy (see scripts/cloud-apps.js).
+function builtIn() {
+  try { return cleanConfig(JSON.parse(fs.readFileSync(path.join(__dirname, '../renderer/cloud-apps.json'), 'utf8'))); } catch { return cleanConfig({}); }
+}
 ipcMain.handle('cloud:config-get', () => cleanConfig(settings.get('cloud') || {}));
+ipcMain.handle('cloud:builtin-get', () => builtIn());
 ipcMain.handle('cloud:config-set', (_e, c) => { settings.set('cloud', cleanConfig(c)); return cleanConfig(c); });
 const tokenFile = () => path.join(app.getPath('userData'), 'cloud-accounts.bin');
 function readTokens() {

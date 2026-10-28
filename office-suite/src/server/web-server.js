@@ -13,12 +13,15 @@
 //   ASSISTANT_ORIGINS      other sites whose pages may call the Assistant (comma separated origins)
 //   ASSISTANT_PER_MINUTE   questions per minute per person or address (default 10)
 //   ASSISTANT_MODEL        the default model
+//   ISADEK_GOOGLE_CLIENT_ID, ISADEK_MICROSOFT_CLIENT_ID, ISADEK_DROPBOX_APP_KEY, …
+//                          your cloud app registrations, offered to every page (scripts/cloud-apps.js)
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { Anthropic, MODELS, validModel, cleanMessages, ask } = require('../main/assistant-core');
 const { createCollabServer } = require('../main/collab-server');
+const { fromEnv: cloudAppsFromEnv } = require('../../scripts/cloud-apps');
 
 const ROOT = path.resolve(__dirname, '../..');
 const RENDERER = path.join(ROOT, 'src/renderer');
@@ -104,8 +107,11 @@ function createWebServer(opts = {}) {
     if (!res.destroyed) res.end(JSON.stringify({ t: 'done', ...out }) + '\n');
   }
 
+  // Cloud app registrations from the environment replace the file built into the pages.
+  const cloudApps = cloudAppsFromEnv(env);
   function serveFile(req, res, url) {
     let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    if (rel === 'src/renderer/cloud-apps.json' && Object.keys(cloudApps).length) return json(res, 200, cloudApps);
     if (!rel) { res.writeHead(302, { Location: '/src/renderer/index.html' }); return res.end(); }
     rel = path.posix.normalize(rel);
     const ok = (rel.startsWith('src/renderer/') && !rel.includes('..')) || libs.has(rel);

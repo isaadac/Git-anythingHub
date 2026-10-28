@@ -178,6 +178,7 @@
             if (f.max !== undefined) input.max = f.max;
           }
           if (f.value !== undefined) input.value = f.value;
+          if (f.placeholder) input.placeholder = f.placeholder;
           label.appendChild(input);
           box.appendChild(label);
           inputs[f.name] = input;

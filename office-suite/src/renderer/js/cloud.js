@@ -61,9 +61,29 @@
     }
     return out;
   }
-  async function getConfig() {
+  /** Your own app registrations (Cloud settings). */
+  async function userConfig() {
     if (desktop) return cleanConfig(await window.atlas.cloudConfigGet());
     try { return cleanConfig(JSON.parse(localStorage.getItem('atlas-cloud-config') || '{}')); } catch { return cleanConfig({}); }
+  }
+  /** The publisher's registrations built into this copy (cloud-apps.json), used where you have none. */
+  let builtInCache = null;
+  async function builtInConfig() {
+    if (builtInCache) return builtInCache;
+    try {
+      if (desktop) builtInCache = cleanConfig(await window.atlas.cloudBuiltIn());
+      else { const r = await fetch('cloud-apps.json', { cache: 'no-store' }); builtInCache = cleanConfig(r.ok ? await r.json() : {}); }
+    } catch { builtInCache = cleanConfig({}); }
+    return builtInCache;
+  }
+  /** What is used: each service's own registration if you set one, else the built-in one. */
+  async function getConfig() {
+    const [mine, built] = await Promise.all([userConfig(), builtInConfig()]);
+    const out = { ...mine, endpoints: mine.endpoints };
+    if (!mine.google.clientId) out.google = built.google;
+    if (!mine.microsoft.clientId) out.microsoft = built.microsoft;
+    if (!mine.dropbox.clientId) out.dropbox = built.dropbox;
+    return out;
   }
   async function setConfig(c) {
     if (desktop) return window.atlas.cloudConfigSet(c);
@@ -588,15 +608,16 @@
 
   /** App registrations for the OAuth services (each person or organisation brings their own). */
   Cloud.settingsDialog = async function (only) {
-    const cfg = await getConfig();
+    const cfg = await userConfig(), built = await builtInConfig();
     const fields = [];
     const redirect = desktop ? 'http://127.0.0.1 (any port)' : new URL('oauth.html', location.href).href.replace(/[?#].*$/, '');
-    if (!only || only === 'google') fields.push({ name: 'gId', label: 'Google Drive — OAuth client ID', value: cfg.google.clientId },
+    const hint = p => (built[p].clientId ? 'Built in — leave empty to use it' : '');
+    if (!only || only === 'google') fields.push({ name: 'gId', label: 'Google Drive — OAuth client ID', value: cfg.google.clientId, placeholder: hint('google') },
       { name: 'gSecret', label: 'Google Drive — client secret (desktop clients only)', value: cfg.google.clientSecret });
-    if (!only || only === 'microsoft') fields.push({ name: 'mId', label: 'OneDrive — application (client) ID', value: cfg.microsoft.clientId },
+    if (!only || only === 'microsoft') fields.push({ name: 'mId', label: 'OneDrive — application (client) ID', value: cfg.microsoft.clientId, placeholder: hint('microsoft') },
       { name: 'mTenant', label: 'OneDrive — tenant (common, consumers, organizations or a tenant ID)', value: cfg.microsoft.tenant });
-    if (!only || only === 'dropbox') fields.push({ name: 'dId', label: 'Dropbox — app key', value: cfg.dropbox.clientId });
-    fields.push({ name: 'note', label: 'Register this redirect address with the service', value: redirect });
+    if (!only || only === 'dropbox') fields.push({ name: 'dId', label: 'Dropbox — app key', value: cfg.dropbox.clientId, placeholder: hint('dropbox') });
+    fields.push({ name: 'note', label: 'If you use your own app, register this redirect address with the service', value: redirect });
     const v = await UI.form(only ? `${PROVIDERS[only].label} app` : 'Cloud settings', fields, 'Save');
     if (!v) return false;
     const next = { ...cfg, google: { ...cfg.google }, microsoft: { ...cfg.microsoft }, dropbox: { ...cfg.dropbox } };
