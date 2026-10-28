@@ -3,7 +3,7 @@
 // buttons that put the reply into the document. Requests go through the desktop app's main
 // process (src/main/assistant.js), which holds the API key.
 (function () {
-  const APP_NAMES = { write: 'Atlas Write (a word processor)', sheets: 'Atlas Sheets (a spreadsheet)', slides: 'Atlas Slides (a presentation editor)' };
+  const APP_NAMES = { write: 'Atlas Write (a word processor)', sheets: 'Atlas Sheets (a spreadsheet)', slides: 'Atlas Slides (a presentation editor)', notes: 'Atlas Notes (a note-taking app with notebooks, sections and pages)' };
   const MAX_CONTEXT = 200000; // characters of document sent with a request
 
   function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; }

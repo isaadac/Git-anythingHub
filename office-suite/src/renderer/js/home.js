@@ -4,10 +4,11 @@
   const APP_INFO = {
     write: { label: 'W', cls: 't-write', page: 'write.html' },
     sheets: { label: 'S', cls: 't-sheets', page: 'sheets.html' },
-    slides: { label: 'P', cls: 't-slides', page: 'slides.html' }
+    slides: { label: 'P', cls: 't-slides', page: 'slides.html' },
+    notes: { label: 'N', cls: 't-notes', page: 'notes.html' }
   };
   const EXT_APP = { docx: 'write', html: 'write', htm: 'write', txt: 'write', md: 'write',
-    xlsx: 'sheets', xls: 'sheets', csv: 'sheets', ods: 'sheets', tsv: 'sheets', pptx: 'slides', aslides: 'slides' };
+    xlsx: 'sheets', xls: 'sheets', csv: 'sheets', ods: 'sheets', tsv: 'sheets', pptx: 'slides', aslides: 'slides', anote: 'notes' };
 
   const h = new Date().getHours();
   document.getElementById('greeting').textContent = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';

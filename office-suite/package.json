@@ -100,6 +100,13 @@
         "name": "Atlas Presentation",
         "role": "Editor",
         "mimeType": "application/x-atlas-slides"
+      },
+      {
+        "ext": "anote",
+        "name": "Atlas Notes Notebook",
+        "description": "Atlas Notes Notebook",
+        "role": "Editor",
+        "mimeType": "application/x-atlas-notebook"
       }
     ],
     "win": {

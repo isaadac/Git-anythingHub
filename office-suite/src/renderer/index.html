@@ -21,7 +21,7 @@
   .app-card .tile { width: 48px; height: 48px; border-radius: 8px; color: #fff; display: grid; place-items: center; font-size: 22px; font-weight: 700; flex: none; }
   .app-card strong { display: block; font-size: 15px; }
   .app-card span { color: var(--muted); font-size: 12px; }
-  .t-write { background: #2b579a; } .t-sheets { background: #217346; } .t-slides { background: #b7472a; }
+  .t-write { background: #2b579a; } .t-sheets { background: #217346; } .t-slides { background: #b7472a; } .t-notes { background: #7719aa; }
   .recent { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
   .recent .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border); cursor: pointer; }
   .recent .row:first-child { border-top: 0; }
@@ -51,6 +51,7 @@
     <button class="app-card" data-app="write"><div class="tile t-write">W</div><div><strong>Atlas Write</strong><span>Blank document · .docx</span></div></button>
     <button class="app-card" data-app="sheets"><div class="tile t-sheets">S</div><div><strong>Atlas Sheets</strong><span>Blank workbook · .xlsx</span></div></button>
     <button class="app-card" data-app="slides"><div class="tile t-slides">P</div><div><strong>Atlas Slides</strong><span>Blank presentation · .pptx</span></div></button>
+    <button class="app-card" data-app="notes"><div class="tile t-notes">N</div><div><strong>Atlas Notes</strong><span>Notebooks · saved as you type</span></div></button>
   </div>
   <h2>Templates <button class="linkbtn" id="moreTemplates">More templates</button></h2>
   <div class="tpl-grid home-templates" id="templates"></div>

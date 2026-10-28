@@ -50,5 +50,9 @@ contextBridge.exposeInMainWorld('atlas', {
   spellSetLanguages: l => ipcRenderer.invoke('spell:set-languages', l),
   spellAddWord: w => ipcRenderer.invoke('spell:add-word', w),
   setTheme: mode => ipcRenderer.invoke('app:set-theme', mode),
+  notesList: () => ipcRenderer.invoke('notes:list'),
+  notesRead: id => ipcRenderer.invoke('notes:read', id),
+  notesWrite: (id, json) => ipcRenderer.invoke('notes:write', id, json),
+  notesDelete: id => ipcRenderer.invoke('notes:delete', id),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });

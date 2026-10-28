@@ -99,7 +99,7 @@
 
   // Files opened from other apps ("Open with Atlas Office").
   const KIND = [['word/', 'docx'], ['xl/', 'xlsx'], ['ppt/', 'pptx']];
-  const APP = { docx: 'write', html: 'write', htm: 'write', md: 'write', txt: 'write', xlsx: 'sheets', xls: 'sheets', csv: 'sheets', tsv: 'sheets', ods: 'sheets', pptx: 'slides', aslides: 'slides' };
+  const APP = { docx: 'write', html: 'write', htm: 'write', md: 'write', txt: 'write', xlsx: 'sheets', xls: 'sheets', csv: 'sheets', tsv: 'sheets', ods: 'sheets', pptx: 'slides', aslides: 'slides', anote: 'notes' };
   function guessName(url, bytes) {
     let name = decodeURIComponent(url.split(/[?#]/)[0].split('/').pop() || 'Document');
     name = name.split(':').pop().split('/').pop();

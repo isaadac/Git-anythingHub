@@ -9,6 +9,7 @@ const updater = require('./updater');
 const recovery = require('./recovery');
 const cloud = require('./cloud');
 require('./assistant');
+require('./notes-store');
 const os = require('os');
 const { createCollabServer } = require('./collab-server');
 
@@ -16,13 +17,14 @@ const APPS = {
   home: { page: 'index.html', title: 'Atlas Office', width: 1100, height: 720 },
   write: { page: 'write.html', title: 'Atlas Write', width: 1280, height: 860 },
   sheets: { page: 'sheets.html', title: 'Atlas Sheets', width: 1360, height: 860 },
-  slides: { page: 'slides.html', title: 'Atlas Slides', width: 1360, height: 860 }
+  slides: { page: 'slides.html', title: 'Atlas Slides', width: 1360, height: 860 },
+  notes: { page: 'notes.html', title: 'Atlas Notes', width: 1280, height: 840 }
 };
 
 const EXT_TO_APP = {
   '.docx': 'write', '.html': 'write', '.htm': 'write', '.txt': 'write', '.md': 'write',
   '.xlsx': 'sheets', '.xls': 'sheets', '.csv': 'sheets', '.ods': 'sheets', '.tsv': 'sheets',
-  '.pptx': 'slides', '.aslides': 'slides'
+  '.pptx': 'slides', '.aslides': 'slides', '.anote': 'notes'
 };
 
 const pendingFiles = new Map(); // webContents.id -> file path to open on load
@@ -349,6 +351,7 @@ function buildMenu() {
         { label: 'New Document', accelerator: 'CmdOrCtrl+Shift+W', click: () => createWindow('write') },
         { label: 'New Spreadsheet', accelerator: 'CmdOrCtrl+Shift+E', click: () => createWindow('sheets') },
         { label: 'New Presentation', accelerator: 'CmdOrCtrl+Shift+P', click: () => createWindow('slides') },
+        { label: 'Atlas Notes', accelerator: 'CmdOrCtrl+Shift+O', click: () => createWindow('notes') },
         { type: 'separator' },
         { label: 'New', accelerator: 'CmdOrCtrl+N', click: () => send('new') },
         { label: 'Open…', accelerator: 'CmdOrCtrl+O', click: () => send('open') },
