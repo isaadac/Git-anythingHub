@@ -17,7 +17,7 @@
   ];
   const OPEN_FILTERS = [{ name: 'Documents', extensions: ['docx', 'html', 'htm', 'md', 'txt'] }, ...FILTERS];
   const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14] }; // inches
-  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false, citeStyle: 'apa', lang: '' };
+  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false, citeStyle: 'apa', lang: '', styles: {} };
   const setup = { ...DEFAULT_SETUP };
   /** Page setup read from a file is untrusted: keep only values the ribbon itself can produce. */
   function validSetup(v) {
@@ -31,6 +31,7 @@
     out.differentFirst = v.differentFirst === true;
     out.trackChanges = v.trackChanges === true;
     if (['apa', 'mla', 'chicago'].includes(v.citeStyle)) out.citeStyle = v.citeStyle;
+    out.styles = WriteExtras.cleanStyles(v.styles);
     return out;
   }
 
@@ -40,16 +41,24 @@
 
   // ---------- Selection helpers ----------
   let savedRange = null;
+  let extras = null; // section breaks, wrapping, equations, fields, styles, compare (write-extras.js)
   const editable = () => (HF.includes(document.activeElement) ? document.activeElement : doc);
-  document.addEventListener('selectionchange', () => {
+  /** Remembers the caret in the document now (selectionchange arrives a moment after typing). */
+  function captureSelection() {
     const sel = getSelection();
-    if (sel.rangeCount && (doc.contains(sel.anchorNode) || HF.some(h => h.contains(sel.anchorNode)))) {
-      savedRange = sel.getRangeAt(0).cloneRange();
+    if (!sel.rangeCount || !(doc.contains(sel.anchorNode) || HF.some(h => h.contains(sel.anchorNode)))) return false;
+    savedRange = sel.getRangeAt(0).cloneRange();
+    return true;
+  }
+  document.addEventListener('selectionchange', () => {
+    if (captureSelection()) {
       updateToolbarState();
       updateCaretPage();
     }
   });
   function restoreSelection() {
+    // A caret in the document now is newer than the remembered one.
+    captureSelection();
     if (!savedRange) { doc.focus(); return; }
     const root = savedRange.startContainer.nodeType === 1 ? savedRange.startContainer : savedRange.startContainer.parentElement;
     (root.closest('[contenteditable=true]') || doc).focus();
@@ -220,6 +229,33 @@
   document.getElementById('insPageBreak').addEventListener('click', () => {
     exec('insertHTML', '<hr class="page-break"><p><br></p>');
   });
+  document.getElementById('insSectionBreak').addEventListener('click', () => extras.insertSectionBreak());
+  document.getElementById('insEquation').addEventListener('click', () => extras.editEquation(null));
+  document.getElementById('insField').addEventListener('click', () => {
+    if (savedRange && !doc.contains(savedRange.startContainer)) return UI.toast('Fields go in the body of the document (headers and footers have Page Number)', 4000);
+    extras.insertField();
+  });
+  document.getElementById('modifyStyle').addEventListener('click', () => { restoreSelection(); extras.modifyStyle(currentBlock()); });
+  document.getElementById('compareDocs').addEventListener('click', () => compareWith());
+  /** Compare: an earlier version (chosen file) against this document, as tracked changes in a new window. */
+  async function compareWith() {
+    const f = await Platform.open(OPEN_FILTERS);
+    if (!f) return;
+    let other;
+    try { other = await readDocument(f); } catch (err) { return UI.toast('Could not open that file: ' + err.message, 4000); }
+    const original = document.createElement('div');
+    original.innerHTML = sanitize(other.html);
+    const revised = document.createElement('div');
+    revised.innerHTML = cleanHtmlFor(doc);
+    original.querySelectorAll('hr.page-break').forEach(n => { const d = document.createElement('div'); d.style.pageBreakAfter = 'always'; n.replaceWith(d); });
+    // Drawn equations and field results aren't text to compare; they are redrawn in the result.
+    [original, revised].forEach(r => r.querySelectorAll('span.equation, span.fld').forEach(x => { x.textContent = ''; }));
+    const n = extras.compare(original, revised, 'Compare');
+    if (!n) return UI.toast('No differences in the text');
+    const html = toHtml(() => revised.innerHTML);
+    await Platform.openData('write', `Compared — ${Platform.baseName(state.name)}.html`, new TextEncoder().encode(html));
+    UI.toast(`${n} change${n === 1 ? '' : 's'} marked. Accept or reject them on the Review tab.`, 5000);
+  }
   document.getElementById('insTable').addEventListener('click', async () => {
     const r = await UI.form('Insert Table', [
       { name: 'rows', label: 'Number of rows', type: 'number', value: 3, min: 1, max: 100 },
@@ -313,7 +349,7 @@
   HF.forEach(el => el.addEventListener('blur', () => setTimeout(() => { if (!HF.includes(document.activeElement)) layout.hideEmptyHeaderFooter(); }, 150)));
   // Page numbers: a field that shows the page it is on (or the page count).
   const fieldHtml = kind => `<span class="fld" data-fld="${kind}" contenteditable="false">${kind === 'page' ? '1' : layout.pages}</span>`;
-  function fixFields(root) { root.querySelectorAll('.fld').forEach(f => { f.contentEditable = 'false'; if (!['page', 'numpages'].includes(f.dataset.fld)) f.dataset.fld = 'page'; }); }
+  function fixFields(root) { root.querySelectorAll('.fld').forEach(f => { f.contentEditable = 'false'; if (!WriteExtras.FIELDS[f.dataset.fld]) f.dataset.fld = 'page'; }); }
   document.getElementById('insPageNum').addEventListener('change', e => {
     const v = e.target.value;
     e.target.value = '';
@@ -369,7 +405,9 @@
     const b = e.target.closest('button');
     if (!b || !selImg) return;
     if (b.dataset.w) selImg.style.width = b.dataset.w + '%';
+    if (b.dataset.wrap) extras.setWrap(selImg, b.dataset.wrap);
     if (b.dataset.a) {
+      extras.setWrap(selImg, 'inline');
       selImg.style.display = 'block';
       selImg.style.marginLeft = b.dataset.a === 'left' ? '0' : 'auto';
       selImg.style.marginRight = b.dataset.a === 'right' ? '0' : 'auto';
@@ -400,6 +438,7 @@
     page.style.setProperty('--margin', setup.margin);
     page.style.setProperty('--paper', setup.color);
     doc.style.columnCount = setup.columns;
+    if (extras) extras.applyStyles();
     doc.style.columnGap = '0.5in';
     let style = document.getElementById('print-page-style');
     if (!style) { style = document.createElement('style'); style.id = 'print-page-style'; document.head.appendChild(style); }
@@ -665,7 +704,7 @@
     },
     // Narrow windows (phones) and Web Layout show one continuous page.
     isPaged: () => !document.body.classList.contains('view-web') && window.innerWidth >= 900,
-    onLayout: () => { updateCaretPage(); if (toc) toc.refreshPages(); },
+    onLayout: () => { updateCaretPage(); if (toc) toc.refreshPages(); if (extras) extras.updateFields(); },
     footnotes: () => notes.footnotes()
   });
   toc = WriteToc({
@@ -674,6 +713,12 @@
   });
   // ---------- References: notes, citations, bibliography ----------
   const notes = WriteNotes({ doc, setup: () => setup, restoreSelection, changed: () => changed() });
+  extras = WriteExtras({
+    doc, setup: () => setup, setStyles: st => { setup.styles = st; }, captureSelection, restoreSelection, changed: () => changed(),
+    author: () => getAuthor(), fileName: () => state.name, pages: () => layout.pages,
+    pageOf: el => layout.pageAt((el.getBoundingClientRect().top - doc.getBoundingClientRect().top) / (parseFloat(page.style.zoom) || 1)),
+    wordCount: () => (doc.innerText.match(/\S+/g) || []).length
+  });
   document.getElementById('insFootnote').addEventListener('click', () => notes.insertNote('foot'));
   document.getElementById('insEndnote').addEventListener('click', () => notes.insertNote('end'));
   document.getElementById('insCitation').addEventListener('click', () => notes.insertCitation());
@@ -740,6 +785,7 @@
   let navTimer;
   function changed() {
     state.markDirty();
+    if (extras) extras.renderEquations();
     notes.renumber();
     layout.schedule();
     updateStatus();
@@ -762,6 +808,7 @@
       } else document.execCommand('insertText', false, '\u00a0\u00a0\u00a0\u00a0');
     }
     if (mod && e.key === 'Enter') { e.preventDefault(); document.getElementById('insPageBreak').click(); }
+    if (e.key === 'F9' && !mod) { e.preventDefault(); extras.updateFields(); if (toc) toc.refreshPages(); UI.toast('Fields updated'); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'e') { e.preventDefault(); exec('justifyCenter'); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); exec('justifyLeft'); }
     if (mod && !e.shiftKey && e.key.toLowerCase() === 'r') { e.preventDefault(); exec('justifyRight'); }
@@ -856,46 +903,61 @@
     return walk(root).replace(/\n{3,}/g, '\n\n').trim() + '\n';
   }
 
-  async function loadFile(f) {
+  /** Reads a file into HTML with its page setup, headers/footers and sources (throws if it can't). */
+  async function readDocument(f) {
     const ext = Platform.extOf(f.name);
     let html;
     let nextSetup = { ...DEFAULT_SETUP };
     let hfHtml = { header: '', footer: '', firstHeader: '', firstFooter: '' };
     let nextSources = [];
-    try {
-      if (ext === 'docx' && !/^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
-        // Page setup, headers, footers and page numbers come from the section properties (mammoth skips them).
-        try {
-          const sec = await readDocxSection(f.data);
-          nextSetup = validSetup({ ...nextSetup, ...sec.setup });
-          hfHtml = { ...hfHtml, ...sec.hf };
-          nextSources = sec.sources || [];
-        } catch (err) { console.info('Could not read page setup:', err); }
-        // Keep tracked changes and comments, which the HTML converter would otherwise drop.
-        let pre = { bytes: f.data, meta: null };
-        try { pre = await review.preprocessDocx(f.data); } catch (err) { console.info('Could not read revisions:', err); }
-        const src = pre.bytes;
-        const res = await mammoth.convertToHtml({ arrayBuffer: src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength) }, {
-          styleMap: ['p[style-name=\'Title\'] => h1.title:fresh', 'p[style-name=\'Quote\'] => blockquote:fresh', 'p[style-name=\'Intense Quote\'] => blockquote:fresh']
-        });
-        html = WriteToc.importHtml(notes.importMammothNotes(review.postprocessHtml(res.value, pre.meta)));
-        if (res.messages.some(m => m.type === 'warning')) console.info('Import notes:', res.messages);
-      } else if (ext === 'html' || ext === 'htm' || /^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
-        const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
-        const src = d.querySelector('meta[name=atlas-sources]');
-        if (src) { try { nextSources = JSON.parse(src.content); } catch { /* ignore */ } }
-        const saved = d.querySelector('meta[name=atlas-setup]');
-        if (saved) { try { nextSetup = validSetup(JSON.parse(saved.content)); } catch { /* ignore */ } }
-        for (const [key, sel] of [['header', 'header.atlas-header'], ['footer', 'footer.atlas-footer'], ['firstHeader', 'header.atlas-first-header'], ['firstFooter', 'footer.atlas-first-footer']]) {
-          const el = d.querySelector(sel);
-          if (el) { hfHtml[key] = el.innerHTML; el.remove(); }
-        }
-        html = d.querySelector('main.atlas-doc')?.innerHTML ?? d.body.innerHTML;
-      } else if (ext === 'md') {
-        html = markdownToHtml(Platform.bytesToText(f.data));
-      } else {
-        html = Platform.bytesToText(f.data).replace(/\r\n?/g, '\n').split(/\n/).map(l => `<p>${escapeHtml(l) || '<br>'}</p>`).join('');
+    if (ext === 'docx' && !/^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
+      // Page setup, headers, footers and page numbers come from the section properties (mammoth skips them).
+      try {
+        const sec = await readDocxSection(f.data);
+        nextSetup = validSetup({ ...nextSetup, ...sec.setup });
+        hfHtml = { ...hfHtml, ...sec.hf };
+        nextSources = sec.sources || [];
+      } catch (err) { console.info('Could not read page setup:', err); }
+      // Keep tracked changes and comments, which the HTML converter would otherwise drop.
+      let pre = { bytes: f.data, meta: null };
+      try { pre = await review.preprocessDocx(f.data); } catch (err) { console.info('Could not read revisions:', err); }
+      // Equations, fields, section breaks, wrapped pictures and styles.
+      let pre2 = { bytes: pre.bytes, meta: null };
+      try { pre2 = await extras.preprocessDocx(pre.bytes); } catch (err) { console.info('Could not read equations and sections:', err); }
+      if (pre2.meta) {
+        nextSetup.styles = pre2.meta.styles || {};
+        if (pre2.meta.first) { nextSetup.orientation = pre2.meta.first.orient; nextSetup.columns = pre2.meta.first.cols; }
+        nextSetup = validSetup(nextSetup);
       }
+      const src = pre2.bytes;
+      const res = await mammoth.convertToHtml({ arrayBuffer: src.buffer.slice(src.byteOffset, src.byteOffset + src.byteLength) }, {
+        styleMap: ['p[style-name=\'Title\'] => h1.title:fresh', 'p[style-name=\'Quote\'] => blockquote:fresh', 'p[style-name=\'Intense Quote\'] => blockquote:fresh']
+      });
+      html = WriteToc.importHtml(notes.importMammothNotes(review.postprocessHtml(res.value, pre.meta)));
+      if (pre2.meta) html = extras.postprocessHtml(html, pre2.meta);
+      if (res.messages.some(m => m.type === 'warning')) console.info('Import notes:', res.messages);
+    } else if (ext === 'html' || ext === 'htm' || /^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
+      const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
+      const src = d.querySelector('meta[name=atlas-sources]');
+      if (src) { try { nextSources = JSON.parse(src.content); } catch { /* ignore */ } }
+      const saved = d.querySelector('meta[name=atlas-setup]');
+      if (saved) { try { nextSetup = validSetup(JSON.parse(saved.content)); } catch { /* ignore */ } }
+      for (const [key, sel] of [['header', 'header.atlas-header'], ['footer', 'footer.atlas-footer'], ['firstHeader', 'header.atlas-first-header'], ['firstFooter', 'footer.atlas-first-footer']]) {
+        const el = d.querySelector(sel);
+        if (el) { hfHtml[key] = el.innerHTML; el.remove(); }
+      }
+      html = d.querySelector('main.atlas-doc')?.innerHTML ?? d.body.innerHTML;
+    } else if (ext === 'md') {
+      html = markdownToHtml(Platform.bytesToText(f.data));
+    } else {
+      html = Platform.bytesToText(f.data).replace(/\r\n?/g, '\n').split(/\n/).map(l => `<p>${escapeHtml(l) || '<br>'}</p>`).join('');
+    }
+    return { html, setup: nextSetup, hf: hfHtml, sources: nextSources };
+  }
+  async function loadFile(f) {
+    let html, nextSetup, hfHtml, nextSources;
+    try {
+      ({ html, setup: nextSetup, hf: hfHtml, sources: nextSources } = await readDocument(f));
     } catch (err) {
       UI.toast('Could not open file: ' + err.message, 4000);
       return;
@@ -905,6 +967,7 @@
     for (const [key, el] of Object.entries({ header, footer, firstHeader, firstFooter })) { el.innerHTML = sanitize(hfHtml[key]); fixFields(el); }
     doc.innerHTML = sanitize(html) || '<p><br></p>';
     fixFields(doc);
+    extras.renderEquations();
     notes.loadSources(nextSources);
     notes.renumber();
     notes.refreshCitations();
@@ -914,6 +977,7 @@
     syncSetupControls();
     state.set({ name: f.name, path: f.path, dirty: false });
     if (!f.recovered) Platform.rememberRecent(f.name, 'write');
+    extras.updateFields();
     updateStatus();
     refreshNav();
   }
@@ -1048,7 +1112,15 @@
     const twip = inch => Math.round(inch * 1440);
     const margin = twip(parseFloat(setup.margin));
     const textWidth = (setup.orientation === 'landscape' ? h : w) - 2 * parseFloat(setup.margin);
-    const opts = { stylesheet: DOCX_STYLESHEET, maxImageWidth: Math.round(textWidth / setup.columns * 96) };
+    // The document's own styles come after the defaults, so they win.
+    const opts = { stylesheet: DOCX_STYLESHEET + '\n' + extras.styleCss(''), maxImageWidth: Math.round(textWidth / setup.columns * 96) };
+    const pageProps = (orient, cols) => ({
+      page: {
+        size: { width: twip(w), height: twip(h), orientation: orient === 'landscape' ? D.PageOrientation.LANDSCAPE : D.PageOrientation.PORTRAIT },
+        margin: { top: margin, right: margin, bottom: margin, left: margin }
+      },
+      column: cols > 1 ? { count: cols, space: 720 } : undefined
+    });
     const section = {
       properties: {
         page: {
@@ -1068,7 +1140,11 @@
     toc.prepareForDocx(body);
     notes.prepareForDocx(body);
     merge.prepareForDocx(body);
-    section.children = [...docxHtml.htmlToContent(body.innerHTML, { ...opts, trackChanges: { author: getAuthor() } })];
+    const objects = extras.prepareForDocx(body);
+    // Each section break starts a Word section with its own orientation and columns.
+    const parts = extras.splitSections(body);
+    section.children = [...docxHtml.htmlToContent(parts[0].html, { ...opts, trackChanges: { author: getAuthor() } })];
+    const more = parts.slice(1).map(p => ({ properties: pageProps(p.orient, p.cols), children: [...docxHtml.htmlToContent(p.html, { ...opts, trackChanges: { author: getAuthor() } })] }));
     const has = el => el.textContent.trim() !== '' || !!el.querySelector('img');
     const headers = {}, footers = {};
     if (has(header)) headers.default = new D.Header({ children: hfToDocx(header, opts) });
@@ -1084,16 +1160,27 @@
     const document_ = new D.Document({
       creator: 'Isadek Write',
       title: Platform.baseName(state.name),
-      styles: { default: { document: { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { after: 160, line: 276 } } } } },
+      styles: { default: docxDefaultStyles() },
       background: setup.color !== '#ffffff' ? { color: setup.color.slice(1) } : undefined,
       features: setup.trackChanges ? { trackRevisions: true } : undefined,
       customProperties: [{ name: 'AtlasCiteStyle', value: setup.citeStyle }, ...(notes.sources.length ? [{ name: 'AtlasSources', value: JSON.stringify(notes.sources) }] : [])],
       comments: cmts.length ? { children: cmts.map(c => ({ id: c.id, author: c.author, initials: c.author.split(/\s+/).map(w => w[0]).join('').slice(0, 3), date: new Date(c.date), children: c.text.split('\n').map(t => new D.Paragraph(t)) })) } : undefined,
-      sections: [section]
+      sections: [section, ...more]
     });
     const blob = await D.Packer.toBlob(document_);
     const tabPos = Math.round(textWidth / setup.columns * 1440) - (setup.columns > 1 ? 360 : 0);
-    return WriteToc.patchDocx(await review.patchDocx(new Uint8Array(await blob.arrayBuffer())), { tabPos });
+    const patched = await WriteToc.patchDocx(await review.patchDocx(new Uint8Array(await blob.arrayBuffer())), { tabPos });
+    return extras.patchDocx(patched, objects);
+  }
+  /** Word's default and heading styles, with the document's own changes to them. */
+  function docxDefaultStyles() {
+    const mine = extras.docxStyles();
+    const doc0 = { run: { font: 'Calibri', size: 22 }, paragraph: { spacing: { after: 160, line: 276 } } };
+    if (mine.document) {
+      Object.assign(doc0.run, mine.document.run);
+      if (mine.document.paragraph) Object.assign(doc0.paragraph.spacing, mine.document.paragraph.spacing);
+    }
+    return { ...mine, document: doc0 };
   }
   /** Header/footer content as Word paragraphs, with page-number fields as real Word fields. */
   function hfToDocx(el, opts) {
@@ -1122,6 +1209,7 @@
     const css = [...document.styleSheets].find(s => s.href && s.href.endsWith('write.css'));
     let rules = '';
     try { rules = [...css.cssRules].map(r => r.cssText).filter(t => t.startsWith('.doc')).join('\n').replace(/\.doc\b/g, 'main.atlas-doc'); } catch { /* ignore */ }
+    rules += '\n' + extras.styleCss('main.atlas-doc');
     return `<!doctype html>
 <html><head><meta charset="utf-8"><title>${escapeHtml(Platform.baseName(state.name))}</title>
 <meta name="generator" content="Isadek Write">
@@ -1135,10 +1223,12 @@ ${rules}</style></head>
     return el.textContent.trim() || el.querySelector('img') ? `<${tag} class="${cls}">${cleanHtmlFor(el)}</${tag}>` : '';
   }
   async function serialize(ext) {
+    extras.updateFields();
     if (ext === 'docx') return toDocx();
     if (ext === 'html' || ext === 'htm') return toHtml();
     if (ext === 'md') {
       const clone = doc.cloneNode(true);
+      extras.prepareForText(clone);
       const defs = notes.toMarkdownNotes(clone);
       return htmlToMarkdown(clone) + (defs.length ? '\n' + defs.join('\n') + '\n' : '');
     }
@@ -1197,7 +1287,7 @@ ${rules}</style></head>
       case 'export-pdf': { const restore = layout.forPrint(); try { await Platform.exportPdf(Platform.baseName(state.name) + '.pdf', setup.orientation === 'landscape'); } finally { restore(); } break; }
       case 'export-html': save(true, 'html'); break;
       case 'export-txt': save(true, 'txt'); break;
-      case 'print': { const restore = layout.forPrint(); try { await Platform.print(); } finally { restore(); } break; }
+      case 'print': { extras.updateFields(); const restore = layout.forPrint(); try { await Platform.print(); } finally { restore(); } break; }
       case 'undo': if (!liveUndo('undoLocal')) exec('undo'); break;
       case 'redo': if (!liveUndo('redoLocal')) exec('redo'); break;
       case 'find': openFind(false); break;
@@ -1323,6 +1413,7 @@ ${rules}</style></head>
         if (el && v !== null) el.innerHTML = sanitize(String(v));
       } else if (k === 'setup' && v) {
         for (const key of Object.keys(DEFAULT_SETUP)) if (key in v) setup[key] = v[key];
+        Object.assign(setup, validSetup({ ...setup }));
         applySetup();
       } else if (k === 'sources') {
         notes.loadSources(v || []);
@@ -1343,6 +1434,7 @@ ${rules}</style></head>
       try { getSelection().setBaseAndExtent(a[0], a[1], f[0], f[1]); } catch { /* ignore */ }
     }
     if (sourcesChanged) notes.refreshCitations();
+    extras.renderEquations();
     changed();
     if (!commentsPane.hidden) review.renderPane();
     drawLivePeers();

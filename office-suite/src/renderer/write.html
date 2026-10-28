@@ -107,6 +107,7 @@
         <button class="btn style-btn s-h3" data-block="H3">Heading 3</button>
         <button class="btn style-btn s-quote" data-block="BLOCKQUOTE">Quote</button>
         <button class="btn style-btn s-code" data-block="PRE">Code</button>
+        <button class="btn" id="modifyStyle" title="Change how a style looks everywhere it is used">✎ Modify…</button>
       </div>
       <div class="label">Styles</div>
     </div>
@@ -124,6 +125,7 @@
   <div class="ribbon-panel" data-panel="insert">
     <div class="group"><div class="controls">
       <button class="btn big" id="insPageBreak"><span class="ico">⤓</span>Page<br>Break</button>
+      <button class="btn big" id="insSectionBreak" title="Start a new section on the next page, with its own orientation and columns"><span class="ico">⇲</span>Section<br>Break</button>
     </div><div class="label">Pages</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="insTable"><span class="ico">▦</span>Table</button>
@@ -149,6 +151,8 @@
       <button class="btn big" id="insHr"><span class="ico">―</span>Line</button>
       <button class="btn big" id="insDate"><span class="ico">📅</span>Date &amp;<br>Time</button>
       <button class="btn big" id="insSymbol"><span class="ico">Ω</span>Symbol</button>
+      <button class="btn big" id="insEquation" title="Insert an equation"><span class="ico">π</span>Equation</button>
+      <button class="btn big" id="insField" title="Insert a field: date, time, author, file name, page, pages or words (F9 updates fields)"><span class="ico">{ }</span>Field</button>
     </div><div class="label">Text</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="insToc" title="Insert a table of contents (links to each heading, with page numbers)"><span class="ico">☷</span>Contents</button>
@@ -263,6 +267,9 @@
         <button class="btn" id="nextChange">▼ Next</button>
       </div>
     </div><div class="label">Changes</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="compareDocs" title="Compare an earlier version with this document: the differences are shown as tracked changes in a new window"><span class="ico">⇄</span>Compare</button>
+    </div><div class="label">Compare</div></div>
   </div>
 
   <!-- VIEW -->
@@ -312,6 +319,10 @@
     <button class="btn" data-w="25">25%</button><button class="btn" data-w="50">50%</button>
     <button class="btn" data-w="75">75%</button><button class="btn" data-w="100">100%</button>
     <button class="btn" data-a="left">⫷</button><button class="btn" data-a="center">≡</button><button class="btn" data-a="right">⫸</button>
+    <button class="btn" data-wrap="inline" title="In line with text">▭ In line</button>
+    <button class="btn" data-wrap="float-left" title="Square: picture on the left, text wraps around it">◧ Wrap</button>
+    <button class="btn" data-wrap="float-right" title="Square: picture on the right, text wraps around it">◨ Wrap</button>
+    <button class="btn" data-wrap="wrap-block" title="Top and bottom: text above and below only">⬓ Top/Bottom</button>
     <button class="btn" data-alt="1" title="Alt text: describe the picture for people who can't see it">Alt Text</button>
     <button class="btn" data-del="1" title="Delete picture">🗑</button>
   </div>
@@ -368,6 +379,8 @@
 <script src="js/write-toc.js"></script>
 <script src="js/write-templates.js"></script>
 <script src="js/write-merge.js"></script>
+<script src="js/write-math.js"></script>
+<script src="js/write-extras.js"></script>
 <script src="js/write.js"></script>
 </body>
 </html>

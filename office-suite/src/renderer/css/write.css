@@ -70,6 +70,17 @@ body.markup-final .doc ins.tc, body.markup-original .doc del.tc { color: inherit
 .doc img.selected { outline: 2px solid var(--accent); }
 .doc a { color: #0563c1; }
 .doc hr { border: 0; border-top: 1px solid #999; margin: 10pt 0; }
+.doc .section-break { break-after: page; page-break-after: always; border: 0; border-top: 3px double #a19f9d; margin: 16pt -1in; height: 0; position: relative; cursor: pointer; }
+.doc .section-break::after { content: "Section Break (Next Page) · " attr(data-orient) " · " attr(data-cols) " col."; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: #8a8886; background: var(--surface); padding: 0 6px; white-space: nowrap; }
+body.paged .doc .section-break { border: 0; margin: 0; height: 0; }
+body.paged .doc .section-break::after { top: -24px; }
+.doc img.float-left { float: left; margin: 4px 14px 6px 0; }
+.doc img.float-right { float: right; margin: 4px 0 6px 14px; }
+.doc img.wrap-block { display: block; clear: both; margin: 6px auto; }
+.doc span.equation { cursor: pointer; padding: 0 2px; border-radius: 3px; }
+.doc span.equation:hover { background: rgba(0, 120, 212, .08); }
+.doc span.equation.eq-block { display: block; text-align: center; margin: 6pt 0; }
+.doc span.equation math { font-size: 1.1em; }
 .doc .page-break { break-after: page; page-break-after: always; border: 0; border-top: 1px dashed #a19f9d; margin: 16pt -1in; height: 0; position: relative; }
 .doc .page-break::after { content: "Page Break"; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: #8a8886; background: var(--surface); padding: 0 6px; }
 .doc .textbox { border: 1px solid #555; padding: 6pt 8pt; margin: 6pt 0; display: inline-block; min-width: 120px; }
@@ -108,10 +119,11 @@ body.view-focus .titlebar, body.view-focus .ribbon-tabs, body.view-focus .ribbon
 body.dark .canvas { background: #1f1f1f; }
 body.dark .page { --paper: #262626; }
 body.dark .doc, body.dark .doc h1.title { color: #e6e6e6; }
-body.dark .doc .page-break::after { background: #262626; }
+body.dark .doc .section-break::after, body.dark .doc .page-break::after { background: #262626; }
 
 @media print {
   /* Printing uses the same pages as the screen (laid out without gaps), headers and footers included. */
+  .doc .section-break::after { display: none; }
   .canvas { padding: 0; background: #fff; overflow: visible; }
   .page { zoom: 1 !important; }
   .page-bg { box-shadow: none; }

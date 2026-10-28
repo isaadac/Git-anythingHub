@@ -42,7 +42,7 @@
           const prevBottom = prev ? prev.bottom : (container === doc ? 0 : null);
           prev = b;
           if (skipFirst && i === 0) return;
-          if (el.tagName === 'HR' && el.classList.contains('page-break')) { units.push({ isBreak: true, top: b.top }); return; }
+          if (el.tagName === 'HR' && (el.classList.contains('page-break') || el.classList.contains('section-break'))) { units.push({ isBreak: true, top: b.top }); return; }
           const pushable = prevBottom !== null;
           if (CONTAINERS.has(el.tagName) && el.children.length > 1 && b.h > bodyH * 0.4 && !el.classList.contains('textbox') && !el.classList.contains('toc')) {
             // Keep the container's first item with the container, then treat each item separately.
