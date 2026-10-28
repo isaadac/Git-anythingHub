@@ -52,14 +52,18 @@ ipcMain.handle('cloud:oauth-begin', async () => {
   let settle;
   const result = new Promise(res => { settle = res; });
   const timer = setTimeout(() => { settle({ error: 'timeout' }); server.close(); }, 5 * 60 * 1000);
+  // One sign-in only: after the first callback nothing more is answered, even on a kept-alive connection.
+  let done = false;
   server.on('request', (req, resp) => {
+    if (done) { req.socket.destroy(); return; }
     const u = new URL(req.url, redirectUri);
     if (u.pathname !== '/callback') { resp.writeHead(404); resp.end(); return; }
-    resp.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'" });
+    done = true;
+    resp.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'", Connection: 'close' });
     resp.end('<!doctype html><title>Isadek Office</title><body style="font:16px system-ui;margin:3em;text-align:center"><h2>Signed in</h2><p>You can close this tab and return to Isadek Office.</p>');
     clearTimeout(timer);
     settle({ code: u.searchParams.get('code'), state: u.searchParams.get('state'), error: u.searchParams.get('error') });
-    setTimeout(() => server.close(), 100);
+    resp.on('finish', () => { server.close(); if (server.closeAllConnections) server.closeAllConnections(); });
   });
   waits.set(id, { result, server, timer });
   return { id, redirectUri };

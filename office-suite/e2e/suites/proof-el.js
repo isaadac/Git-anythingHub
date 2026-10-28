@@ -3,6 +3,21 @@ const path = require('path');
 const ROOT = process.cwd();
 const check = (n, c, x = '') => { console.log((c ? 'PASS ' : 'FAIL ') + n + (x !== '' ? ' :: ' + x : '')); if (!c) process.exitCode = 1; };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// Grammar fixes come from the app's own rules: take the first. Dictionaries differ in how they
+// rank spelling suggestions: take the expected fix when it is offered, otherwise leave the word.
+const FIXES = ['happy'];
+async function fixOne(page) {
+  const card = await page.$('.proof-card');
+  if (!card) return false;
+  const btns = await card.$$('.sugg button');
+  if (!(await card.evaluate(c => c.classList.contains('spelling')))) {
+    if (btns.length) { await btns[0].click(); return true; }
+  } else {
+    for (const b of btns) if (FIXES.includes((await b.textContent()).trim())) { await b.click(); return true; }
+  }
+  await card.$$eval('.acts button', bs => bs.find(b => b.textContent === 'Ignore once').click());
+  return true;
+}
 (async () => {
   const ud = path.join(process.env.E2E_WORK, 'ud-proof-' + Date.now());
   const app = await electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${ud}`, '.'], env: { ...process.env, NODE_OPTIONS: '' } });
@@ -11,6 +26,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await home.evaluate(() => window.atlas.newWindow('write'));
   const w = await win('write.html');
   await w.waitForFunction(() => window.Proofing);
+  // Pin the dictionary: a machine's own locale would pick another one.
+  await w.evaluate(() => window.atlas.spellSetLanguages(['en-US']));
   const langs = await w.evaluate(() => window.atlas.spellLanguages());
   console.log('info languages', langs.current.join(','), langs.available.length);
   // wait for the dictionary
@@ -26,8 +43,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   // walk: fix everything with the first suggestion
   for (let i = 0; i < 12; i++) {
     if (!(await w.$('.proof-card'))) break;
-    const b = await w.$('.proof-card .sugg button');
-    if (b) await b.click(); else await w.click('.proof-card .acts button:has-text("Ignore once")');
+    await fixOne(w);
     await sleep(100);
   }
   const text = await w.$eval('#doc', d => d.innerText.trim());
@@ -59,7 +75,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await s.click('[data-tab="review"]');
   await s.click('#proofEditor');
   await s.waitForSelector('.proof-card');
-  for (let i = 0; i < 5 && await s.$('.proof-card .sugg button'); i++) { await s.click('.proof-card .sugg button'); await sleep(100); }
+  for (let i = 0; i < 8 && await s.$('.proof-card'); i++) { if (!(await fixOne(s))) break; await sleep(100); }
   check('sheets: cells corrected', (await s.evaluate(() => [AtlasSheets.valueOf('A1'), AtlasSheets.valueOf('B2')].join('|'))) === 'Total sales|a banana');
   await s.evaluate(() => Platform.emit('undo'));
   check('sheets: undo restores', (await s.evaluate(() => AtlasSheets.valueOf('B2'))) === 'an banana');
@@ -71,7 +87,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.click('[data-tab="review"]');
   await p.click('#proofEditor');
   await p.waitForSelector('.proof-card');
-  for (let i = 0; i < 6 && await p.$('.proof-card .sugg button'); i++) { await p.click('.proof-card .sugg button'); await sleep(100); }
+  for (let i = 0; i < 8 && await p.$('.proof-card'); i++) { if (!(await fixOne(p))) break; await sleep(100); }
   const sl = await p.evaluate(() => [AtlasSlides.pres.slides[0].elements[0].html, AtlasSlides.pres.slides[0].notes]);
   check('slides: text box fixed, formatting kept', sl[0] === 'Our <b>plan</b> for 2027', sl[0]);
   check('slides: notes fixed', sl[1] === 'I will explain.', sl[1]);
