@@ -146,6 +146,8 @@
       if (typeof el.id === 'string') ids.set(el.id, out.id);
       if (el.flipH === true) out.flipH = true;
       if (el.flipV === true) out.flipV = true;
+      if (typeof el.alt === 'string' && el.alt.trim()) out.alt = el.alt.slice(0, 1000);
+      if (el.decorative === true) out.decorative = true;
       if (type === 'group') {
         if (depth >= 5) return null;
         out.children = cleanElements(el.children, phs, depth + 1).filter(c => c.type !== 'connector');
@@ -353,7 +355,7 @@
     } else if (el.type === 'image') {
       const img = document.createElement('img');
       img.src = el.src;
-      img.alt = '';
+      img.alt = el.decorative ? '' : el.alt || '';
       if (flip) img.style.transform = flip.trim();
       div.appendChild(img);
     } else {
@@ -397,6 +399,10 @@
       const t = document.createElement('div');
       t.className = 'thumb' + (i === current ? ' active' : '');
       t.draggable = true;
+      t.setAttribute('role', 'option');
+      t.setAttribute('aria-selected', i === current ? 'true' : 'false');
+      t.setAttribute('aria-label', `Slide ${i + 1}${slideTitle(s) ? ': ' + slideTitle(s) : ''}${s.hidden ? ' (hidden)' : ''}`);
+      t.id = 'thumb-' + s.id;
       t.innerHTML = `<div class="num">${i + 1}</div><div class="frame"><div class="slide"></div></div>`;
       renderSlide(s, t.querySelector('.slide'), false);
       t.addEventListener('click', () => goTo(i));
@@ -591,6 +597,11 @@
   }
   document.getElementById('delSlide').addEventListener('click', deleteSlide);
   thumbs.tabIndex = 0;
+  thumbs.setAttribute('role', 'listbox');
+  thumbs.setAttribute('aria-label', 'Slides');
+  stageWrap.tabIndex = -1;
+  stage.setAttribute('role', 'region');
+  stage.setAttribute('aria-roledescription', 'slide');
   thumbs.addEventListener('keydown', e => {
     if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); deleteSlide(); }
     if (e.key === 'ArrowDown') { e.preventDefault(); goTo(current + 1); }
@@ -785,6 +796,20 @@
     if (!Platform.desktop && mod && e.key.toLowerCase() === 'z') { e.preventDefault(); e.shiftKey ? redo() : undo(); return; }
     if (!Platform.desktop && mod && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); return; }
     if (document.activeElement === thumbs) return;
+    // Tab / Shift+Tab go through the objects on the slide, like PowerPoint.
+    if (e.key === 'Tab' && !mod && !e.altKey && (selectedId || stageWrap.contains(document.activeElement))) {
+      const els = slide().elements.filter(x => !x.master);
+      if (els.length) {
+        e.preventDefault();
+        const i = els.findIndex(x => x.id === selectedId);
+        const n = els[(i + (e.shiftKey ? -1 : 1) + els.length) % els.length];
+        extraSel.clear();
+        select(n.id);
+        stageWrap.focus({ preventScroll: true });
+        A11y.announce(describeEl(n, els));
+        return;
+      }
+    }
     const el = selectedId && elById(selectedId);
     if (!el) {
       if (e.key === 'PageDown') goTo(current + 1);
@@ -1641,7 +1666,7 @@
           continue;
         }
         const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: (el.master ? 'atlas-master-' : 'atlas-') + el.id, ...(el.flipH ? { flipH: true } : {}), ...(el.flipV ? { flipV: true } : {}) };
-        if (el.type === 'image') { ps.addImage({ data: el.src, ...box }); continue; }
+        if (el.type === 'image') { ps.addImage({ data: el.src, ...box, ...(el.alt && !el.decorative ? { altText: el.alt } : {}) }); continue; }
         if (el.type === 'media') { ps.addMedia({ type: el.kind, data: el.src, cover: el.poster ? await asPng(el.poster) : (el.kind === 'audio' ? AUDIO_ICON() : undefined), ...box }); continue; }
         if (el.type === 'table') {
           const tmp = document.createElement('div'); tmp.innerHTML = el.html;
@@ -2062,7 +2087,9 @@
             return el;
           }
         }
-        return src ? tag({ id: newId(), type: 'image', src, ...box }) : null;
+        const descr = nv && (nv.getAttribute('descr') || '').trim();
+        const deco = [...(nv ? nv.getElementsByTagName('*') : [])].some(x => x.localName === 'decorative' && x.getAttribute('val') === '1');
+        return src ? tag({ id: newId(), type: 'image', src, ...box, ...(descr ? { alt: descr.slice(0, 1000) } : {}), ...(deco ? { decorative: true } : {}) }) : null;
       }
       if (ln === 'graphicFrame') {
         const tbl = node.getElementsByTagNameNS(A, 'tbl')[0];
@@ -2425,6 +2452,69 @@
     presence: () => ({ slide: pres.slides[current] && pres.slides[current].id, el: selectedId }),
     showPeers(list) { livePeers = list; drawLivePeers(); }
   });
+
+  // ---------- Accessibility ----------
+  function slideTitle(s) {
+    const t = s.elements.find(e => e.ph === 'title' || e.ph === 'ctrTitle');
+    return t ? plainText(t.html) : '';
+  }
+  function plainText(html) { const d = document.createElement('div'); d.innerHTML = html || ''; return d.textContent.trim(); }
+  const KIND = { text: 'Text box', shape: 'Shape', image: 'Picture', table: 'Table', media: 'Media', group: 'Group', connector: 'Connector' };
+  function describeEl(el, els = slide().elements) {
+    const what = el.ph ? ({ title: 'Title', ctrTitle: 'Title', subtitle: 'Subtitle', body: 'Content placeholder' }[el.ph] || 'Placeholder') : (el.type === 'media' ? (el.kind === 'audio' ? 'Audio' : 'Video') : KIND[el.type] || 'Object');
+    const text = el.type === 'image' || el.type === 'media' ? (el.decorative ? 'decorative' : el.alt || 'no alt text') : plainText(el.html);
+    return `${what}${text ? ': ' + text.slice(0, 120) : ''}, ${els.indexOf(el) + 1} of ${els.length}`;
+  }
+  async function altTextDialog(el) {
+    if (!el) return UI.toast('Select a picture, video or shape first');
+    const v = await UI.form('Alt Text', [
+      { name: 'alt', label: 'How would you describe this object to someone who can’t see it? (1–2 sentences)', type: 'textarea', value: el.alt || '' },
+      { name: 'deco', label: 'Mark as decorative (screen readers skip it)', type: 'select', value: el.decorative ? 'yes' : 'no', options: [{ value: 'no', label: 'No' }, { value: 'yes', label: 'Yes' }] }
+    ], 'OK');
+    if (!v) return false;
+    snapshot();
+    if (v.deco === 'yes') { el.decorative = true; delete el.alt; } else { delete el.decorative; if (v.alt.trim()) el.alt = v.alt.trim().slice(0, 1000); else delete el.alt; }
+    renderAll(); state.markDirty();
+    return true;
+  }
+  document.getElementById('altText').addEventListener('click', () => altTextDialog(selectedId && elById(selectedId)));
+  const a11y = A11y.checker({
+    check() {
+      commitEditing();
+      const out = [];
+      const titles = new Map();
+      const go = (i, id) => () => { if (masterTarget) return; goTo(i); if (id) select(id); };
+      pres.slides.forEach((s, i) => {
+        const t = slideTitle(s);
+        if (!t) out.push({ kind: 'error', title: `Slide ${i + 1} has no title`, detail: 'Titles let people find slides and know where they are.', go: go(i), fixLabel: 'Add a title',
+          fix: async () => {
+            const v = await UI.prompt('Slide title', `Title for slide ${i + 1}`, '');
+            if (!v) return;
+            snapshot();
+            let el = s.elements.find(e => e.ph === 'title');
+            if (!el) { el = { id: newId(), type: 'text', ph: 'title', html: '', x: 60, y: 28, w: 840, h: 90, size: 36, align: 'left', valign: 'middle' }; s.elements.unshift(el); }
+            el.html = escapeHtml(v);
+            renderAll(); state.markDirty();
+          } });
+        else if (titles.has(t.toLowerCase())) out.push({ kind: 'warning', title: `Duplicate slide title “${t.slice(0, 40)}”`, detail: `Slides ${titles.get(t.toLowerCase()) + 1} and ${i + 1} have the same title.`, go: go(i) });
+        else titles.set(t.toLowerCase(), i);
+        const walk = list => list.forEach(e => {
+          if (e.type === 'group') return walk(e.children || []);
+          if ((e.type === 'image' || e.type === 'media') && !e.decorative && !(e.alt || '').trim())
+            out.push({ kind: 'error', title: `Missing alt text: ${e.type === 'image' ? 'picture' : e.kind || 'media'} on slide ${i + 1}`, detail: 'Describe it, or mark it as decorative.', go: go(i, e.id), fixLabel: 'Add alt text', fix: () => altTextDialog(e) });
+          if ((e.type === 'text' || e.type === 'shape') && e.html && plainText(e.html)) {
+            const fg = textColor(e), bg = e.type === 'shape' && e.fill ? e.fill : (s.bg || theme().bg);
+            const ratio = A11y.contrast(fg, bg);
+            if (ratio !== null && ratio < 4.5 && !(e.size >= 24 && ratio >= 3)) out.push({ kind: 'warning', title: `Hard-to-read text on slide ${i + 1}`, detail: `“${plainText(e.html).slice(0, 40)}”: contrast ${ratio.toFixed(1)}:1 (needs ${e.size >= 24 ? 3 : 4.5}:1).`, go: go(i, e.id) });
+          }
+        });
+        walk(s.elements);
+        if (s.elements.filter(e => e.type === 'text' && plainText(e.html)).reduce((n, e) => n + plainText(e.html).split(/\s+/).length, 0) > 150) out.push({ kind: 'tip', title: `Slide ${i + 1} has a lot of text`, detail: 'Over 150 words is hard to read from a distance; consider splitting it or moving detail to the notes.', go: go(i) });
+      });
+      return out;
+    }
+  });
+  document.getElementById('a11yCheck').addEventListener('click', () => a11y.open());
 
   // ---------- Proofing ----------
   const proofing = Proofing.attach({

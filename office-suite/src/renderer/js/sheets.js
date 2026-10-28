@@ -237,6 +237,21 @@
     updateProtectUi();
     drawPeers();
     if (live) live.moved();
+    announceCell();
+  }
+  // Screen readers: say the cell (and its formula) when the selection moves.
+  let lastSpoken = '';
+  function announceCell() {
+    if (!window.A11y) return;
+    const g = selRange();
+    const key = `${book.active}:${rangeText(g)}`;
+    if (key === lastSpoken) return;
+    lastSpoken = key;
+    if (g.r1 !== g.r2 || g.c1 !== g.c2) { A11y.announce(`${rangeText(g)} selected`); return; }
+    const raw = rawAt(active.r, active.c);
+    const v = valueAt(active.r, active.c);
+    const shown = raw === '' ? 'blank' : String(v);
+    A11y.announce(`${addr(active.r, active.c)}, ${shown}${typeof raw === 'string' && raw[0] === '=' ? ', formula ' + raw : ''}${(cellAt(active.r, active.c) || {}).n ? ', has a note' : ''}`);
   }
   /** Excel's blue outline around the spill range of the selected cell. */
   const spillBox = document.createElement('div');
@@ -312,8 +327,8 @@
     grid.prepend(colgroup);
     grid.style.width = (RH_W + colX[s.cols]) + 'px';
 
-    let headHtml = '<tr class="hdr"><th class="corner" title="Select all"></th>' + items.map(it => (it.sp !== undefined
-      ? '<th class="hs"></th>'
+    let headHtml = '<tr class="hdr"><th class="corner" title="Select all"><span class="sr-only">Select all</span></th>' + items.map(it => (it.sp !== undefined
+      ? '<th class="hs" aria-hidden="true"><span class="sr-only">…</span></th>'
       : `<th data-c="${it.c}"${fc(it.c)}>${indexToCol(it.c)}<span class="resizer" data-c="${it.c}"></span></th>`)).join('') + '</tr>';
     const firstBodyRow = s.freezeRow ? Math.max(1, win.r0) : win.r0;
     if (s.freezeRow) headHtml += `<tr class="frozen" data-r="0" style="height:${rowH(0)}px"><th>1</th>${cellsHtml}</tr>`;
@@ -3043,6 +3058,36 @@
     presence: () => ({ sheet: sheetUid(sheet()), ...selRange() }),
     showPeers(list) { peers = list; drawPeers(); }
   });
+
+  // ---------- Accessibility Checker ----------
+  const a11y = A11y.checker({
+    check() {
+      commitEdit();
+      const out = [];
+      const goTo = (si, ref) => () => { if (book.active !== si) { book.active = si; buildGrid(); } const p = parseRef(ref); select(p.row, p.col); wrap.focus(); };
+      book.sheets.forEach((s, si) => {
+        (s.charts || []).forEach((c, i) => {
+          if (!(c.title || '').trim() && !(c.alt || '').trim()) out.push({ kind: 'error', title: `Chart ${i + 1} on “${s.name}” has no title or alt text`, detail: 'Give the chart a title that says what it shows.', fixLabel: 'Add a title',
+            go: () => { if (book.active !== si) { book.active = si; buildGrid(); } },
+            fix: async () => { const t = await UI.prompt('Chart title', 'What does the chart show?', ''); if (t) { snapshot(); c.title = t.slice(0, 200); changed(); } } });
+        });
+        if (s.merges.length) out.push({ kind: 'warning', title: `Merged cells on “${s.name}” (${s.merges.length})`, detail: 'Screen readers can lose their place in merged cells.', go: goTo(si, addr(s.merges[0].r1, s.merges[0].c1)) });
+        const seen = new Set();
+        for (const [ref, cell] of Object.entries(s.cells)) {
+          const st = cell.s || {};
+          if (!st.color || !(cell.v !== undefined && cell.v !== '')) continue;
+          const key = st.color + '|' + (st.bg || '#ffffff');
+          if (seen.has(key)) continue;
+          const ratio = A11y.contrast(st.color, st.bg || '#ffffff');
+          if (ratio !== null && ratio < 4.5) { seen.add(key); out.push({ kind: 'warning', title: `Hard-to-read text colour in ${s.name}!${ref}`, detail: `Contrast ${ratio.toFixed(1)}:1; at least 4.5:1 is needed.`, go: goTo(si, ref) }); }
+        }
+        if (/^Sheet\d+$/.test(s.name) && Object.keys(s.cells).length && book.sheets.length > 1) out.push({ kind: 'tip', title: `Default sheet name “${s.name}”`, detail: 'A name that says what the sheet holds helps people find their way.', go: () => { book.active = si; buildGrid(); },
+          fixLabel: 'Rename', fix: () => renameSheet(si) });
+      });
+      return out;
+    }
+  });
+  document.getElementById('a11yCheck').addEventListener('click', () => a11y.open());
 
   // ---------- Proofing ----------
   let proofLang = '';

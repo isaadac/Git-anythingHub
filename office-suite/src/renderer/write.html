@@ -229,6 +229,9 @@
       <button class="btn big" id="wordCount"><span class="ico">#</span>Word<br>Count</button>
     </div><div class="label">Proofing</div></div>
     <div class="group"><div class="controls">
+      <button class="btn big" id="a11yCheck" title="Find things that make the document hard to read for people with disabilities"><span class="ico">♿</span>Check<br>Accessibility</button>
+    </div><div class="label">Accessibility</div></div>
+    <div class="group"><div class="controls">
       <button class="btn big" id="readAloud"><span class="ico">🔊</span>Read<br>Aloud</button>
     </div><div class="label">Speech</div></div>
     <div class="group"><div class="controls">
@@ -288,7 +291,7 @@
       <div class="hf hf-footer" id="pageFooter" contenteditable="true" data-placeholder="Footer" aria-label="Footer" hidden></div>
       <div class="hf hf-header" id="firstHeader" contenteditable="true" data-placeholder="First page header" aria-label="First page header" hidden></div>
       <div class="hf hf-footer" id="firstFooter" contenteditable="true" data-placeholder="First page footer" aria-label="First page footer" hidden></div>
-      <div class="doc" id="doc" contenteditable="true" spellcheck="true" aria-label="Document body"><p><br></p></div>
+      <div class="doc" id="doc" contenteditable="true" spellcheck="true" role="textbox" aria-multiline="true" aria-label="Document body"><p><br></p></div>
     </div>
   </div>
   <aside class="comments-pane no-print" id="commentsPane" hidden>
@@ -308,7 +311,8 @@
     <button class="btn" data-w="25">25%</button><button class="btn" data-w="50">50%</button>
     <button class="btn" data-w="75">75%</button><button class="btn" data-w="100">100%</button>
     <button class="btn" data-a="left">⫷</button><button class="btn" data-a="center">≡</button><button class="btn" data-a="right">⫸</button>
-    <button class="btn" data-del="1">🗑</button>
+    <button class="btn" data-alt="1" title="Alt text: describe the picture for people who can't see it">Alt Text</button>
+    <button class="btn" data-del="1" title="Delete picture">🗑</button>
   </div>
 </div>
 
@@ -350,6 +354,7 @@
 <script src="../../node_modules/docx/dist/math.iife.js"></script>
 <script src="../../node_modules/docx/dist/html.iife.js"></script>
 <script src="js/platform.js"></script>
+<script src="js/a11y.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/collab.js"></script>
 <script src="js/assistant.js"></script>

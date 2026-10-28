@@ -375,8 +375,21 @@
       selImg.style.marginRight = b.dataset.a === 'right' ? '0' : 'auto';
     }
     if (b.dataset.del) { selImg.remove(); selImg = null; imgTools.hidden = true; }
+    if (b.dataset.alt) { altTextDialog(selImg); return; }
     changed();
   });
+  /** Alt text: a description read out by screen readers (and saved in .docx), or "decorative". */
+  async function altTextDialog(img) {
+    if (!img) return false;
+    const v = await UI.form('Alt Text', [
+      { name: 'alt', label: 'How would you describe this picture to someone who can’t see it? (1–2 sentences)', type: 'textarea', value: img.classList.contains('decorative') ? '' : img.getAttribute('alt') || '' },
+      { name: 'deco', label: 'Mark as decorative (screen readers skip it)', type: 'select', value: img.classList.contains('decorative') ? 'yes' : 'no', options: [{ value: 'no', label: 'No' }, { value: 'yes', label: 'Yes' }] }
+    ], 'OK');
+    if (!v) return false;
+    if (v.deco === 'yes') { img.alt = ''; img.classList.add('decorative'); } else { img.alt = v.alt.trim().slice(0, 1000); img.classList.remove('decorative'); }
+    changed();
+    return true;
+  }
 
   // ---------- Ribbon: Layout ----------
   function applySetup() {
@@ -1363,6 +1376,67 @@ ${rules}</style></head>
   });
   document.addEventListener('selectionchange', () => live.moved());
   doc.addEventListener('input', () => setTimeout(drawLivePeers, 0));
+
+  // ---------- Accessibility Checker ----------
+  function a11yGo(el) {
+    return () => {
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      const r = document.createRange();
+      r.selectNodeContents(el);
+      doc.focus();
+      getSelection().removeAllRanges(); getSelection().addRange(r);
+    };
+  }
+  const a11y = A11y.checker({
+    check() {
+      const out = [];
+      const short = el => (el.textContent || el.getAttribute('alt') || '').trim().slice(0, 40) || el.tagName.toLowerCase();
+      doc.querySelectorAll('img').forEach(img => {
+        if (img.classList.contains('decorative') || (img.getAttribute('alt') || '').trim()) return;
+        out.push({ kind: 'error', title: 'Missing alternative text', detail: 'A picture has no description. Add alt text, or mark it as decorative.', fixLabel: 'Add alt text', fix: () => altTextDialog(img), go: () => { img.scrollIntoView({ block: 'center' }); img.click(); } });
+      });
+      doc.querySelectorAll('table').forEach((t, i) => {
+        if (t.querySelector('th')) return;
+        out.push({ kind: 'warning', title: `Table ${i + 1} has no header row`, detail: 'Screen readers use the header row to describe each cell.', fixLabel: 'Use first row as header', go: a11yGo(t),
+          fix: () => { const row = t.rows[0]; if (!row) return; [...row.cells].forEach(td => { const th = document.createElement('th'); th.innerHTML = td.innerHTML; th.setAttribute('scope', 'col'); [...td.attributes].forEach(a => { if (a.name !== 'scope') th.setAttribute(a.name, a.value); }); td.replaceWith(th); }); changed(); } });
+      });
+      let last = 0;
+      doc.querySelectorAll('h1, h2, h3, h4, h5, h6').forEach(h => {
+        const lv = +h.tagName[1];
+        if (!h.textContent.trim()) out.push({ kind: 'warning', title: 'Empty heading', detail: 'A heading with no text is announced but says nothing.', go: a11yGo(h), fixLabel: 'Make it a paragraph', fix: () => { const p = document.createElement('p'); p.innerHTML = h.innerHTML || '<br>'; h.replaceWith(p); changed(); } });
+        else if (last && lv > last + 1) { const want = last + 1; out.push({ kind: 'warning', title: `Heading level skipped: “${short(h)}”`, detail: `Heading ${lv} follows heading ${last}. Use heading ${want} so the outline makes sense.`, go: a11yGo(h), fixLabel: `Make it Heading ${want}`, fix: () => { const n = document.createElement('h' + want); n.innerHTML = h.innerHTML; h.replaceWith(n); changed(); } }); }
+        if (h.textContent.trim()) last = lv;
+      });
+      // Text colour against the page colour.
+      const paper = setup.color || '#ffffff';
+      const seen = new Set();
+      doc.querySelectorAll('[style*="color"], font[color]').forEach(el => {
+        const c = el.style.color || el.getAttribute('color');
+        if (!c || seen.has(c) || !el.textContent.trim()) return;
+        const bg = el.style.backgroundColor || paper;
+        const ratio = A11y.contrast(c, bg.startsWith('rgb') || bg.startsWith('#') ? bg : paper);
+        if (ratio !== null && ratio < 4.5) {
+          seen.add(c);
+          out.push({ kind: 'warning', title: `Hard-to-read text colour: “${short(el)}”`, detail: `Contrast ${ratio.toFixed(1)}:1; at least 4.5:1 is needed for normal text.`, go: a11yGo(el), fixLabel: 'Use automatic colour',
+            fix: () => { doc.querySelectorAll('[style*="color"], font[color]').forEach(x => { if ((x.style.color || x.getAttribute('color')) === c) { x.style.color = ''; x.removeAttribute('color'); } }); changed(); } });
+        }
+      });
+      doc.querySelectorAll('a[href]').forEach(a => {
+        const t = a.textContent.trim().toLowerCase();
+        if (/^(click here|here|link|this|more|read more|this link)$/.test(t) || /^https?:\/\/\S{40,}$/.test(t)) out.push({ kind: 'tip', title: `Unclear link text: “${a.textContent.trim().slice(0, 40)}”`, detail: 'Link text should say where the link goes.', go: a11yGo(a) });
+      });
+      const words = (doc.innerText.match(/\S+/g) || []).length;
+      if (words > 400 && !doc.querySelector('h1, h2, h3')) out.push({ kind: 'tip', title: 'No headings', detail: 'Long documents are easier to navigate with headings (Home → Styles).' });
+      let blanks = 0, flagged = false;
+      for (const p of doc.children) {
+        if (p.tagName === 'P' && !p.textContent.trim() && !p.querySelector('img, br + br')) blanks++;
+        else blanks = 0;
+        if (blanks === 3 && !flagged) { flagged = true; out.push({ kind: 'tip', title: 'Blank lines used for spacing', detail: 'Several empty paragraphs in a row are each read out as “blank”. Use paragraph spacing or a page break instead.', go: a11yGo(p) }); }
+      }
+      return out;
+    }
+  });
+  document.getElementById('a11yCheck').addEventListener('click', () => a11y.open());
 
   // ---------- Proofing ----------
   const proofing = Proofing.attach({
