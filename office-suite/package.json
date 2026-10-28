@@ -12,6 +12,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node --test test/*.test.js",
+    "live-server": "node src/main/collab-server.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",

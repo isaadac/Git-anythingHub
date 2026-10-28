@@ -196,10 +196,15 @@
 
   // ---------- Undo ----------
   const undoStack = [], redoStack = [];
+  // Live editing: remote changes that arrived after a step are put back after undoing it.
+  const undoMarks = [], redoMarks = [];
+  let live = null, livePeers = [];
+  const liveMark = () => (live ? live.mark() : 0);
   function snapshot() {
     undoStack.push(JSON.stringify({ pres, current }));
-    if (undoStack.length > 100) undoStack.shift();
-    redoStack.length = 0;
+    undoMarks.push(liveMark());
+    if (undoStack.length > 100) { undoStack.shift(); undoMarks.shift(); }
+    redoStack.length = redoMarks.length = 0;
   }
   function restore(json) {
     const s = JSON.parse(json);
@@ -208,8 +213,20 @@
     renderAll();
     state.markDirty();
   }
-  function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify({ pres, current })); restore(undoStack.pop()); }
-  function redo() { if (!redoStack.length) return; undoStack.push(JSON.stringify({ pres, current })); restore(redoStack.pop()); }
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(JSON.stringify({ pres, current })); redoMarks.push(liveMark());
+    const m = undoMarks.pop();
+    restore(undoStack.pop());
+    if (live) live.replaySince(m);
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    undoStack.push(JSON.stringify({ pres, current })); undoMarks.push(liveMark());
+    const m = redoMarks.pop();
+    restore(redoStack.pop());
+    if (live) live.replaySince(m);
+  }
 
   // ---------- Rendering ----------
   const SHAPES = {
@@ -370,6 +387,8 @@
     document.getElementById('stSlide').textContent = masterTarget ? (masterTarget === 'master' ? 'Slide Master' : 'Layout: ' + layoutName(masterTarget)) : `Slide ${current + 1} of ${pres.slides.length}`;
     document.getElementById('hideMaster').classList.toggle('on', !masterTarget && !!slide().hideMaster);
     syncToolbar();
+    drawLivePeers();
+    if (live) live.moved();
   }
   function renderThumbs() {
     thumbs.innerHTML = '';
@@ -505,7 +524,7 @@
       if (frame) renderSlide(slide(), frame, false);
     }, 250);
   }
-  function renderAll() { renderStage(); renderThumbs(); fitStage(); }
+  function renderAll() { renderStage(); renderThumbs(); fitStage(); drawLivePeers(); }
   function fitStage() {
     const r = stageWrap.getBoundingClientRect();
     const s = Math.max(0.1, Math.min((r.width - 40) / W, (r.height - 40) / H));
@@ -2179,7 +2198,7 @@
       return;
     }
     current = 0; selectedId = editingId = null;
-    undoStack.length = redoStack.length = 0;
+    undoStack.length = redoStack.length = undoMarks.length = redoMarks.length = 0;
     state.set({ name: f.name, path: f.path, dirty: false });
     Platform.rememberRecent(f.name, 'slides');
     renderAll();
@@ -2284,12 +2303,128 @@
   function loadRecovered(d) {
     try { pres = cleanPres(JSON.parse(d.data)); } catch { return UI.toast('The recovered presentation could not be read', 4000); }
     current = 0; selectedId = editingId = null;
-    undoStack.length = redoStack.length = 0;
+    undoStack.length = redoStack.length = undoMarks.length = redoMarks.length = 0;
     renderAll();
     state.set({ name: d.name, path: d.path, dirty: true });
     recovery.adopt(d.draftId);
     UI.toast('Recovered your unsaved changes', 4000);
   }
 
-  window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide };
+  // ---------- Live editing ----------
+  // Keys: deck -> theme, master and layouts; s:<id> -> a slide's settings and position;
+  // e:<slide id>:<element id> -> a shape, picture, table… with its stacking order.
+  let pointerDown = false;
+  stage.addEventListener('mousedown', () => { pointerDown = true; }, true);
+  document.addEventListener('mouseup', () => setTimeout(() => { pointerDown = false; }), true);
+  function drawLivePeers() {
+    stage.querySelectorAll('.live-flag').forEach(f => f.remove());
+    thumbs.querySelectorAll('.live-dot').forEach(f => f.remove());
+    if (!livePeers.length) return;
+    const ids = pres.slides.map(s => s.id);
+    for (const p of livePeers) {
+      const pr = p.presence;
+      if (!pr) continue;
+      const i = ids.indexOf(pr.slide);
+      const t = !masterTarget && i >= 0 && thumbs.children[i];
+      if (t) {
+        const d = document.createElement('span');
+        d.className = 'live-dot';
+        d.title = p.name;
+        d.style.background = p.color;
+        t.querySelector('.num').appendChild(d);
+      }
+      if (masterTarget || i !== current || !pr.el) continue;
+      const el = slide().elements.find(e => e.id === pr.el);
+      if (!el) continue;
+      const f = document.createElement('div');
+      f.className = 'live-flag';
+      Object.assign(f.style, { left: (el.x - 3) + 'px', top: (el.y - 3) + 'px', width: (el.w + 2) + 'px', height: (el.h + 2) + 'px', border: `2px solid ${p.color}`, transform: el.rot ? `rotate(${el.rot}deg)` : '' });
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.style.background = p.color;
+      tag.textContent = p.name;
+      f.appendChild(tag);
+      stage.appendChild(f);
+    }
+  }
+  live = Collab.attach({
+    app: 'slides', doc: state,
+    dirty: () => state.dirty || pres.slides.length > 1 || pres.slides.some(s => s.elements.some(e => e.html)),
+    busy: () => pointerDown,
+    state() {
+      commitEditingQuietly();
+      const out = {};
+      const deck = {};
+      for (const [k, v] of Object.entries(pres)) if (k !== 'slides') deck[k] = v;
+      out.deck = deck;
+      pres.slides.forEach((s, i) => {
+        const props = { pos: i };
+        for (const [k, v] of Object.entries(s)) if (k !== 'elements') props[k] = v;
+        out['s:' + s.id] = props;
+        s.elements.forEach((el, z) => { out[`e:${s.id}:${el.id}`] = { ...el, z }; });
+      });
+      return out;
+    },
+    apply(changes) {
+      const curId = pres.slides[current] && pres.slides[current].id;
+      // Keep the text being typed and the caret where they are.
+      let caret = null;
+      if (editingId) {
+        commitEditingQuietly();
+        const c = stage.querySelector(`[data-id="${editingId}"] .content`);
+        const sel = getSelection();
+        if (c && sel.rangeCount && c.contains(sel.anchorNode)) { const r = document.createRange(); r.setStart(c, 0); r.setEnd(sel.anchorNode, sel.anchorOffset); caret = r.toString().length; }
+      }
+      const byId = new Map(pres.slides.map((s, i) => { s.pos = i; s.elements.forEach((e, z) => { e.z = z; }); return [s.id, s]; }));
+      const orphans = new Map();
+      for (const [k, v] of Object.entries(changes)) {
+        if (k === 'deck' && v) {
+          for (const key of Object.keys(pres)) if (key !== 'slides') delete pres[key];
+          Object.assign(pres, JSON.parse(JSON.stringify(v)));
+        } else if (k.startsWith('s:')) {
+          const id = k.slice(2);
+          if (v === null) { byId.delete(id); continue; }
+          let sl = byId.get(id);
+          if (!sl) { sl = { id, elements: [] }; byId.set(id, sl); }
+          for (const key of Object.keys(sl)) if (key !== 'elements') delete sl[key];
+          Object.assign(sl, JSON.parse(JSON.stringify(v)), { id });
+        } else if (k.startsWith('e:')) {
+          const i = k.indexOf(':', 2);
+          const sid = k.slice(2, i), eid = k.slice(i + 1);
+          let sl = byId.get(sid);
+          if (!sl) { if (v === null) continue; if (!orphans.has(sid)) orphans.set(sid, []); orphans.get(sid).push(v); continue; }
+          const at = sl.elements.findIndex(e => e.id === eid);
+          if (v === null) { if (at >= 0) sl.elements.splice(at, 1); continue; }
+          const el = JSON.parse(JSON.stringify(v));
+          if (at >= 0) sl.elements[at] = el; else sl.elements.push(el);
+        }
+      }
+      for (const [sid, els] of orphans) { const sl = byId.get(sid); if (sl) sl.elements.push(...els); }
+      const list = [...byId.values()].sort((a, b) => (a.pos - b.pos) || (a.id < b.id ? -1 : 1));
+      if (list.length) pres.slides = list;
+      pres.slides.forEach(s => { delete s.pos; s.elements.sort((a, b) => (a.z - b.z) || (a.id < b.id ? -1 : 1)); s.elements.forEach(e => { delete e.z; }); });
+      const ci = pres.slides.findIndex(s => s.id === curId);
+      current = ci >= 0 ? ci : Math.min(current, pres.slides.length - 1);
+      if (selectedId && !slide().elements.some(e => e.id === selectedId)) selectedId = null;
+      if (editingId && !slide().elements.some(e => e.id === editingId)) editingId = null;
+      renderAll();
+      if (editingId) {
+        const c = stage.querySelector(`[data-id="${editingId}"] .content`);
+        if (c) {
+          c.focus();
+          if (caret !== null) {
+            const walk = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+            let t, n = caret, done = false;
+            while ((t = walk.nextNode())) { if (n <= t.length) { getSelection().collapse(t, n); done = true; break; } n -= t.length; }
+            if (!done) { const r = document.createRange(); r.selectNodeContents(c); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); }
+          }
+        }
+      }
+      state.markDirty();
+    },
+    presence: () => ({ slide: pres.slides[current] && pres.slides[current].id, el: selectedId }),
+    showPeers(list) { livePeers = list; drawLivePeers(); }
+  });
+
+  window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide, get live() { return live; } };
 })();

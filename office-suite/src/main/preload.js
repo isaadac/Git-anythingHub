@@ -35,5 +35,8 @@ contextBridge.exposeInMainWorld('atlas', {
   cloudConfigSet: c => ipcRenderer.invoke('cloud:config-set', c),
   cloudAccountsGet: () => ipcRenderer.invoke('cloud:accounts-get'),
   cloudAccountsSet: t => ipcRenderer.invoke('cloud:accounts-set', t),
+  collabHost: () => ipcRenderer.invoke('collab:host'),
+  collabJoin: (appName, link) => ipcRenderer.invoke('collab:join', appName, link),
+  collabPending: () => ipcRenderer.invoke('collab:pending'),
   onMenu: cb => ipcRenderer.on('menu', (_e, cmd) => cb(cmd))
 });

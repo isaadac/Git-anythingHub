@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
 <title>Atlas Sheets</title>
 <link rel="stylesheet" href="css/office.css">
 <link rel="stylesheet" href="css/sheets.css">
@@ -291,6 +291,7 @@
 <script src="../../node_modules/xlsx/dist/xlsx.full.min.js"></script>
 <script src="js/platform.js"></script>
 <script src="js/cloud.js"></script>
+<script src="js/collab.js"></script>
 <script src="../../node_modules/jszip/dist/jszip.min.js"></script>
 <script src="js/formula.js"></script>
 <script src="js/xlsx-patch.js"></script>

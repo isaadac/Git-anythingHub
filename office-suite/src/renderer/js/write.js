@@ -1221,5 +1221,145 @@ ${rules}</style></head>
     UI.toast('Recovered your unsaved changes', 4000);
   }
 
-  window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize };
+  // ---------- Live editing ----------
+  // Keys: b:<id> -> { p: position, h: the paragraph's HTML } for each top-level block,
+  // hf:<n> -> a header or footer, setup -> page setup. Positions are strings that sort in
+  // document order, so a paragraph added between two others gets a key between theirs.
+  const blockId = new WeakMap(), blockById = new Map(), blockPos = new Map();
+  let composing = false, livePeers = [];
+  doc.addEventListener('compositionstart', () => { composing = true; });
+  doc.addEventListener('compositionend', () => { composing = false; });
+  const newBlockId = () => 'b' + Math.random().toString(36).slice(2, 11);
+  function blockHtml(el) {
+    const clone = el.cloneNode(true);
+    const wrap = document.createElement('div');
+    wrap.appendChild(clone);
+    layout.clearPushes(wrap);
+    wrap.querySelectorAll('.selected').forEach(n => n.classList.remove('selected'));
+    return wrap.innerHTML;
+  }
+  function topBlock(node) {
+    while (node && node.parentNode !== doc) node = node.parentNode;
+    return node && node.nodeType === 1 ? node : null;
+  }
+  function textOffset(block, node, off) {
+    const r = document.createRange();
+    r.setStart(block, 0);
+    try { r.setEnd(node, off); } catch { return 0; }
+    return r.toString().length;
+  }
+  function pointAt(block, n) {
+    const walk = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+    let t;
+    while ((t = walk.nextNode())) { if (n <= t.length) return [t, n]; n -= t.length; }
+    return [block, block.childNodes.length];
+  }
+  function caretInfo() {
+    const sel = getSelection();
+    if (!sel.rangeCount || !doc.contains(sel.anchorNode)) return null;
+    const b = topBlock(sel.anchorNode);
+    if (!b) return null;
+    const fb = topBlock(sel.focusNode) || b;
+    return { b: blockId.get(b), o: textOffset(b, sel.anchorNode, sel.anchorOffset), fb: blockId.get(fb), fo: textOffset(fb, sel.focusNode, sel.focusOffset) };
+  }
+  function liveState() {
+    const out = {};
+    const kids = [...doc.children];
+    // Keep each block's position while the order still agrees; new and moved blocks get one between their neighbours.
+    const ps = kids.map(el => { let id = blockId.get(el); if (!id || blockById.get(id) !== el) { id = newBlockId(); blockId.set(el, id); blockById.set(id, el); } return blockPos.get(id) || null; });
+    let last = '';
+    const keep = ps.map(p => { const ok = p && p > last; if (ok) last = p; return ok; });
+    for (let i = 0; i < kids.length; i++) {
+      const id = blockId.get(kids[i]);
+      if (!keep[i]) {
+        let prev = '';
+        for (let j = i - 1; j >= 0; j--) { prev = blockPos.get(blockId.get(kids[j])); break; }
+        let next = '';
+        for (let j = i + 1; j < kids.length; j++) if (keep[j]) { next = ps[j]; break; }
+        blockPos.set(id, Collab.between(prev || '', next || ''));
+      }
+      out['b:' + id] = { p: blockPos.get(id), h: blockHtml(kids[i]) };
+    }
+    for (const id of [...blockById.keys()]) if (!blockById.get(id).isConnected || blockById.get(id).parentNode !== doc) { blockById.delete(id); blockPos.delete(id); }
+    HF.forEach((el, i) => { out['hf:' + i] = el.innerHTML; });
+    out.setup = { ...setup };
+    return out;
+  }
+  function liveApply(changes) {
+    const caret = caretInfo();
+    for (const [k, v] of Object.entries(changes)) {
+      if (k.startsWith('b:')) {
+        const id = k.slice(2);
+        const el = blockById.get(id);
+        if (v === null) { if (el) el.remove(); blockById.delete(id); blockPos.delete(id); continue; }
+        blockPos.set(id, String(v.p));
+        if (el && blockHtml(el) === v.h) continue;
+        const t = document.createElement('template');
+        t.innerHTML = sanitize(v.h);
+        const nu = t.content.firstElementChild || document.createElement('p');
+        blockId.set(nu, id);
+        blockById.set(id, nu);
+        if (el && el.parentNode === doc) el.replaceWith(nu); else doc.appendChild(nu);
+      } else if (k.startsWith('hf:')) {
+        const el = HF[+k.slice(3)];
+        if (el && v !== null) el.innerHTML = sanitize(String(v));
+      } else if (k === 'setup' && v) {
+        for (const key of Object.keys(DEFAULT_SETUP)) if (key in v) setup[key] = v[key];
+        applySetup();
+      }
+    }
+    // Put the blocks in position order.
+    const order = [...doc.children].filter(el => blockId.has(el) && blockPos.has(blockId.get(el)))
+      .sort((a, b) => { const pa = blockPos.get(blockId.get(a)), pb = blockPos.get(blockId.get(b)); return pa < pb ? -1 : pa > pb ? 1 : (blockId.get(a) < blockId.get(b) ? -1 : 1); });
+    let ref = doc.firstElementChild;
+    for (const el of order) { if (el !== ref) doc.insertBefore(el, ref); else ref = ref.nextElementSibling; }
+    if (!doc.firstElementChild) doc.innerHTML = '<p><br></p>';
+    // The caret stays where it was in the text.
+    if (caret && caret.b && blockById.get(caret.b) && blockById.get(caret.b).isConnected) {
+      const a = pointAt(blockById.get(caret.b), caret.o);
+      const fbl = blockById.get(caret.fb);
+      const f = fbl && fbl.isConnected ? pointAt(fbl, caret.fo) : a;
+      try { getSelection().setBaseAndExtent(a[0], a[1], f[0], f[1]); } catch { /* ignore */ }
+    }
+    changed();
+    drawLivePeers();
+  }
+  const peerLayer = document.createElement('div');
+  page.appendChild(peerLayer);
+  function drawLivePeers() {
+    peerLayer.innerHTML = '';
+    const z = parseFloat(page.style.zoom) || 1;
+    const pr = page.getBoundingClientRect();
+    for (const p of livePeers) {
+      const c = p.presence;
+      const b = c && blockById.get(c.b);
+      if (!b || !b.isConnected) continue;
+      const pt = pointAt(b, c.o);
+      const r = document.createRange();
+      try { r.setStart(pt[0], pt[1]); r.collapse(true); } catch { continue; }
+      let rect = r.getClientRects()[0] || b.getBoundingClientRect();
+      const f = document.createElement('div');
+      f.className = 'live-flag';
+      Object.assign(f.style, { left: ((rect.left - pr.left) / z) + 'px', top: ((rect.top - pr.top) / z) + 'px', width: '2px', height: (Math.max(rect.height, 14) / z) + 'px', background: p.color });
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.style.background = p.color;
+      tag.textContent = p.name;
+      f.appendChild(tag);
+      peerLayer.appendChild(f);
+    }
+  }
+  const live = Collab.attach({
+    app: 'write', doc: state,
+    dirty: () => state.dirty || !!doc.innerText.trim(),
+    busy: () => composing,
+    state: liveState,
+    apply: liveApply,
+    presence: () => caretInfo(),
+    showPeers(list) { livePeers = list; drawLivePeers(); }
+  });
+  document.addEventListener('selectionchange', () => live.moved());
+  doc.addEventListener('input', () => setTimeout(drawLivePeers, 0));
+
+  window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; } };
 })();

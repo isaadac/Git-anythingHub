@@ -8,6 +8,8 @@ const settings = require('./settings');
 const updater = require('./updater');
 const recovery = require('./recovery');
 const cloud = require('./cloud');
+const os = require('os');
+const { createCollabServer } = require('./collab-server');
 
 const APPS = {
   home: { page: 'index.html', title: 'Atlas Office', width: 1100, height: 720 },
@@ -192,6 +194,39 @@ ipcMain.handle('app:open-data', (_e, { app: appName, name, data, cloudPath }) =>
   pendingFiles.set(win.webContents.id, { name: path.basename(name).slice(0, 255), data, cloudPath: cloud.isCloudPath(cloudPath) ? cloudPath : null });
   return true;
 });
+// ---------- Live editing: a session server on this computer, for people on the same network ----------
+let collabHost = null;
+const pendingCollab = new Map(); // webContents.id -> invite link to join on load
+function listen(srv, port) {
+  return new Promise((resolve, reject) => {
+    const onErr = err => { srv.removeListener('listening', onOk); reject(err); };
+    const onOk = () => { srv.removeListener('error', onErr); resolve(); };
+    srv.once('error', onErr);
+    srv.once('listening', onOk);
+    srv.listen(port, '0.0.0.0');
+  });
+}
+ipcMain.handle('collab:host', async () => {
+  try {
+    if (!collabHost) {
+      const srv = createCollabServer();
+      try { await listen(srv, 8787); } catch { await listen(srv, 0); }
+      collabHost = srv;
+    }
+    const port = collabHost.address().port;
+    const ips = Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address);
+    return { urls: [...ips, '127.0.0.1'].map(ip => `ws://${ip}:${port}/`) };
+  } catch (err) {
+    return { error: String(err.message || err) };
+  }
+});
+ipcMain.handle('collab:join', (_e, appName, link) => {
+  if (!APPS[appName] || appName === 'home' || typeof link !== 'string' || link.length > 2000) return false;
+  const win = createWindow(appName);
+  pendingCollab.set(win.webContents.id, link);
+  return true;
+});
+ipcMain.handle('collab:pending', e => { const l = pendingCollab.get(e.sender.id) || null; pendingCollab.delete(e.sender.id); return l; });
 ipcMain.handle('app:open-path', (_e, p) => {
   if (!isApproved(p)) return false;
   openPath(p);

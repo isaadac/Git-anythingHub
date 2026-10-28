@@ -94,15 +94,21 @@
 
   // ---------- Undo ----------
   const undoStack = [], redoStack = [];
+  // With live editing, each step remembers how many remote changes had arrived, so undo
+  // takes back only your own changes (see Collab.replaySince).
+  const undoMarks = [], redoMarks = [];
+  let live = null, peers = [], peerLayer = null;
+  const liveMark = () => (live ? live.mark() : 0);
   let undoBytes = 0;
   const UNDO_BUDGET = 150e6; // characters of history kept
   function snapshot() {
     const json = JSON.stringify(book);
     undoStack.push(json);
+    undoMarks.push(liveMark());
     undoBytes += json.length;
     // Big workbooks keep fewer steps so history can't exhaust memory.
-    while (undoStack.length > 100 || (undoBytes > UNDO_BUDGET && undoStack.length > 1)) undoBytes -= undoStack.shift().length;
-    redoStack.length = 0;
+    while (undoStack.length > 100 || (undoBytes > UNDO_BUDGET && undoStack.length > 1)) { undoBytes -= undoStack.shift().length; undoMarks.shift(); }
+    redoStack.length = redoMarks.length = 0;
   }
   function restore(json) {
     book = JSON.parse(json);
@@ -110,8 +116,23 @@
     buildGrid();
     changed(false);
   }
-  function undo() { if (!undoStack.length) return; redoStack.push(JSON.stringify(book)); const j = undoStack.pop(); undoBytes -= j.length; restore(j); }
-  function redo() { if (!redoStack.length) return; const j = JSON.stringify(book); undoStack.push(j); undoBytes += j.length; restore(redoStack.pop()); }
+  function undo() {
+    if (!undoStack.length) return;
+    redoStack.push(JSON.stringify(book)); redoMarks.push(liveMark());
+    const j = undoStack.pop(), m = undoMarks.pop();
+    undoBytes -= j.length;
+    restore(j);
+    if (live) live.replaySince(m);
+  }
+  function redo() {
+    if (!redoStack.length) return;
+    const j = JSON.stringify(book);
+    undoStack.push(j); undoMarks.push(liveMark());
+    undoBytes += j.length;
+    const m = redoMarks.pop();
+    restore(redoStack.pop());
+    if (live) live.replaySince(m);
+  }
 
   // ---------- Geometry ----------
   let colX = [0];                         // colX[c] = left edge of column c (data area)
@@ -214,6 +235,8 @@
     updatePivotPane();
     updateDvUi();
     updateProtectUi();
+    drawPeers();
+    if (live) live.moved();
   }
   /** Excel's blue outline around the spill range of the selected cell. */
   const spillBox = document.createElement('div');
@@ -2779,7 +2802,7 @@
       return;
     }
     book = next;
-    undoStack.length = redoStack.length = 0;
+    undoStack.length = redoStack.length = undoMarks.length = redoMarks.length = 0;
     undoBytes = 0;
     engine.astCache.clear();
     active = anchor = { r: 0, c: 0 };
@@ -2923,7 +2946,7 @@
       s.dv = (Array.isArray(s.dv) ? s.dv : []).map(SheetsDV.clean).filter(Boolean);
     });
     book.active = Math.max(0, Math.min(book.active | 0, book.sheets.length - 1));
-    undoStack.length = redoStack.length = 0;
+    undoStack.length = redoStack.length = undoMarks.length = redoMarks.length = 0;
     undoBytes = 0;
     engine.astCache.clear();
     active = anchor = { r: 0, c: 0 };
@@ -2933,8 +2956,96 @@
     UI.toast('Recovered your unsaved changes', 4000);
   }
 
+  // ---------- Live editing ----------
+  // Keys: sh:<sheet id> -> the sheet's settings and position, c:<sheet id>:<A1> -> a cell.
+  const sheetUid = s => s.uid || (s.uid = 's' + Math.random().toString(36).slice(2, 12));
+  const SHEET_LOCAL = new Set(['cells', 'rows', 'cols', 'uid']);
+  const orphanCells = new Map(); // cells that arrived before their sheet
+  function drawPeers() {
+    if (!peerLayer) { if (!peers.length) return; peerLayer = document.createElement('div'); inner.appendChild(peerLayer); }
+    peerLayer.innerHTML = '';
+    const u = sheet() && sheet().uid;
+    for (const p of peers) {
+      const g = p.presence;
+      if (!g || g.sheet !== u || !(g.r2 < sheet().rows && g.c2 < sheet().cols)) continue;
+      const b = rangeBox(g);
+      const f = document.createElement('div');
+      f.className = 'live-flag';
+      Object.assign(f.style, { left: (b.x - 1) + 'px', top: (b.y - 1) + 'px', width: (b.w - 2) + 'px', height: (b.h - 2) + 'px', border: `2px solid ${p.color}` });
+      const tag = document.createElement('span');
+      tag.className = 'tag';
+      tag.style.background = p.color;
+      tag.textContent = p.name;
+      f.appendChild(tag);
+      peerLayer.appendChild(f);
+    }
+  }
+  function growFor(s, ref) {
+    const p = parseRef(ref);
+    if (!p) return;
+    if (p.row >= s.rows - 1) s.rows = Math.min(MAX_ROWS, p.row + 20);
+    if (p.col >= s.cols - 1) s.cols = Math.min(MAX_COLS, p.col + 5);
+  }
+  live = Collab.attach({
+    app: 'sheets', doc: state,
+    dirty: () => state.dirty || Object.keys(sheet().cells).length > 0 || book.sheets.length > 1,
+    busy: () => editing,
+    state() {
+      const out = {};
+      book.sheets.forEach((s, i) => {
+        const u = sheetUid(s);
+        const props = { pos: i };
+        for (const [k, v] of Object.entries(s)) if (!SHEET_LOCAL.has(k)) props[k] = v;
+        out['sh:' + u] = props;
+        for (const [ref, cell] of Object.entries(s.cells)) out[`c:${u}:${ref}`] = cell;
+      });
+      return out;
+    },
+    apply(changes) {
+      const activeUid = sheetUid(sheet());
+      const byUid = new Map(book.sheets.map((s, i) => { s.pos = i; return [sheetUid(s), s]; }));
+      let structural = false;
+      for (const [k, v] of Object.entries(changes)) {
+        if (k.startsWith('sh:')) {
+          structural = true;
+          const u = k.slice(3);
+          if (v === null) { byUid.delete(u); continue; }
+          let s = byUid.get(u);
+          if (!s) {
+            s = { ...newSheet(''), uid: u, cells: orphanCells.get(u) || {} };
+            orphanCells.delete(u);
+            byUid.set(u, s);
+            Object.keys(s.cells).forEach(ref => growFor(s, ref));
+          }
+          for (const key of Object.keys(s)) if (!SHEET_LOCAL.has(key)) delete s[key];
+          Object.assign(s, JSON.parse(JSON.stringify(v)));
+        } else if (k.startsWith('c:')) {
+          const i = k.indexOf(':', 2);
+          const u = k.slice(2, i), ref = k.slice(i + 1);
+          if (!CELL_KEY.test(ref)) continue;
+          const s = byUid.get(u);
+          let cells = s && s.cells;
+          if (!cells) { if (!orphanCells.has(u)) orphanCells.set(u, {}); cells = orphanCells.get(u); }
+          if (v === null) delete cells[ref]; else { cells[ref] = v; if (s) growFor(s, ref); }
+        }
+      }
+      if (structural) {
+        const list = [...byUid.values()].sort((a, b) => (a.pos - b.pos) || (a.uid < b.uid ? -1 : 1));
+        if (list.length) book.sheets = list;
+      }
+      book.sheets.forEach(s => { delete s.pos; });
+      const ai = book.sheets.findIndex(s => s.uid === activeUid);
+      book.active = ai >= 0 ? ai : Math.min(book.active, book.sheets.length - 1);
+      engine.astCache.clear();
+      if (structural) buildGrid(); else changed();
+      if (structural) state.markDirty();
+    },
+    presence: () => ({ sheet: sheetUid(sheet()), ...selRange() }),
+    showPeers(list) { peers = list; drawPeers(); }
+  });
+
   window.AtlasSheets = {
-    loadFile, serialize, select, refreshPivots,
+    loadFile, serialize, select, refreshPivots, get live() { return live; },
     get book() { return book; },
     setCell: (ref, v) => { const p = parseRef(ref); setCell(p.row, p.col, { v }); ensureSize(p.row, p.col); changed(); },
     valueOf: ref => { const p = parseRef(ref); return valueAt(p.row, p.col); },
