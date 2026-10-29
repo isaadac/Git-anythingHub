@@ -2,6 +2,7 @@
 // Isadek Office — Français. Keys are the English text as it appears in the interface.
 (window.ISADEK_I18N = window.ISADEK_I18N || {}).fr = {
   // Ribbon display and the mini toolbar
+  'Reduce motion': 'Réduire les animations',
   'Ribbon display options': 'Options d’affichage du ruban', 'Full ribbon': 'Ruban complet', 'Single line': 'Une seule ligne', 'Tabs only': 'Onglets uniquement', 'Bold': 'Gras', 'Italic': 'Italique', 'Underline': 'Souligné', 'Strikethrough': 'Barré', 'Increase font size': 'Augmenter la taille de police', 'Decrease font size': 'Réduire la taille de police', 'Highlight': 'Surligner', 'Font colour': 'Couleur de police', 'Bullets': 'Puces', 'Numbering': 'Numérotation', 'Formatting': 'Mise en forme',
   '3 Arrows ▲ ► ▼': '3 flèches ▲ ► ▼', '3 Flags ⚑': '3 drapeaux ⚑', '3 Symbols ✔ ! ✖': '3 symboles ✔ ! ✖', '3 Traffic Lights ●': '3 feux de circulation ●',
   '? Question': '? Question', 'Above Average…': 'Au-dessus de la moyenne…', 'Accessibility': 'Accessibilité', 'Accounting': 'Comptabilité', 'Add a place': 'Ajouter un emplacement',

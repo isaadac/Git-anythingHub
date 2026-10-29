@@ -263,8 +263,13 @@
       }
       const tabs = document.querySelectorAll('.ribbon-tabs button[data-tab]');
       tabs.forEach(btn => btn.addEventListener('click', () => {
+        // The new panel slides in from the side of the tab you moved to.
+        const was = [...tabs].findIndex(b => b.classList.contains('active')), now = [...tabs].indexOf(btn);
         tabs.forEach(b => b.classList.toggle('active', b === btn));
-        document.querySelectorAll('.ribbon-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === btn.dataset.tab));
+        document.querySelectorAll('.ribbon-panel').forEach(p => {
+          p.classList.toggle('active', p.dataset.panel === btn.dataset.tab);
+          p.classList.toggle('from-right', now > was);
+        });
       }));
       const backstage = document.querySelector('.backstage');
       const fileTab = document.querySelector('.ribbon-tabs .file-tab');

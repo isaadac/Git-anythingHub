@@ -221,6 +221,8 @@ body.ai-open .canvas, body.ai-open .grid-wrap, body.ai-open .stage-wrap { margin
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition-duration: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 }
+/* File → Office Theme → Reduce motion: the same, whatever the system says. */
+:root[data-motion="reduce"] *, :root[data-motion="reduce"] *::before, :root[data-motion="reduce"] *::after { transition-duration: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; }
 @media (forced-colors: active) {
   .titlebar, .statusbar, .ribbon-tabs button.active { forced-color-adjust: none; background: Canvas; color: CanvasText; border-bottom: 1px solid CanvasText; }
   .titlebar button, .statusbar button { color: ButtonText; }
@@ -353,3 +355,34 @@ html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame
 .nb-nav { overflow: hidden; }
 @media screen and (max-width: 760px) { .pivot-pane { margin: 0; border-radius: 0; } }
 .note-canvas { border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); margin: 0 var(--sp-4) var(--sp-4) var(--sp-2); }
+
+/*
+ * Motion. Each movement says something: where a thing came from (dialogs rise from the middle,
+ * panes slide in from their edge, menus drop from their button), what changed (the tab marker
+ * grows under the new tab, the new ribbon panel slides in on the side you moved to), or that a
+ * press registered. Short (90–240 ms), eased out, and none of it when motion is reduced.
+ */
+.modal-check, .modal .check-row { display: flex; align-items: center; gap: var(--sp-4); color: var(--text-2); font-size: var(--fs-md); margin: 0 0 var(--sp-6); }
+.modal-backdrop { animation: fade-in var(--dur-2) var(--ease-out); }
+.modal-backdrop > .modal { animation: rise-in var(--dur-3) var(--ease-out); }
+.backstage.open nav { animation: slide-from-left var(--dur-3) var(--ease-out); }
+.backstage.open main { animation: fade-up var(--dur-3) var(--ease-out) both; animation-delay: 40ms; }
+.ribbon-panel.active { animation: panel-in var(--dur-2) var(--ease-out); }
+.ribbon-panel.active.from-right { animation-name: panel-in-right; }
+.ribbon-tabs button.active::after { animation: marker-grow var(--dur-3) var(--ease-spring); }
+:is(.comments-pane, .pivot-pane, .designer-pane, .script-pane) { animation: slide-from-right var(--dur-3) var(--ease-out); }
+:is(.navpane) { animation: slide-from-left var(--dur-3) var(--ease-out); }
+.ai-pane:not([hidden]) { animation: slide-from-right var(--dur-3) var(--ease-out); }
+:is(.tbl-menu, .ai-ctx, .findbar) { animation: pop-in var(--dur-2) var(--ease-out); }
+.btn:active, .titlebar .qa button:active, .modal .actions button:active, .share-btn:active { transform: scale(.96); }
+.btn, .titlebar .qa button, .modal .actions button, .share-btn { transition-property: background, border-color, color, box-shadow, transform; transition-duration: var(--dur-1); }
+/* Sheets: the cell cursor glides to the next cell instead of jumping (only for short moves). */
+.sel-box.glide { transition: left var(--dur-1) var(--ease-out), top var(--dur-1) var(--ease-out), width var(--dur-1) var(--ease-out), height var(--dur-1) var(--ease-out); }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes fade-up { from { opacity: 0; transform: translateY(6px); } }
+@keyframes rise-in { from { opacity: 0; transform: translateY(8px) scale(.97); } }
+@keyframes slide-from-right { from { opacity: 0; transform: translateX(16px); } }
+@keyframes slide-from-left { from { opacity: 0; transform: translateX(-16px); } }
+@keyframes panel-in { from { opacity: 0; transform: translateX(-10px); } }
+@keyframes panel-in-right { from { opacity: 0; transform: translateX(10px); } }
+@keyframes marker-grow { from { width: 0; } }

@@ -227,6 +227,12 @@
     const hdr = thead.rows[0];
     for (const [c, idx] of colPos) if (c >= g.c1 && c <= g.c2 && hdr.cells[idx]) { hdr.cells[idx].classList.add('hl'); paintedSel.push(hdr.cells[idx]); }
     const b = rangeBox(g);
+    // Short moves of the cursor glide (arrow keys, a nearby click); jumps and resizes don't.
+    const prev = selBox.style.display === 'block' && selBox._box;
+    const glide = prev && !(window.Theme && Theme.calm) && Math.abs(prev.w - b.w) < 1 && Math.abs(prev.h - b.h) < 1 &&
+      (prev.x !== b.x || prev.y !== b.y) && Math.hypot(prev.x - b.x, prev.y - b.y) < 400;
+    selBox.classList.toggle('glide', !!glide);
+    selBox._box = b;
     Object.assign(selBox.style, { display: 'block', left: (b.x - 1) + 'px', top: (b.y - 1) + 'px', width: (b.w + 1) + 'px', height: (b.h + 1) + 'px' });
   }
   function drawSelection() {
