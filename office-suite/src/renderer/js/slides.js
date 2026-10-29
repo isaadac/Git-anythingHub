@@ -146,7 +146,7 @@
   function cleanElement(el, phs, depth, ids) {
     {
       if (!el || typeof el !== 'object') return null;
-      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector'], null);
+      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector', 'cameo'], null);
       if (!type) return null;
       const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
       if (typeof el.id === 'string') ids.set(el.id, out.id);
@@ -173,6 +173,14 @@
         out.width = num(el.width, 2, 0.5, 20);
         ['x1', 'y1', 'x2', 'y2'].forEach(k => { out[k] = num(el[k], 0); });
         ['from', 'to'].forEach(k => { const e = el[k]; if (e && typeof e === 'object' && typeof e.id === 'string') out[k] = { id: e.id, site: oneOf(e.site, ['n', 's', 'e', 'w', 'auto'], 'auto') }; });
+        return out;
+      }
+      if (type === 'cameo') {
+        out.shape = oneOf(el.shape, ['circle', 'rounded', 'rect'], 'circle');
+        if (el.mirror === false) out.mirror = false;
+        if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+        const anim = SlidesAnim.clean(el.anim);
+        if (anim) out.anim = anim;
         return out;
       }
       if (type === 'media') {
@@ -341,6 +349,14 @@
     Object.assign(div.style, { left: el.x + 'px', top: el.y + 'px', width: el.w + 'px', height: el.h + 'px', transform: el.rot ? `rotate(${el.rot}deg)` : '' });
     if (el.type === 'group') {
       (el.children || []).forEach(ch => div.appendChild(buildEl(ch, s, false)));
+      return div;
+    }
+    if (el.type === 'cameo') {
+      // Live camera while presenting (attachCameos); a placeholder while editing.
+      div.classList.add('cameo-' + (el.shape || 'circle'));
+      if (el.mirror !== false) div.classList.add('mirror');
+      div.innerHTML = '<div class="cameo-ph"><span class="ico" data-icon="video"></span><span>Cameo</span></div>';
+      if (window.Icons) Icons.fill(div);
       return div;
     }
     if (el.type === 'media') {
@@ -695,6 +711,7 @@
     const elDiv = e.target.closest('.el');
     const el = elDiv && elById(elDiv.dataset.id);
     if (el && el.type === 'group' && el.smart) { smartArtDialog(el); return; }
+    if (el && el.type === 'cameo') { cameoDialog(el); return; }
     if (!el || ['group', 'connector', 'image', 'media'].includes(el.type)) return;
     if (elDiv.dataset.id !== editingId) startEditing(elDiv.dataset.id);
   });
@@ -851,7 +868,7 @@
     else if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); wholeBox('bold'); }
     else if (mod && e.key.toLowerCase() === 'i') { e.preventDefault(); wholeBox('italic'); }
     else if (mod && e.key.toLowerCase() === 'u') { e.preventDefault(); wholeBox('underline'); }
-    else if (e.key.length === 1 && !mod && !e.altKey && !['image', 'media', 'group', 'connector'].includes(el.type)) {
+    else if (e.key.length === 1 && !mod && !e.altKey && !['image', 'media', 'group', 'connector', 'cameo'].includes(el.type)) {
       // Typing on a selected box replaces its text, like PowerPoint.
       e.preventDefault();
       snapshot();
@@ -1069,6 +1086,54 @@
     renderStage(); refreshThumbSoon(); state.markDirty();
   }
   document.getElementById('insVideo').addEventListener('click', () => insertMedia('video'));
+  // ---------- Cameo: the presenter's camera, live, in the slide ----------
+  document.getElementById('insCameo').addEventListener('click', () => {
+    commitEditing();
+    const el = { id: newId(), type: 'cameo', shape: 'circle', x: W - 300, y: H - 300, w: 240, h: 240 };
+    snapshot();
+    slide().elements.push(el);
+    selectedId = el.id;
+    renderStage(); refreshThumbSoon(); state.markDirty();
+    UI.toast('Your camera shows here when you present. Double-click to change its shape.', 4000);
+  });
+  async function cameoDialog(el) {
+    const r = await UI.form('Cameo', [
+      { name: 'shape', label: 'Shape', type: 'select', options: [{ value: 'circle', label: 'Circle' }, { value: 'rounded', label: 'Rounded rectangle' }, { value: 'rect', label: 'Rectangle' }], value: el.shape || 'circle' },
+      { name: 'mirror', label: 'Show me', type: 'select', options: [{ value: '1', label: 'Mirrored, as in a mirror' }, { value: '0', label: 'As others see me' }], value: el.mirror === false ? '0' : '1' }
+    ], 'Apply');
+    if (!r) return;
+    snapshot();
+    el.shape = r.shape;
+    if (r.mirror === '0') el.mirror = false; else delete el.mirror;
+    if (el.shape === 'circle') el.h = el.w = Math.min(el.w, el.h);
+    renderStage(); refreshThumbSoon(); state.markDirty();
+  }
+  let camera = null; // the camera stream while a show with a cameo runs
+  /** Puts the live camera into the cameos of a slide being shown. */
+  async function attachCameos(container) {
+    const boxes = [...container.querySelectorAll('.el.cameo')];
+    if (!boxes.length) return;
+    if (!camera) {
+      camera = navigator.mediaDevices && navigator.mediaDevices.getUserMedia ? navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false }) : Promise.reject(new Error('no camera here'));
+      camera.catch(err => { camera = null; UI.toast('Cameo needs a camera: ' + (err.name === 'NotAllowedError' ? 'the camera isn\'t allowed' : err.message), 4000); });
+    }
+    let stream;
+    try { stream = await camera; } catch { return; }
+    for (const b of boxes) {
+      if (!b.isConnected || b.querySelector('video')) continue;
+      const v = document.createElement('video');
+      v.className = 'cameo-video';
+      v.muted = true; v.playsInline = true; v.autoplay = true;
+      v.srcObject = stream;
+      b.appendChild(v);
+      v.play().catch(() => {});
+    }
+  }
+  function stopCamera() {
+    if (!camera) return;
+    camera.then(st => st.getTracks().forEach(t => t.stop())).catch(() => {});
+    camera = null;
+  }
   document.getElementById('insAudio').addEventListener('click', () => insertMedia('audio'));
   ['mediaAuto', 'mediaLoop', 'mediaHide'].forEach(id => document.getElementById(id).addEventListener('change', e => {
     const el = selectedId && elById(selectedId);
@@ -1335,7 +1400,8 @@
     Platform.fullscreen(true);
     showSlide(showIndex, false);
     setTimeout(() => showSlide(showIndex, false), 300); // refit after going full screen
-    document.getElementById('presentHint').textContent = '→ / Space: next   ← : previous   B: black   Esc: end';
+    document.getElementById('presentHint').textContent = '→ / Space: next   ← : previous   B: black   C: captions   Esc: end';
+    if (captions.pref && !AUDIENCE) setCaptions(true, true);
     setTimeout(() => { document.getElementById('presentHint').textContent = ''; }, 3000);
   }
   let groups = [], built = 0, running = [], advanceTimer = null;
@@ -1370,6 +1436,8 @@
     built = Math.min(upTo, groups.length);
     applyVisibility(s);
     startMedia(s);
+    attachCameos(presentSlide);
+    if (coach) coachSlide(i);
     const frames = TRANSITION_FRAMES[s.transition];
     let wait = 0;
     if (animate && frames) { presentSlide.animate(frames, { duration: (s.transDur || 1) * 1000, easing: 'ease-out' }); wait = (s.transDur || 1) * 1000; }
@@ -1415,6 +1483,9 @@
     clearTimeout(advanceTimer);
     shownSlide = null;
     if (recording) finishRecording();
+    stopCamera();
+    setCaptions(false, true);
+    if (coach) finishCoach();
     presenter.hidden = true;
     if (live) live.moved();
     Platform.fullscreen(false);
@@ -1442,10 +1513,128 @@
     else if (k === 'Home') { showIndex = 0; showSlide(0); }
     else if (k === 'End') { showIndex = pres.slides.length - 1; showSlide(showIndex); }
     else if (k === 'b' || k === 'B' || k === '.') presenter.classList.toggle('black');
+    else if (k === 'c' || k === 'C') setCaptions(!captions.on);
     else if (k === 'Escape') endShow();
   }, true);
   window.addEventListener('resize', () => { if (!presenter.hidden) showSlide(showIndex, false); });
   document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !presenter.hidden && !Platform.desktop) endShow(); });
+
+  // ---------- Live captions and Rehearse with Coach ----------
+  // One listener serves both: captions show what is said at the foot of the slide; the coach
+  // keeps what was said on each slide, and how long each slide took, for its report.
+  const capEl = document.getElementById('captions');
+  const coachEl = document.getElementById('coachPill');
+  const captions = { on: false, pref: (() => { try { return localStorage.getItem('atlas-captions') === '1'; } catch { return false; } })(), lines: [], interim: '', hide: null };
+  let speech = null, coach = null;
+  const speechLang = () => ({ en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', pt: 'pt-BR' }[(window.I18n && I18n.lang) || ''] || navigator.language || 'en-US');
+  function heard(text, final) {
+    if (captions.on) {
+      if (final) { captions.lines.push(text.trim()); captions.lines = captions.lines.slice(-2); captions.interim = ''; } else captions.interim = text.trim();
+      capEl.textContent = [...captions.lines, captions.interim].filter(Boolean).join(' ').slice(-160);
+      capEl.hidden = false;
+      clearTimeout(captions.hide);
+      captions.hide = setTimeout(() => { captions.lines = []; capEl.hidden = true; }, 5000);
+    }
+    if (coach) {
+      if (final && text.trim()) { coach.heard.push({ slide: showIndex, text: text.trim() }); coachLive(text); }
+    }
+  }
+  /** Starts or stops listening as captions and the coach need it. */
+  function listening() {
+    const need = captions.on || !!coach;
+    if (need && !speech) speech = SlidesCoach.listen(heard, msg => { UI.toast(msg, 5000); speech = null; if (captions.on) setCaptions(false, true); }, speechLang());
+    else if (!need && speech) { speech(); speech = null; }
+  }
+  function setCaptions(on, quiet) {
+    captions.on = on;
+    if (!quiet) { captions.pref = on; try { localStorage.setItem('atlas-captions', on ? '1' : '0'); } catch { /* ignore */ } }
+    document.getElementById('captionsToggle').classList.toggle('on', captions.pref);
+    if (!on) { capEl.hidden = true; captions.lines = []; captions.interim = ''; }
+    else if (!quiet) UI.toast('Captions on (C to turn off)');
+    listening();
+  }
+  document.getElementById('captionsToggle').classList.toggle('on', captions.pref);
+  document.getElementById('captionsToggle').addEventListener('click', () => { captions.pref = !captions.pref; try { localStorage.setItem('atlas-captions', captions.pref ? '1' : '0'); } catch { /* ignore */ } document.getElementById('captionsToggle').classList.toggle('on', captions.pref); UI.toast(captions.pref ? 'Captions will show when you present' : 'Captions off'); });
+
+  document.getElementById('rehearse').addEventListener('click', () => {
+    if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return UI.toast('Rehearse with Coach listens to you, which needs speech recognition. Try Chrome, Edge or Safari.', 5000);
+    coach = { heard: [], times: pres.slides.map(() => 0), at: Date.now(), slide: 0, started: Date.now(), recent: [] };
+    present(0);
+    coachEl.hidden = false;
+    coachEl.textContent = 'Coach is listening…';
+    listening();
+  });
+  /** Time on the slide being left goes to that slide. */
+  function coachSlide(i) {
+    const now = Date.now();
+    coach.times[coach.slide] += (now - coach.at) / 1000;
+    coach.slide = i; coach.at = now;
+  }
+  /** A word from the coach while rehearsing: pace over the last half minute, and filler words. */
+  function coachLive(text) {
+    const now = Date.now();
+    coach.recent.push({ t: now, n: SlidesCoach.words(text).length });
+    coach.recent = coach.recent.filter(r => now - r.t < 30000);
+    const span = Math.max(10, (now - Math.max(coach.started, coach.recent[0].t - 3000)) / 1000);
+    const wpm = Math.round(coach.recent.reduce((a, r) => a + r.n, 0) / (span / 60));
+    const f = [...SlidesCoach.fillersIn(text).keys()];
+    const total = SlidesCoach.fillersIn(coach.heard.map(h => h.text).join(' '));
+    const fillers = [...total.values()].reduce((a, b) => a + b, 0);
+    let tip = f.length ? `Try a pause instead of “${f[0]}”` : wpm > SlidesCoach.PACE.fast ? 'Slow down a little' : '';
+    coachEl.textContent = `${wpm} words/min · ${fillers} filler${fillers === 1 ? '' : 's'}${tip ? ' · ' + tip : ''}`;
+    coachEl.classList.toggle('warn', !!tip);
+  }
+  function finishCoach() {
+    coachSlide(coach.slide);
+    const c = coach;
+    coach = null;
+    coachEl.hidden = true;
+    listening();
+    const plain = h => { const d = document.createElement('div'); d.innerHTML = h || ''; return d.textContent; };
+    const report = SlidesCoach.analyze({
+      slides: pres.slides.map(sl => ({ text: sl.elements.filter(e => e.type === 'text' || e.type === 'shape').map(e => plain(e.html)).join(' ') })),
+      heard: c.heard, times: c.times, seconds: (Date.now() - c.started) / 1000
+    });
+    showCoachReport(report);
+  }
+  function showCoachReport(r) {
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    const verdict = { good: 'Good pace', fast: 'A bit fast', slow: 'A bit slow', unknown: 'Not enough speech to judge' }[r.pace];
+    back.innerHTML = `<div class="modal coach-report" role="dialog" aria-label="Rehearsal report"><h2>Rehearsal report</h2>
+      <div class="coach-stats">
+        <div class="stat"><b class="v time"></b><span>Total time</span></div>
+        <div class="stat pace-${r.pace}"><b class="v wpm"></b><span class="verdict"></span></div>
+        <div class="stat"><b class="v fill"></b><span>Filler words</span></div>
+        <div class="stat"><b class="v read"></b><span>Slides read aloud</span></div>
+      </div>
+      <h3>Tips</h3><ul class="coach-tips"></ul>
+      <h3>Time on each slide</h3><div class="coach-times"></div>
+      <div class="actions"><button class="again">Rehearse again</button><button class="primary ok">Done</button></div></div>`;
+    const q = sel => back.querySelector(sel);
+    q('.time').textContent = SlidesCoach.fmt(r.seconds);
+    q('.wpm').textContent = r.pace === 'unknown' ? '—' : `${r.wpm} wpm`;
+    q('.verdict').textContent = verdict;
+    q('.fill').textContent = String(r.fillers.total);
+    q('.read').textContent = String(r.reading.length);
+    r.tips.forEach(t => { const li = document.createElement('li'); li.textContent = t; q('.coach-tips').appendChild(li); });
+    const max = Math.max(1, ...r.times.map(t => t.seconds));
+    r.times.forEach(t => {
+      const row = document.createElement('div');
+      row.className = 'coach-bar' + (r.reading.includes(t.slide) ? ' reading' : '');
+      row.innerHTML = '<span class="n"></span><span class="bar"><i></i></span><span class="s"></span>';
+      row.querySelector('.n').textContent = 'Slide ' + (t.slide + 1);
+      row.querySelector('i').style.width = (100 * t.seconds / max) + '%';
+      row.querySelector('.s').textContent = SlidesCoach.fmt(t.seconds);
+      q('.coach-times').appendChild(row);
+    });
+    document.body.appendChild(back);
+    const close = () => back.remove();
+    q('.ok').addEventListener('click', close);
+    q('.again').addEventListener('click', () => { close(); document.getElementById('rehearse').click(); });
+    back.addEventListener('keydown', e => { if (e.key === 'Escape') close(); });
+    q('.ok').focus();
+  }
 
   // ---------- Presenter View ----------
   // The presenter's window shows the current slide, the next one, notes and a timer; the
@@ -1706,6 +1895,11 @@
         }
         const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: (el.master ? 'atlas-master-' : 'atlas-') + el.id, ...(el.flipH ? { flipH: true } : {}), ...(el.flipV ? { flipV: true } : {}) };
         if (el.type === 'image') { ps.addImage({ data: el.src, ...box, ...(el.alt && !el.decorative ? { altText: el.alt } : {}) }); continue; }
+        if (el.type === 'cameo') {
+          // PowerPoint has no camera object it can read from here: a framed placeholder.
+          ps.addText('Cameo', { ...box, shape: el.shape === 'circle' ? pptx.ShapeType.ellipse : el.shape === 'rounded' ? pptx.ShapeType.roundRect : pptx.ShapeType.rect, fill: { color: '2B2B2B' }, color: 'FFFFFF', fontSize: 14, align: 'center', valign: 'middle', altText: 'Camera (Cameo)' });
+          continue;
+        }
         if (el.type === 'media') { ps.addMedia({ type: el.kind, data: el.src, cover: el.poster ? await asPng(el.poster) : (el.kind === 'audio' ? AUDIO_ICON() : undefined), ...box }); continue; }
         if (el.type === 'table') {
           const tmp = document.createElement('div'); tmp.innerHTML = el.html;
@@ -1756,6 +1950,7 @@
       layout: sl.layout, hideMaster: !!sl.hideMaster,
       morph: Object.fromEntries((morphNames.get(pres.slides.indexOf(sl)) || []).map(([elId, key]) => [key, elId])),
       media: Object.fromEntries(sl.elements.flatMap(e => flattenGroup(e)).filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])),
+      cameos: Object.fromEntries(sl.elements.filter(e => e.type === 'cameo').map(e => [e.id, { shape: e.shape, mirror: e.mirror !== false }])),
       groups: sl.elements.filter(e => e.type === 'group').map(groupMeta),
       connectors: Object.fromEntries(sl.elements.filter(e => e.type === 'connector').map(c => [c.id, { kind: c.kind, arrow: c.arrow, color: c.color || null, width: c.width, from: c.from || null, to: c.to || null }]))
     })) });
@@ -2281,6 +2476,11 @@
         if (m.morph && typeof m.morph === 'object') slides[i].elements.forEach(e => { if (e.morphName && Object.hasOwn(m.morph, e.morphName)) e.atlasName = String(m.morph[e.morphName]); });
         slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true;
         // Playback options, matched by the shape names Isadek wrote.
+        // Cameos were written as framed placeholders: they become cameos again.
+        if (m.cameos && typeof m.cameos === 'object') slides[i].elements = slides[i].elements.map(e => {
+          const o = e.atlasName && Object.hasOwn(m.cameos, e.atlasName) ? m.cameos[e.atlasName] : null;
+          return o ? { id: e.id, type: 'cameo', x: e.x, y: e.y, w: e.w, h: e.h, atlasName: e.atlasName, shape: o.shape, ...(o.mirror === false ? { mirror: false } : {}), ...(e.rot ? { rot: e.rot } : {}), ...(e.anim ? { anim: e.anim } : {}) } : e;
+        });
         if (m.media && typeof m.media === 'object') slides[i].elements.forEach(e => { const o = e.type === 'media' && e.atlasName && Object.hasOwn(m.media, e.atlasName) ? m.media[e.atlasName] : null; if (o) ['autoplay', 'loop', 'hideIcon'].forEach(k => { e[k] = o[k] === true; }); });
         if (m.connectors && typeof m.connectors === 'object') slides[i].elements.forEach(e => {
           const o = e.type === 'connector' && e.atlasName && Object.hasOwn(m.connectors, e.atlasName) ? m.connectors[e.atlasName] : null;

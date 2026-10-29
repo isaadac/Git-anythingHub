@@ -64,18 +64,22 @@
 <section id="write">
 <h2>Write</h2>
 <p>Styles and headings (Home), tables, pictures that wrap around text, page and section breaks, headers and footers with page numbers, footnotes and endnotes, citations and a bibliography, a table of contents, equations (Insert → Equation, in a linear syntax such as <code>x = (-b ± sqrt(b^2-4ac))/(2a)</code>) and fields that update themselves (<kbd>F9</kbd>).</p>
-<p>Review has spelling and grammar, track changes, comments, Compare and Read Aloud. Mailings makes letters from a list of recipients. View → Navigation Pane jumps between headings.</p>
+<p>References → Sources is a reference manager: search the sources in your document and the ones you used before, add one by DOI, paste or import BibTeX and RIS from Zotero, Mendeley, EndNote or Google Scholar, cite with one click and export BibTeX. Styles: APA, MLA, Chicago, Harvard and IEEE.</p>
+<p>Review has spelling and grammar, track changes, comments, Compare (side by side, or as tracked changes) and Read Aloud. Mailings makes letters from a list of recipients. View → Navigation Pane jumps between headings.</p>
 </section>
 
 <section id="sheets">
 <h2>Sheets</h2>
 <p>Formulas start with <kbd>=</kbd> and use the functions Excel has (Formulas → Insert Function lists them), including dynamic arrays. Drag the fill handle to copy formulas or continue a series. Insert → Table turns a range into a table with filters, a total row and names like <code>Table1[Sales]</code> in formulas.</p>
 <p>Also: charts and sparklines, PivotTables, conditional formatting, data validation and drop-down lists, cell comments, protected sheets, named ranges (Name Manager), Goal Seek and Solver (Data → What-If Analysis), data from the web, and scripts (Automate).</p>
+<p>Data → Clean &amp; Transform tidies a range step by step (trim, change case, split and merge columns, fill down, filter, remove duplicates, group, unpivot…) with a live preview; the result goes to a new sheet, and Refresh All runs the steps again on new data. Charts include waterfall, funnel and map (countries shaded by value).</p>
+<p><code>=PY("code", value…)</code> runs Python in a cell: <code>xl("A1:B10")</code> reads cells as a list of rows, <code>args</code> holds the values after the code, and a list of lists spills into the cells below. It runs on your device with no network or file access; Python in a workbook from someone else runs only after you choose Run Python.</p>
 </section>
 
 <section id="slides">
 <h2>Slides</h2>
 <p>Pick a layout for each new slide, a theme on Design, and transitions (including Morph) and animations for anything on a slide. Designer suggests layouts; SmartArt builds diagrams from a list. <kbd>F5</kbd> starts the show; Presenter View shows your notes, the next slide and a timer. Record Slide Show adds narration and timings. Print handouts with 1 to 9 slides per page.</p>
+<p>Insert → Cameo puts your camera, live, in a slide while you present. Slide Show → Live Captions shows what you say at the foot of the slides (<kbd>C</kbd> during the show), and Rehearse with Coach listens to a practice run and reports your pace, filler words, slides you read aloud and the time on each slide.</p>
 </section>
 
 <section id="notes">
@@ -143,11 +147,12 @@
 <li><b>Live editing.</b> When you start or join a live session, changes to that document go through the live-editing server the session uses, to the other people in it. The server keeps the session in memory only, and forgets it an hour after everyone has left.</li>
 <li><b>Assistant.</b> When you use ✨ Assistant, your request and the content you include are sent to Anthropic (directly with your own API key, or through the web server you use) to produce an answer. Anthropic's privacy policy applies to that data.</li>
 <li><b>Data from the web.</b> Sheets → From Web downloads the address you enter.</li>
+<li><b>Looking up a DOI.</b> Write → Sources → DOI asks Crossref (api.crossref.org) for that DOI's details.</li>
 <li><b>Updates.</b> The desktop app asks the release server whether a newer version exists. That request includes the app's version and your operating system, as any download does.</li>
 <li><b>Crash reports</b> are sent only if you turn them on (Help → Send Crash Reports; off by default). A report holds the error message and where in the program it happened, the app and system versions, and for a native crash a memory snapshot of the program that stopped. File paths are shortened so they don't include your user name. Reports are used only to fix problems and are deleted after 90 days.</li>
 </ul>
-<h3>Microphone</h3>
-<p>The microphone is used only while you record narration in Slides or an audio note in Notes, and the recording is stored in your file. The camera and your screen are never used.</p>
+<h3>Microphone and camera</h3>
+<p>The microphone is used only while you record narration in Slides or an audio note in Notes (the recording is stored in your file), or while you dictate, show live captions or rehearse with Coach. Dictation, captions and Coach use your system's or browser's speech recognition, which may send the audio to its provider (Google for Chrome, Apple for Safari, Microsoft for Edge); nothing said is kept. The camera is used only to show you in a Cameo while you present in Slides; nothing is recorded or sent. Your screen is never used.</p>
 <h3>Children</h3>
 <p>Isadek Office does not knowingly collect any personal information, from children or anyone else.</p>
 <h3>Changes and contact</h3>

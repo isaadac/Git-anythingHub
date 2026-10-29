@@ -103,6 +103,7 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="insVideo"><span class="ico" data-icon="clapperboard"></span>Video</button>
       <button class="btn big" id="insAudio"><span class="ico" data-icon="audio-lines"></span>Audio</button>
+      <button class="btn big" id="insCameo" title="Your camera, live in the slide while you present"><span class="ico" data-icon="square-user"></span>Cameo</button>
       <div class="controls col">
         <label class="row" title="Play when the slide appears (else on click)"><input type="checkbox" id="mediaAuto"> Start automatically</label>
         <label class="row"><input type="checkbox" id="mediaLoop"> Loop until stopped</label>
@@ -258,6 +259,10 @@
       <button class="btn big" id="handouts" title="Print or save handouts and notes pages"><span class="ico" data-icon="printer"></span>Handouts</button>
     </div><div class="label">Set Up</div></div>
     <div class="group"><div class="controls">
+      <button class="btn big" id="rehearse" title="Practise your talk: the coach listens and reports on pace, filler words, reading the slides aloud and timing"><span class="ico" data-icon="graduation-cap"></span>Rehearse<br>with Coach</button>
+      <button class="btn big" id="captionsToggle" title="Show what you say as captions at the foot of the slides while presenting (C in the show)"><span class="ico" data-icon="captions"></span>Live<br>Captions</button>
+    </div><div class="label">Speaking</div></div>
+    <div class="group"><div class="controls">
       <button class="btn big" id="toggleNotes"><span class="ico" data-icon="notebook-pen"></span>Notes</button>
     </div><div class="label">View</div></div>
   </div>
@@ -281,7 +286,7 @@
   <span class="hint">Double-click a box to edit text · Delete removes it · F5 presents</span>
 </div>
 
-<div class="presenter" id="presenter" hidden><div class="slide" id="presentSlide"></div><div class="present-hint" id="presentHint"></div></div>
+<div class="presenter" id="presenter" hidden><div class="slide" id="presentSlide"></div><div class="present-hint" id="presentHint"></div><div class="captions" id="captions" aria-live="polite" hidden></div><div class="coach-pill" id="coachPill" role="status" hidden></div></div>
 <div class="presenter-view" id="presenterView" hidden>
   <div class="pv-top"><span id="pvTimer" class="pv-timer">0:00:00</span><button class="pv-btn" id="pvPause" title="Pause timer"><span class="ico" data-icon="pause"></span></button><button class="pv-btn" id="pvReset" title="Restart timer"><span class="ico" data-icon="rotate-ccw"></span></button><span class="pv-spacer"></span><span id="pvClock"></span></div>
   <div class="pv-main">
@@ -332,6 +337,7 @@
 <script src="js/proofing.js"></script>
 <script src="js/slides-anim.js"></script>
 <script src="js/slides-extras.js"></script>
+<script src="js/slides-coach.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/slides.js"></script>
 </body>

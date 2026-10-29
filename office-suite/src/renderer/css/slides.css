@@ -173,3 +173,35 @@ body.connecting #stage, body.connecting #stage .el { cursor: crosshair !importan
 /* The theme gallery scrolls inside its group, like Office's, rather than widening the ribbon. */
 .controls.themes { display: flex; gap: 6px; max-width: min(560px, 46vw); overflow-x: auto; padding: 3px; scrollbar-width: thin; }
 .controls.themes .theme-swatch { flex: none; }
+
+/* Cameo: the presenter's camera in the slide */
+.el.cameo { overflow: hidden; background: linear-gradient(160deg, #3a3f4b, #1e2128); color: rgba(255,255,255,.8); }
+.el.cameo-circle { border-radius: 50%; }
+.el.cameo-rounded { border-radius: 12%; }
+.el.cameo .cameo-ph { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 6px; font: 600 14px var(--font); letter-spacing: .02em; pointer-events: none; }
+.el.cameo .cameo-ph svg { width: 32px; height: 32px; opacity: .85; }
+.el.cameo .cameo-video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.el.cameo.mirror .cameo-video { transform: scaleX(-1); }
+
+/* Live captions and the rehearsal coach */
+.presenter .captions { position: fixed; left: 50%; bottom: 6vh; transform: translateX(-50%); max-width: min(80vw, 1100px); padding: .35em .8em; background: rgba(0,0,0,.78); color: #fff; font: 500 clamp(18px, 2.6vw, 34px)/1.35 var(--font); border-radius: 10px; text-align: center; pointer-events: none; z-index: 2; }
+.presenter .captions[hidden] { display: none; }
+.presenter .coach-pill { position: fixed; right: 24px; top: 24px; padding: 8px 14px; border-radius: 999px; background: rgba(20,20,24,.82); color: #fff; font: 500 14px var(--font); box-shadow: 0 6px 24px rgba(0,0,0,.35); z-index: 2; transition: background var(--dur-2); }
+.presenter .coach-pill.warn { background: rgba(168,96,0,.92); }
+.presenter .coach-pill[hidden] { display: none; }
+.coach-report { width: min(640px, 94vw); }
+.coach-report h3 { font-size: var(--fs-md); margin: var(--sp-6) 0 var(--sp-3); }
+.coach-stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--sp-4); margin-top: var(--sp-4); }
+.coach-stats .stat { background: var(--surface-2); border-radius: var(--r-lg); padding: var(--sp-5); display: grid; gap: 2px; }
+.coach-stats .v { font-size: var(--fs-2xl); font-weight: var(--fw-semibold); }
+.coach-stats span { color: var(--muted); font-size: var(--fs-sm); }
+.coach-stats .pace-good .v { color: var(--ok); }
+.coach-stats .pace-fast .v, .coach-stats .pace-slow .v { color: var(--warn-fg); }
+.coach-tips { margin: 0; padding-left: 1.2em; display: grid; gap: var(--sp-3); }
+.coach-times { display: grid; gap: var(--sp-2); max-height: 30vh; overflow: auto; }
+.coach-bar { display: grid; grid-template-columns: 64px 1fr 44px; align-items: center; gap: var(--sp-4); font-size: var(--fs-sm); }
+.coach-bar .bar { height: 8px; background: var(--surface-2); border-radius: 4px; overflow: hidden; }
+.coach-bar .bar i { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
+.coach-bar.reading .bar i { background: var(--warn); }
+.coach-bar .s { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (max-width: 560px) { .coach-stats { grid-template-columns: repeat(2, 1fr); } }

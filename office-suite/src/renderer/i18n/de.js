@@ -4,6 +4,7 @@
   // Clean & Transform
   "Clean & Transform": "Bereinigen und transformieren", "Applied steps": "Angewendete Schritte",
   "Waterfall": "Wasserfall", "Funnel": "Trichter", "Map": "Karte", "Run Python": "Python ausführen",
+  "Cameo": "Cameo", "Rehearse with Coach": "Mit Coach üben", "Live Captions": "Liveuntertitel", "Speaking": "Sprechen",
   // Live editing: activity and following
   "Activity": "Aktivität", "Changes made in this session appear here.": "Änderungen in dieser Sitzung erscheinen hier.", "Watch": "Ansehen", "Copy link": "Link kopieren", "Leave session": "Sitzung verlassen",
   // Assistant and dictation

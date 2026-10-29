@@ -521,12 +521,15 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
-    // Only the permissions the apps use: clipboard (Paste button), full screen (slide show) and the
-    // microphone (recording narration in Slides and audio notes) — never the camera or screen.
+    // Only the permissions the apps use: clipboard (Paste button), full screen (slide show), the
+    // microphone (narration, audio notes, captions) and, in Slides only, the camera (Cameo) — never
+    // the screen.
     const allowed = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen']);
-    const audioOnly = d => !!d && Array.isArray(d.mediaTypes) && d.mediaTypes.length > 0 && d.mediaTypes.every(t => t === 'audio');
-    session.defaultSession.setPermissionRequestHandler((_wc, permission, cb, details) => cb(allowed.has(permission) || (permission === 'media' && audioOnly(details))));
-    session.defaultSession.setPermissionCheckHandler((_wc, permission, _origin, details) => allowed.has(permission) || (permission === 'media' && (!details || !details.mediaType || details.mediaType === 'audio')));
+    const RENDERER_URL = require('url').pathToFileURL(path.join(__dirname, '../renderer/')).href;
+    const inSlides = (wc, d) => { const u = (d && d.requestingUrl) || (wc && wc.getURL()) || ''; return u.startsWith(RENDERER_URL + 'slides.html'); };
+    const mediaOk = (wc, d) => !!d && Array.isArray(d.mediaTypes) && d.mediaTypes.length > 0 && d.mediaTypes.every(t => t === 'audio' || (t === 'video' && inSlides(wc, d)));
+    session.defaultSession.setPermissionRequestHandler((wc, permission, cb, details) => cb(allowed.has(permission) || (permission === 'media' && mediaOk(wc, details))));
+    session.defaultSession.setPermissionCheckHandler((wc, permission, _origin, details) => allowed.has(permission) || (permission === 'media' && (!details || !details.mediaType || details.mediaType === 'audio' || (details.mediaType === 'video' && inSlides(wc, details)))));
     buildMenu();
     const files = [...fileArgs(process.argv), ...macOpenQueue];
     macOpenQueue = [];
