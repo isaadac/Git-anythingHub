@@ -11,7 +11,10 @@ const crypto = require('crypto');
 
 // backlog: bytes waiting to go to one connection; a person whose connection stalls is dropped
 // beyond it (their app reconnects and catches up) instead of the server holding it all.
-const LIMITS = { message: 32e6, roomBytes: 200e6, rooms: 200, clientsPerRoom: 50, idleMs: 60 * 60 * 1000, keyLen: 300, backlog: 64e6 };
+// rate: bytes one connection may send per minute (a burst up to a whole minute's worth);
+// connections: open sockets in all; helloMs: how long a new socket may take to join a session.
+const LIMITS = { message: 32e6, roomBytes: 200e6, rooms: 200, clientsPerRoom: 50, idleMs: 60 * 60 * 1000, keyLen: 300, backlog: 64e6,
+  rate: 256e6, connections: 2000, helloMs: 15000, presence: 8000, opsPerMessage: 50000 };
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 // ---------- WebSocket framing ----------
@@ -24,9 +27,13 @@ function encodeFrame(text, opcode = 1) {
 }
 
 class Conn {
-  constructor(socket, onMessage, onClose, backlog = LIMITS.backlog) {
+  constructor(socket, onMessage, onClose, backlog = LIMITS.backlog, rate = LIMITS.rate) {
     this.socket = socket;
     this.backlog = backlog;
+    // Token bucket: what this connection may still send before it has to slow down.
+    this.rate = rate;
+    this.allowance = rate;
+    this.lastTick = Date.now();
     this.buf = Buffer.alloc(0);
     this.parts = [];
     this.partBytes = 0;
@@ -39,6 +46,13 @@ class Conn {
     socket.setNoDelay(true);
   }
   data(d) {
+    if (this.closed) return;
+    const now = Date.now();
+    this.allowance = Math.min(this.rate, this.allowance + (now - this.lastTick) * this.rate / 60000);
+    this.lastTick = now;
+    this.allowance -= d.length;
+    // Far more than anyone typing or pasting sends: a runaway or hostile client.
+    if (this.allowance < 0) return this.close(1008);
     this.buf = this.buf.length ? Buffer.concat([this.buf, d]) : d;
     for (;;) {
       const b = this.buf;
@@ -65,7 +79,8 @@ class Conn {
           this.parts = []; this.partBytes = 0;
           let j;
           try { j = JSON.parse(msg); } catch { return this.close(1007); }
-          this.onMessage(this, j, msg.length);
+          // Whatever a message holds, it can't take the server down: the sender is let go.
+          try { this.onMessage(this, j, msg.length); } catch { return this.close(1011); }
         }
         continue;
       }
@@ -80,13 +95,16 @@ class Conn {
   close(code = 1000) {
     if (this.closed) return;
     try { this.socket.write(Buffer.from([0x88, 2, code >> 8, code & 255])); } catch { /* gone */ }
+    // Let the close frame (with its reason) go out first; then the socket goes regardless.
     this.socket.end();
-    this.end();
+    this.end(true);
   }
-  end() {
+  end(gently) {
     if (this.closed) return;
     this.closed = true;
-    this.socket.destroy();
+    clearInterval(this.ping);
+    this.buf = Buffer.alloc(0);
+    if (gently) setTimeout(() => this.socket.destroy(), 2000).unref(); else this.socket.destroy();
     this.onClose(this);
   }
 }
@@ -101,6 +119,7 @@ function createCollabServer(opts = {}) {
     res.end('Isadek Office live editing server\n');
   });
   const validRoom = r => typeof r === 'string' && /^[\w-]{16,64}$/.test(r);
+  let open = 0; // sockets connected now
   const peerList = room => [...room.clients].map(c => ({ id: c.id, name: c.name, color: c.color, presence: c.presence || null }));
   const broadcast = (room, msg, except) => { const s = JSON.stringify(msg); for (const c of room.clients) if (c !== except) c.send(s); };
 
@@ -125,6 +144,7 @@ function createCollabServer(opts = {}) {
       c.id = crypto.randomBytes(6).toString('hex');
       c.name = String(m.name || 'Guest').slice(0, 60);
       c.color = /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#888888';
+      clearTimeout(c.helloTimer);
       room.clients.add(c);
       const state = {};
       for (const [k, e] of room.state) state[k] = e.v;
@@ -135,16 +155,19 @@ function createCollabServer(opts = {}) {
     const room = c.room;
     if (!room) return;
     if (m.t === 'op' && Array.isArray(m.ops)) {
-      const ops = m.ops.filter(o => o && typeof o.k === 'string' && o.k.length <= limits.keyLen);
+      if (m.ops.length > limits.opsPerMessage) return c.close(1009);
+      const ops = m.ops.filter(o => o && typeof o === 'object' && typeof o.k === 'string' && o.k.length <= limits.keyLen);
       if (room.bytes + size > limits.roomBytes) return c.send({ t: 'error', error: 'The document is too large for this server' });
       for (const o of ops) set(room, o.k, o.v === undefined ? null : o.v);
       room.seq++;
       // seen: the last change the sender had when it made this one (so others can merge with it).
-      broadcast(room, { t: 'op', from: c.id, n: m.n, seq: room.seq, seen: Number.isInteger(m.seen) ? m.seen : undefined, ops });
+      broadcast(room, { t: 'op', from: c.id, n: Number.isInteger(m.n) ? m.n : undefined, seq: room.seq, seen: Number.isInteger(m.seen) ? m.seen : undefined, ops });
       return;
     }
     if (m.t === 'presence') {
-      c.presence = m.data && typeof m.data === 'object' ? m.data : null;
+      // Where someone is (a cell, a slide): small by nature, so anything big is dropped.
+      const p = m.data && typeof m.data === 'object' && !Array.isArray(m.data) ? m.data : null;
+      c.presence = p && JSON.stringify(p).length <= limits.presence ? p : null;
       broadcast(room, { t: 'presence', from: c.id, data: c.presence }, c);
     }
   }
@@ -157,23 +180,30 @@ function createCollabServer(opts = {}) {
     room.bytes += size;
   }
   function onClose(c) {
+    open--;
+    clearTimeout(c.helloTimer);
     const room = c.room;
     if (!room) return;
     room.clients.delete(c);
     broadcast(room, { t: 'peers', peers: peerList(room) });
     // An empty session is kept for a while, so people can reconnect.
-    if (!room.clients.size) room.idle = setTimeout(() => { if (!room.clients.size) rooms.delete(room.id); }, limits.idleMs);
+    if (!room.clients.size) { room.idle = setTimeout(() => { if (!room.clients.size) rooms.delete(room.id); }, limits.idleMs); room.idle.unref(); }
   }
 
   server.on('upgrade', (req, socket, head) => {
+    socket.on('error', () => socket.destroy());
     const key = req.headers['sec-websocket-key'];
-    if (!key || (req.headers.upgrade || '').toLowerCase() !== 'websocket') { socket.end('HTTP/1.1 400 Bad Request\r\n\r\n'); return; }
+    if (!key || !/^[A-Za-z0-9+/=]{16,64}$/.test(key) || (req.headers.upgrade || '').toLowerCase() !== 'websocket') { socket.end('HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'); return; }
+    if (open >= limits.connections) { socket.end('HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n'); return; }
+    open++;
     const accept = crypto.createHash('sha1').update(key + GUID).digest('base64');
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
-    const c = new Conn(socket, onMessage, onClose, limits.backlog);
+    const c = new Conn(socket, onMessage, onClose, limits.backlog, limits.rate);
+    // A socket that never joins a session is let go.
+    c.helloTimer = setTimeout(() => { if (!c.room) c.close(1008); }, limits.helloMs);
     if (head && head.length) c.data(head); // bytes that came with the handshake
     // Keep idle connections alive through proxies.
-    const ping = setInterval(() => (c.closed ? clearInterval(ping) : c.send('', 9)), 30000);
+    c.ping = setInterval(() => c.send('', 9), 30000);
   });
   server.rooms = rooms;
   return server;

@@ -30,6 +30,17 @@ const ROOT = path.resolve(__dirname, '../..');
 const RENDERER = path.join(ROOT, 'src/renderer');
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.zip': 'application/zip', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.woff2': 'font/woff2', '.map': 'application/json' };
 const MAX_BODY = 4e6;
+// Sent with every response: no framing by other sites (clickjacking), no MIME sniffing, no
+// referrer to other sites, and the files only for this site's pages. (No Cross-Origin-Opener-
+// Policy: cloud sign-in pop-ups report back to the page that opened them.)
+const SECURITY_HEADERS = {
+  'X-Content-Type-Options': 'nosniff',
+  'X-Frame-Options': 'DENY',
+  'Content-Security-Policy': "frame-ancestors 'none'",
+  'Referrer-Policy': 'no-referrer',
+  'Cross-Origin-Resource-Policy': 'same-origin',
+  'Permissions-Policy': 'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()'
+};
 
 /** Library files the pages load (../../node_modules/…): only those are served from node_modules. */
 function libraryFiles() {
@@ -69,6 +80,12 @@ function createWebServer(opts = {}) {
     t.push(Date.now()); hits.set(who, t);
     return true;
   }
+  // Wrong access codes, per address: guessing is limited to a few tries a minute.
+  const misses = new Map();
+  setInterval(() => { const cut = Date.now() - 600000; for (const [k, t] of misses) { const keep = t.filter(x => x > cut); if (keep.length) misses.set(k, keep); else misses.delete(k); } }, 60000).unref();
+  const addr = req => req.socket.remoteAddress || '?';
+  const lockedOut = req => (misses.get(addr(req)) || []).filter(x => x > Date.now() - 600000).length >= 20;
+  const missed = req => { const t = misses.get(addr(req)) || []; t.push(Date.now()); misses.set(addr(req), t.slice(-50)); };
   const same = (a, b) => { const x = Buffer.from(a), y = Buffer.from(b); return x.length === y.length && crypto.timingSafeEqual(x, y); };
   const codeOf = req => (String(req.headers.authorization || '').match(/^Bearer (.{1,200})$/) || [])[1] || '';
   const validCode = code => cfg.codes.some(c => same(c, code));
@@ -97,7 +114,8 @@ function createWebServer(opts = {}) {
   async function assistant(req, res) {
     if (!enabled()) return json(res, 503, { error: 'The Assistant is not set up on this server.' });
     const code = codeOf(req);
-    if (!cfg.open && !validCode(code)) return json(res, 401, { error: 'Enter a valid access code in the Assistant settings.', needsCode: true });
+    if (!cfg.open && lockedOut(req)) return json(res, 429, { error: 'Too many wrong access codes. Try again in a few minutes.' });
+    if (!cfg.open && !validCode(code)) { missed(req); return json(res, 401, { error: 'Enter a valid access code in the Assistant settings.', needsCode: true }); }
     if (!allowed(code || req.socket.remoteAddress)) return json(res, 429, { error: 'Too many questions in the last minute. Try again shortly.' });
     let body;
     try { body = JSON.parse(await readBody(req)); } catch { return json(res, 400, { error: 'Bad request' }); }
@@ -115,7 +133,10 @@ function createWebServer(opts = {}) {
   // Cloud app registrations from the environment replace the file built into the pages.
   const cloudApps = cloudAppsFromEnv(env);
   function serveFile(req, res, url) {
-    let rel = decodeURIComponent(url.pathname).replace(/^\/+/, '');
+    let rel;
+    // A malformed address (bad %-escape) or a NUL in it is simply not found.
+    try { rel = decodeURIComponent(url.pathname).replace(/^\/+/, ''); } catch { res.writeHead(400); return res.end('Bad request'); }
+    if (rel.includes('\0')) { res.writeHead(400); return res.end('Bad request'); }
     if (rel === 'src/renderer/cloud-apps.json' && Object.keys(cloudApps).length) return json(res, 200, cloudApps);
     if (!rel) { res.writeHead(302, { Location: '/src/renderer/index.html' }); return res.end(); }
     rel = path.posix.normalize(rel);
@@ -126,11 +147,21 @@ function createWebServer(opts = {}) {
       if (err || !st.isFile()) { res.writeHead(404); return res.end('Not found'); }
       res.writeHead(200, { 'Content-Type': TYPES[path.extname(file)] || 'application/octet-stream', 'Content-Length': st.size, 'X-Content-Type-Options': 'nosniff', 'Cache-Control': 'no-cache' });
       if (req.method === 'HEAD') return res.end();
-      fs.createReadStream(file).pipe(res);
+      const stream = fs.createReadStream(file);
+      stream.on('error', () => res.destroy());
+      stream.pipe(res);
     });
   }
 
   const server = http.createServer((req, res) => {
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    try { route(req, res); } catch (err) {
+      // Never let one request take the server down.
+      if (!res.headersSent) { res.writeHead(500); res.end('Server error'); } else res.destroy();
+      console.error('request failed:', err && err.message);
+    }
+  });
+  function route(req, res) {
     let url;
     try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); return res.end(); }
     if (url.pathname.startsWith('/api/')) {
@@ -138,7 +169,13 @@ function createWebServer(opts = {}) {
       if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
       if (url.pathname === '/api/assistant/status' && req.method === 'GET') {
         const code = codeOf(req);
-        return json(res, 200, { available: enabled(), needsCode: !cfg.open, codeOk: cfg.open || validCode(code), models: MODELS, model: cfg.model });
+        let codeOk = cfg.open;
+        if (!cfg.open && code) {
+          if (lockedOut(req)) return json(res, 429, { error: 'Too many wrong access codes. Try again in a few minutes.' });
+          codeOk = validCode(code);
+          if (!codeOk) missed(req);
+        }
+        return json(res, 200, { available: enabled(), needsCode: !cfg.open, codeOk, models: MODELS, model: cfg.model });
       }
       if (url.pathname === '/api/crash' && crashes) return crashes.handle(req, res).catch(() => { if (!res.headersSent) json(res, 500, { error: 'Could not keep the report' }); });
       if (url.pathname === '/api/assistant' && req.method === 'POST') return assistant(req, res).catch(err => { if (!res.headersSent) json(res, 500, { error: String(err.message || err) }); else res.end(); });
@@ -146,7 +183,11 @@ function createWebServer(opts = {}) {
     }
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
     serveFile(req, res, url);
-  });
+  }
+  // Slow or idle clients are let go instead of holding sockets open.
+  server.headersTimeout = 20000;
+  server.requestTimeout = 120000;
+  server.keepAliveTimeout = 10000;
   if (opts.live !== false) createCollabServer({ server });
   return server;
 }
