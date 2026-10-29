@@ -167,3 +167,24 @@ test('scientific number format', () => {
   assert.strictEqual(F.formatValue(0.000123, '0.0E+00'), '1.2E-04');
   assert.strictEqual(F.formatValue(-5000, '0.00E+00'), '-5.00E+03');
 });
+
+test('PY hands its code, the cells it reads and its values to the app, and spills lists', () => {
+  const seen = [];
+  const cells = { A1: 1, A2: 2, B1: 'x' };
+  const e = new F.Engine({
+    getRaw: (s, r, c) => cells[F.addr(r, c)] ?? '',
+    sheetNames: () => ['Sheet1'],
+    python: (code, input) => { seen.push({ code, input }); if (code === 'busy') throw F.ERR.BUSY; return code === 'rows' ? [[1, 2], [3]] : 42; }
+  });
+  cells.C1 = '=PY("xl(""A1:A2"") + xl(""B1"")", B1, 5)';
+  assert.strictEqual(e.value('Sheet1', 0, 2), 42);
+  assert.deepStrictEqual(seen[0].input, { refs: { 'A1:A2': [[1], [2]], B1: 'x' }, args: ['x', 5] });
+  cells.D1 = '=PY("rows")'; e.invalidate();
+  assert.strictEqual(e.value('Sheet1', 0, 3), 1);
+  assert.strictEqual(e.value('Sheet1', 1, 4), '');
+  assert.strictEqual(e.value('Sheet1', 0, 4), 2);
+  cells.D5 = '=PY("busy")'; e.invalidate();
+  assert.strictEqual(e.value('Sheet1', 4, 3).error, '#BUSY!');
+  // Without an app to run it, PY is an unknown function.
+  assert.strictEqual(calc('=PY("1")'), '#NAME?');
+});

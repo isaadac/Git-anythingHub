@@ -85,6 +85,7 @@
     isLegacy: (name, r, c) => { const s = sheetNamed(name); return !!(s && (s.cells[addr(r, c)] || {}).li); },
     resolveName: name => (data ? data.resolveName(name) : null),
     tableRef: (spec, sheetName, cur) => (data ? data.resolveTable(spec, sheetName, cur) : null),
+    python: (code, input, ctx) => python.run(code, input, ctx),
     formulasInRange: (name, r1, c1, r2, c2) => {
       const s = sheetNamed(name);
       if (!s) return [];
@@ -102,6 +103,15 @@
   const valueAt = (r, c) => engine.value(sheet().name, r, c);
   const cf = SheetsCF({ engine, sheet: () => sheet() });
   const dv = SheetsDV({ engine, sheet: () => sheet(), sheetByName: n => sheetByName(n) });
+  // =PY cells: worked out in a worker; the sheet recalculates when the results come in.
+  const python = SheetsPython({ Formula: F });
+  python.onChange(() => { renderVisibleCells(); drawSelection(); });
+  /** A workbook from a file runs no Python until the person allows it. */
+  function guardPython() {
+    python.blocked = python.hasPython(book);
+    const bar = document.getElementById('pyBar');
+    bar.hidden = !python.blocked;
+  }
 
   function setCell(r, c, props, s = sheet()) {
     const key = addr(r, c);
@@ -275,6 +285,9 @@
     const sp = !cellAt(active.r, active.c) && spillBoxes.find(b => active.r >= b.row && active.r < b.row + b.h && active.c >= b.col && active.c < b.col + b.w);
     if (document.activeElement !== fx) fx.value = sp ? rawAt(sp.row, sp.col) : rawAt(active.r, active.c);
     fx.classList.toggle('ghost', !!sp);
+    const pyErr = python.errorAt(sheet().name, active.r, active.c);
+    fx.title = pyErr ? 'Python: ' + pyErr : '';
+    fx.classList.toggle('py-error', !!pyErr);
     drawSpillBox();
     syncToolbar();
     updateAggregate();
@@ -2004,7 +2017,7 @@
   }
   document.getElementById('insPivot').addEventListener('click', insertPivot);
   document.getElementById('insPivot2').addEventListener('click', insertPivot);
-  document.getElementById('refreshAll').addEventListener('click', async () => { commitEdit(); refreshPivots(false); if (data) await data.refreshQueries(); });
+  document.getElementById('refreshAll').addEventListener('click', async () => { commitEdit(); refreshPivots(false); if (data) { const n = data.refreshCleans(); if (n) UI.toast(`${n} cleaned table${n === 1 ? '' : 's'} refreshed`); await data.refreshQueries(); } });
 
   // ---------- Editing group ----------
   function clearRange(what) {
@@ -2394,7 +2407,7 @@
     safe: { name: 'Colour-blind safe', colors: ['#0072b2', '#e69f00', '#009e73', '#cc79a7', '#56b4e9', '#d55e00', '#f0e442', '#000000'] }
   };
   const chartColors = ch => (CHART_STYLES[ch.style] || CHART_STYLES.office).colors;
-  const CHART_TYPES = ['bar', 'line', 'pie', 'hbar', 'area', 'scatter', 'doughnut', 'combo'];
+  const CHART_TYPES = ['bar', 'line', 'pie', 'hbar', 'area', 'scatter', 'doughnut', 'combo', 'waterfall', 'funnel', 'map'];
   function insertChart(type) {
     const g = opRange();
     if (!guardSheet('objects')) return;
@@ -2458,6 +2471,9 @@
     ctx.fillText(title, W / 2, 22);
     ctx.font = `11.5px ${FONT}`;
     ctx.lineJoin = ctx.lineCap = 'round';
+    if (ch.type === 'waterfall') return drawWaterfall(ctx, data, W, H, C, ch);
+    if (ch.type === 'funnel') return drawFunnel(ctx, data, W, H, C, ch);
+    if (ch.type === 'map') return drawMap(ctx, data, W, H, C, ch, canvas);
     if (ch.type === 'pie' || ch.type === 'doughnut') {
       const vals = data.series[0].values.map(v => Math.max(0, v));
       const total = vals.reduce((a, b) => a + b, 0) || 1;
@@ -2564,6 +2580,113 @@
       }
     });
     if (legendH) legend(ctx, data.series.map(s => s.name), C, W, H);
+  }
+  /**
+   * Waterfall: how a starting value is moved by rises and falls to an end. Each step floats from
+   * the running total; a row labelled Total (or Subtotal, Net, End…) is a column from zero.
+   */
+  function drawWaterfall(ctx, data, W, H, C) {
+    const vals = data.series[0].values, labels = data.labels;
+    const isTotal = l => /^(sub)?totals?\b|^net\b|^end\b|^closing\b|^balance\b/i.test(String(l).trim());
+    let run = 0;
+    const bars = vals.map((v, i) => {
+      if (isTotal(labels[i])) { run = i === 0 ? v : run; return { from: 0, to: run, kind: 'total' }; }
+      const from = run; run += v;
+      return { from, to: run, kind: v >= 0 ? 'up' : 'down' };
+    });
+    const all = bars.flatMap(b => [b.from, b.to]);
+    let max = Math.max(0, ...all), min = Math.min(0, ...all);
+    if (max === min) max = min + 1;
+    const step = niceStep((max - min) / 5);
+    max = Math.ceil(max / step) * step; min = Math.floor(min / step) * step;
+    ctx.font = `11.5px ${FONT}`;
+    const L = 14 + Math.max(...[min, max].map(v => ctx.measureText(fmtNum(v)).width)), R = W - 16, T = 38, B = H - 50;
+    const y = v => B - (v - min) / (max - min) * (B - T);
+    for (let v = min; v <= max + step / 1e6; v += step) { ctx.strokeStyle = Math.abs(v) < step / 1e6 ? BASE : GRID; ctx.lineWidth = 1; const yy = Math.round(y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, yy); ctx.lineTo(R, yy); ctx.stroke(); ctx.fillStyle = AXIS; ctx.textAlign = 'right'; ctx.fillText(fmtNum(v), L - 8, yy + 4); }
+    const band = (R - L) / bars.length, bw = band * 0.62;
+    const col = { up: C[0], down: C[1], total: '#8a94a6' };
+    bars.forEach((b, i) => {
+      const x = L + band * i + (band - bw) / 2, top = y(Math.max(b.from, b.to)), bot = y(Math.min(b.from, b.to));
+      ctx.fillStyle = col[b.kind];
+      ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(x, top, bw, Math.max(1, bot - top), 3); else ctx.rect(x, top, bw, Math.max(1, bot - top)); ctx.fill();
+      // A thin line carries the running total to the next bar.
+      if (i < bars.length - 1) { ctx.strokeStyle = BASE; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(x + bw, y(b.to) + 0.5); ctx.lineTo(x + band, y(b.to) + 0.5); ctx.stroke(); ctx.setLineDash([]); }
+      ctx.fillStyle = INK; ctx.font = `600 11px ${FONT}`; ctx.textAlign = 'center';
+      ctx.fillText(b.kind === 'total' ? fmtNum(b.to) : (b.to >= b.from ? '+' : '') + fmtNum(b.to - b.from), x + bw / 2, top - 5);
+      ctx.font = `11.5px ${FONT}`; ctx.fillStyle = AXIS; ctx.fillText(String(labels[i]).slice(0, Math.max(3, Math.floor(band / 6.5))), x + bw / 2, B + 16);
+    });
+    legend(ctx, ['Increase', 'Decrease', 'Total'], [col.up, col.down, col.total], W, H);
+  }
+  /** Funnel: each stage as a centred bar as wide as its value, with its share of the first. */
+  function drawFunnel(ctx, data, W, H, C) {
+    const vals = data.series[0].values.map(v => Math.max(0, v)), labels = data.labels;
+    const max = Math.max(...vals, 1), T = 38, B = H - 12, n = vals.length;
+    const rowH = (B - T) / n, mid = W * 0.58, span = W * 0.62;
+    ctx.font = `11.5px ${FONT}`;
+    vals.forEach((v, i) => {
+      const w = Math.max(2, v / max * span), y = T + rowH * i + rowH * 0.12, h = rowH * 0.76;
+      ctx.fillStyle = C[0];
+      ctx.globalAlpha = 1 - i / (n * 1.6);
+      ctx.beginPath(); if (ctx.roundRect) ctx.roundRect(mid - w / 2, y, w, h, 4); else ctx.rect(mid - w / 2, y, w, h); ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.textAlign = 'center'; ctx.font = `600 12px ${FONT}`;
+      const inside = w > ctx.measureText(fmtNum(v)).width + 12;
+      ctx.fillStyle = inside ? '#fff' : INK;
+      ctx.fillText(fmtNum(v), inside ? mid : mid + w / 2 + 6 + ctx.measureText(fmtNum(v)).width / 2, y + h / 2 + 4);
+      ctx.textAlign = 'right'; ctx.font = `11.5px ${FONT}`; ctx.fillStyle = INK;
+      ctx.fillText(String(labels[i]).slice(0, 18), mid - span / 2 - 10, y + h / 2 - 2);
+      ctx.fillStyle = AXIS; ctx.fillText(i ? `${Math.round(v / (vals[0] || 1) * 100)}%` : '100%', mid - span / 2 - 10, y + h / 2 + 12);
+    });
+  }
+  /** Countries named in the first column, shaded by their value (an equirectangular world map). */
+  const COUNTRY_ALIASES = { usa: 'United States of America', us: 'United States of America', 'united states': 'United States of America', america: 'United States of America', uk: 'United Kingdom', 'great britain': 'United Kingdom', britain: 'United Kingdom', england: 'United Kingdom', russia: 'Russia', 'south korea': 'South Korea', korea: 'South Korea', 'north korea': 'North Korea', uae: 'United Arab Emirates', drc: 'Dem. Rep. Congo', 'czech republic': 'Czechia', 'ivory coast': "Côte d'Ivoire", holland: 'Netherlands', 'the netherlands': 'Netherlands' };
+  let mapLoading = null;
+  function drawMap(ctx, data, W, H, C, ch, canvas) {
+    if (!window.WorldMap) {
+      // The outlines load the first time a map chart is drawn.
+      if (!mapLoading) mapLoading = new Promise(res => { const sc = document.createElement('script'); sc.src = 'js/world-map.js'; sc.onload = res; sc.onerror = res; document.head.appendChild(sc); });
+      mapLoading.then(() => { if (window.WorldMap && canvas.isConnected) drawChart(canvas, ch); });
+      ctx.fillStyle = AXIS; ctx.textAlign = 'center'; ctx.fillText('Loading the map…', W / 2, H / 2);
+      return;
+    }
+    const byName = new Map(WorldMap.countries.map(c => [c.name.toLowerCase(), c]));
+    const vals = new Map();
+    data.labels.forEach((l, i) => {
+      const k = String(l).trim().toLowerCase();
+      const c = byName.get(k) || byName.get((COUNTRY_ALIASES[k] || '').toLowerCase());
+      if (c) vals.set(c, data.series[0].values[i]);
+    });
+    const nums = [...vals.values()];
+    const lo = Math.min(...nums, 0), hi = Math.max(...nums, 1);
+    const T = 34, B = H - 34, mw = W - 20, mh = B - T;
+    // Fit 360° × 150° (the populated latitudes) into the box.
+    const k = Math.min(mw / 360, mh / 150), ox = 10 + (mw - 360 * k) / 2, oy = T + (mh - 150 * k) / 2;
+    const px = (lon, lat) => [ox + (lon + 180) * k, oy + (85 - lat) * k];
+    const accent = C[0];
+    const shade = v => { const t = hi === lo ? 1 : (v - lo) / (hi - lo); return mixColor('#e8eef9', accent, 0.15 + 0.85 * t); };
+    for (const c of WorldMap.countries) {
+      ctx.beginPath();
+      // An outline that crosses the date line jumps across the map: it is drawn in two pieces.
+      for (const r of c.rings) { for (let i = 0; i < r.length; i += 2) { const [x, y] = px(r[i], r[i + 1]); if (i && Math.abs(r[i] - r[i - 2]) < 180) ctx.lineTo(x, y); else ctx.moveTo(x, y); } }
+      ctx.fillStyle = vals.has(c) ? shade(vals.get(c)) : '#eef0f3';
+      ctx.fill('evenodd');
+      ctx.strokeStyle = '#fff'; ctx.lineWidth = 0.6; ctx.stroke();
+    }
+    // A scale from the lowest value to the highest.
+    const gx = W / 2 - 90, gy = H - 22;
+    const grad = ctx.createLinearGradient(gx, 0, gx + 180, 0);
+    grad.addColorStop(0, shade(lo)); grad.addColorStop(1, shade(hi));
+    ctx.fillStyle = grad; ctx.fillRect(gx, gy, 180, 8);
+    ctx.fillStyle = AXIS; ctx.font = `11px ${FONT}`;
+    ctx.textAlign = 'right'; ctx.fillText(fmtNum(lo), gx - 6, gy + 8);
+    ctx.textAlign = 'left'; ctx.fillText(fmtNum(hi), gx + 186, gy + 8);
+    const missing = data.labels.length - vals.size;
+    if (missing > 0) { ctx.textAlign = 'right'; ctx.fillText(`${missing} not found`, W - 10, H - 8); }
+  }
+  function mixColor(a, b, t) {
+    const p = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const x = p(a), y = p(b);
+    return `rgb(${x.map((v, i) => Math.round(v + (y[i] - v) * t)).join(',')})`;
   }
   /** A bar with its outer end rounded. */
   function bar(ctx, x, y, w, h, end) {
@@ -2729,6 +2852,8 @@
   on('goalSeek', () => data.goalSeek());
   on('solverBtn', () => data.solver());
   on('fromWeb', () => data.fromWeb());
+  on('cleanData', () => data.cleanData());
+  document.getElementById('pyAllow').addEventListener('click', () => { python.blocked = false; document.getElementById('pyBar').hidden = true; renderVisibleCells(); drawSelection(); });
   on('scriptsBtn', () => data.scriptsPane());
   on('newScript', () => data.newScript());
 
@@ -2926,6 +3051,9 @@
       else if (ex && typeof ex.spark === 'string' && ex.spark) { try { s.sparklines = SheetsSpark.fromXlsx(ex.spark, sn); } catch (err) { console.info('Sparklines skipped:', err); } }
       if (ms && ms.name === sn && Array.isArray(ms.slicers)) s.slicers = ms.slicers.map(SheetsTables.cleanSlicer).filter(Boolean).slice(0, 100);
       if (ms && ms.name === sn && Array.isArray(ms.queries)) s.queries = ms.queries.filter(q => q && typeof q.url === 'string' && /^https?:\/\//.test(q.url)).map(q => ({ url: q.url.slice(0, 2000), table: Math.max(0, +q.table || 0), r: Math.max(0, +q.r || 0), c: Math.max(0, +q.c || 0), h: Math.max(0, +q.h || 0), w: Math.max(0, +q.w || 0) })).slice(0, 50);
+      // Clean & Transform queries: a source range and steps (plain data, rebuilt from known fields).
+      if (ms && ms.name === sn && Array.isArray(ms.cleans)) s.cleans = ms.cleans.filter(q => q && q.src && typeof q.src.sheet === 'string' && typeof q.src.ref === 'string' && /^[A-Z]{1,3}\d+:[A-Z]{1,3}\d+$/.test(q.src.ref) && Array.isArray(q.steps))
+        .map(q => ({ src: { sheet: q.src.sheet.slice(0, 31), ref: q.src.ref }, steps: q.steps.slice(0, 200).map(SheetsClean.cleanStep).filter(Boolean), r: Math.max(0, +q.r || 0), c: Math.max(0, +q.c || 0), h: Math.max(0, +q.h || 0), w: Math.max(0, +q.w || 0) })).slice(0, 50);
       if (ms && ms.name === sn && ms.solver && typeof ms.solver === 'object') {
         const v = ms.solver, str = x => (typeof x === 'string' ? x.slice(0, 5000) : '');
         s.solver = { obj: str(v.obj), goal: ['max', 'min', 'value'].includes(v.goal) ? v.goal : 'max', target: +v.target || 0, vars: str(v.vars), cons: str(v.cons), nonneg: v.nonneg !== false };
@@ -3003,7 +3131,7 @@
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
       meta.sheets.push({ name: s.name, protect: s.protect || null, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [],
-        tables: s.tables || [], sparklines: s.sparklines || [], slicers: s.slicers || [], queries: s.queries || [], solver: s.solver || null });
+        tables: s.tables || [], sparklines: s.sparklines || [], slicers: s.slicers || [], queries: s.queries || [], cleans: s.cleans || [], solver: s.solver || null });
     });
     meta.scripts = book.scripts || [];
     // Workbook names, as Excel's defined names.
@@ -3038,7 +3166,9 @@
       const series = (ch.type === 'pie' || ch.type === 'doughnut' ? data.series.slice(0, 1) : data.series).map((x, k) => ({
         ...x, color: chartColors(ch)[k % 8], catRef: data.catRef, cats: ch.type === 'scatter' ? data.xs : data.labels, catNumeric: ch.type === 'scatter' || data.catNumeric
       }));
-      parts.push(SheetsCharts.toXml({ type: ch.type, title: ch.title || (series.length === 1 && ch.type !== 'scatter' ? series[0].name : ''), series, palette: chartColors(ch) }));
+      // Excel has no waterfall, funnel or map in this chart format: it gets columns (bars for a
+      // funnel); the chart's own kind comes back from the workbook's Isadek details.
+      parts.push(SheetsCharts.toXml({ type: { waterfall: 'bar', funnel: 'hbar', map: 'bar' }[ch.type] || ch.type, title: ch.title || (series.length === 1 && ch.type !== 'scatter' ? series[0].name : ''), series, palette: chartColors(ch) }));
       const at = (x, y) => { const c = cellOfPx(s, Math.max(0, x - RH_W), 'col'), r = cellOfPx(s, Math.max(0, y - HEAD_H), 'row'); return { col: c.i, colOff: c.off, row: r.i, rowOff: r.off }; };
       anchors.push({ name: ch.title || 'Chart ' + (i + 1), from: at(ch.x, ch.y), to: at(ch.x + ch.w, ch.y + ch.h) });
     });
@@ -3125,6 +3255,7 @@
       return;
     }
     book = next;
+    guardPython();
     undoStack.length = redoStack.length = undoMarks.length = redoMarks.length = 0;
     undoBytes = 0;
     engine.astCache.clear();

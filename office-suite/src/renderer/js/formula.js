@@ -33,7 +33,7 @@
     DIV0: new FormulaError('#DIV/0!'), VALUE: new FormulaError('#VALUE!'), REF: new FormulaError('#REF!'),
     NAME: new FormulaError('#NAME?'), NA: new FormulaError('#N/A'), NUM: new FormulaError('#NUM!'),
     CIRC: new FormulaError('#CIRC!'), ERROR: new FormulaError('#ERROR!'), SPILL: new FormulaError('#SPILL!'), CALC: new FormulaError('#CALC!'),
-    NULL: new FormulaError('#NULL!')
+    NULL: new FormulaError('#NULL!'), BUSY: new FormulaError('#BUSY!'), BLOCKED: new FormulaError('#BLOCKED!')
   };
   const isErr = v => v instanceof FormulaError;
 
@@ -41,7 +41,7 @@
   const TOKEN_RE = /\s*(?:(\d+\.?\d*(?:[eE][+-]?\d+)?|\.\d+(?:[eE][+-]?\d+)?)|("(?:[^"]|"")*")|((?:'(?:[^']|'')+'|[A-Za-z_][\w.]*(?::[A-Za-z_][\w.]*)?)!\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)|(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)(?![\w(\[])|((?:[A-Za-z_\\][\w.\\]*)?\[(?:[^\[\]']|'.|\[(?:[^\[\]']|'.)*\])*\])|([A-Za-z_\\][\w.\\]*)|(<>|<=|>=|[-+*/^&=<>%(),:;]))/y;
 
   const CP1252 = '€\u0081‚ƒ„…†‡ˆ‰Š‹Œ\u008DŽ\u008F\u0090‘’“”•–—˜™š›œ\u009DžŸ';
-  const ERR_LIT_RE = /^\s*(?:(?:'(?:[^']|'')+'|[A-Za-z_][\w.]*)!)?(#(?:NULL!|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|SPILL!|CALC!|GETTING_DATA))/i;
+  const ERR_LIT_RE = /^\s*(?:(?:'(?:[^']|'')+'|[A-Za-z_][\w.]*)!)?(#(?:NULL!|DIV\/0!|VALUE!|REF!|NAME\?|NUM!|N\/A|SPILL!|CALC!|BUSY!|BLOCKED!|GETTING_DATA))/i;
   function tokenize(src) {
     const tokens = [];
     TOKEN_RE.lastIndex = 0;
@@ -405,6 +405,30 @@
       for (; i + 1 < a.length; i += 2) if (eqLoose(scalar(v), scalar(ev(a[i])))) return ev(a[i + 1]);
       if (i < a.length) return ev(a[i]);
       throw ERR.NA;
+    },
+    // Python in a cell: =PY(code, value…). The app runs the code (off the page, in a worker) and
+    // hands back its last expression's value, or #BUSY! while it runs. In the code, xl("A1:B5")
+    // reads cells (a range is a list of rows) and args holds the values after the code.
+    PY: (a, ev, ctx) => {
+      const run = ctx.engine.book.python;
+      if (!run || !a.length) throw ERR.NAME;
+      const code = toStr(scalar(ev(a[0])));
+      const plain = v => (isErr(v) ? null : v);
+      const data = v => (v instanceof Range ? (isMulti(v) ? v.rows.map(r => r.map(plain)) : plain(v.rows[0][0])) : plain(v));
+      const refs = {};
+      for (const m of code.matchAll(/\bxl\(\s*["']([^"'\n]+)["']/g)) {
+        if (m[1] in refs) continue;
+        let v;
+        try { v = ctx.engine.evalNode(ctx.engine.ast('=' + m[1]), ctx.sheet); } catch (e) { if (isErr(e)) throw ERR.REF; throw e; }
+        refs[m[1]] = data(v);
+      }
+      const v = run(code, { refs, args: a.slice(1).map(x => data(ev(x))) }, ctx);
+      if (Array.isArray(v)) {
+        const rows = v.map(r => (Array.isArray(r) ? r : [r]));
+        const w = Math.max(1, ...rows.map(r => r.length));
+        return rows.length ? new Range(rows.map(r => Array.from({ length: w }, (_, i) => (r[i] === undefined || r[i] === null ? '' : r[i])))) : '';
+      }
+      return v === null || v === undefined ? '' : v;
     }
   };
   const scalar = v => (v instanceof Range ? v.flat()[0] : v);
@@ -861,7 +885,7 @@
     'ERROR.TYPE': (a, ev) => {
       let v;
       try { v = scalar(ev(a[0])); } catch (e) { if (!isErr(e)) throw e; v = e; }
-      const code = isErr(v) && { '#NULL!': 1, '#DIV/0!': 2, '#VALUE!': 3, '#REF!': 4, '#NAME?': 5, '#NUM!': 6, '#N/A': 7, '#SPILL!': 9, '#CALC!': 14 }[v.error];
+      const code = isErr(v) && { '#NULL!': 1, '#DIV/0!': 2, '#VALUE!': 3, '#REF!': 4, '#NAME?': 5, '#NUM!': 6, '#N/A': 7, '#SPILL!': 9, '#CALC!': 14, '#BUSY!': 19 }[v.error];
       if (!code) throw ERR.NA;
       return code;
     },

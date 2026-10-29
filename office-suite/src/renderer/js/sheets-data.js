@@ -862,6 +862,132 @@ function main(workbook) {
     }
 
     // =====================================================================================
+    // Clean & Transform (Power Query–style): steps on a copy of a range, loaded to a new sheet
+    // =====================================================================================
+    const refOfArea = g => `${F.indexToCol(g.c1)}${g.r1 + 1}:${F.indexToCol(g.c2)}${g.r2 + 1}`;
+    /** The values of a range on a sheet, as a table (the first row is the header). */
+    function readTable(srcSheet, g) {
+      const rows = [];
+      for (let r = g.r1; r <= g.r2 && rows.length <= 1000000; r++) {
+        const row = [];
+        for (let c = g.c1; c <= g.c2; c++) { const v = ctx.engine.value(srcSheet.name, r, c); row.push(v && typeof v === 'object' && v.error ? v.error : v); }
+        rows.push(row);
+      }
+      return rows;
+    }
+    // icons: wand-sparkles scissors-line-dashed text-cursor-input arrow-down-wide-narrow list-filter copy-minus combine arrow-down-to-line rotate-3d table-2 trash-2 rows-3 group case-sensitive replace eraser hash
+    async function cleanData() {
+      ctx.commitEdit();
+      const g0 = currentRegion();
+      if (g0.r1 === g0.r2 && g0.c1 === g0.c2) return UI.toast('Select the data to clean (with its header row)', 4000);
+      const src = sheet(), g = { ...g0, r2: Math.min(g0.r2, g0.r1 + 1000000) };
+      const source = readTable(src, g);
+      const steps = [];
+      const back = document.createElement('div');
+      back.className = 'modal-backdrop';
+      back.innerHTML = `<div class="modal clean-editor" role="dialog" aria-label="Clean and Transform">
+        <h2>Clean &amp; Transform</h2>
+        <p class="hint"></p>
+        <div class="ce-tools" role="toolbar" aria-label="Transform"></div>
+        <div class="ce-body"><div class="ce-preview" tabindex="0"><table></table></div>
+        <aside class="ce-steps"><b>Applied steps</b><ol></ol></aside></div>
+        <div class="actions"><button class="cancel">Cancel</button><button class="primary load">Load to new sheet</button></div></div>`;
+      const q = sel => back.querySelector(sel);
+      q('.hint').textContent = `From ${src.name}!${refOfArea(g)}. Each step works on the result of the one before; Data → Refresh All runs them again on the latest data.`;
+      let result = SheetsClean.run(source, steps);
+      const head = () => result[0] || [];
+      function draw() {
+        result = SheetsClean.run(source, steps);
+        const t = q('.ce-preview table');
+        t.innerHTML = '';
+        const thead = document.createElement('thead'), tr = document.createElement('tr');
+        head().forEach(h => { const th = document.createElement('th'); th.textContent = h; tr.appendChild(th); });
+        thead.appendChild(tr); t.appendChild(thead);
+        const tb = document.createElement('tbody');
+        result.slice(1, 101).forEach(row => { const r = document.createElement('tr'); row.forEach(v => { const td = document.createElement('td'); td.textContent = v === '' || v === null || v === undefined ? '' : String(v); if (typeof v === 'number') td.className = 'num'; r.appendChild(td); }); tb.appendChild(r); });
+        t.appendChild(tb);
+        const ol = q('.ce-steps ol');
+        ol.innerHTML = '';
+        const li0 = document.createElement('li'); li0.textContent = `Source (${source.length - 1} rows)`; li0.className = 'src'; ol.appendChild(li0);
+        steps.forEach((st, i) => {
+          const li = document.createElement('li');
+          const span = document.createElement('span'); span.textContent = SheetsClean.describe(st);
+          const x = document.createElement('button'); x.title = 'Remove this step'; x.setAttribute('aria-label', 'Remove step: ' + span.textContent); x.innerHTML = '<span class="ico" data-icon="trash-2"></span>';
+          x.addEventListener('click', () => { steps.splice(i, 1); draw(); });
+          li.append(span, x); ol.appendChild(li);
+        });
+        q('.load').textContent = `Load ${Math.max(0, result.length - 1).toLocaleString()} rows to a new sheet`;
+      }
+      const colField = (name, label, multi) => ({ name, label, type: 'select', options: (multi ? [{ value: '*', label: 'All columns' }] : []).concat(head().map(h => ({ value: h, label: h }))) });
+      const pickCols = v => (v === '*' ? head().slice() : [v]);
+      const TOOLS = [
+        ['Trim spaces', 'eraser', async () => { const r = await UI.form('Trim Spaces', [colField('c', 'Column', true)]); return r && [{ op: 'trim', cols: pickCols(r.c) }, { op: 'clean', cols: pickCols(r.c) }]; }],
+        ['Change case', 'case-sensitive', async () => { const r = await UI.form('Change Case', [colField('c', 'Column', true), { name: 'to', label: 'To', type: 'select', options: [{ value: 'proper', label: 'Capitalize Each Word' }, { value: 'upper', label: 'UPPERCASE' }, { value: 'lower', label: 'lowercase' }] }]); return r && { op: 'case', cols: pickCols(r.c), to: r.to }; }],
+        ['Replace values', 'replace', async () => { const r = await UI.form('Replace Values', [colField('c', 'Column', true), { name: 'find', label: 'Find' }, { name: 'with', label: 'Replace with' }, { name: 'whole', label: 'Match', type: 'select', options: [{ value: '', label: 'Anywhere in the cell' }, { value: '1', label: 'The whole cell' }] }]); return r && r.find !== '' && { op: 'replace', cols: pickCols(r.c), find: r.find, with: r.with, whole: r.whole === '1' }; }],
+        ['Change type', 'hash', async () => { const r = await UI.form('Change Type', [colField('c', 'Column', true), { name: 'to', label: 'To', type: 'select', options: ['number', 'date', 'text'] }]); return r && { op: 'type', cols: pickCols(r.c), to: r.to }; }],
+        ['Split column', 'scissors-line-dashed', async () => { const r = await UI.form('Split Column', [colField('c', 'Column'), { name: 'by', label: 'By (a delimiter, such as , or a space)', value: ',' }]); return r && r.by !== '' && { op: 'split', col: r.c, by: r.by === 'space' ? ' ' : r.by }; }],
+        ['Merge columns', 'combine', async () => { const r = await UI.form('Merge Columns', [colField('a', 'First column'), colField('b', 'Then'), { name: 'sep', label: 'With between them', value: ' ' }, { name: 'name', label: 'New column name', value: 'Merged' }]); return r && r.a !== r.b && { op: 'merge', cols: [r.a, r.b], sep: r.sep, name: r.name }; }],
+        ['Rename', 'text-cursor-input', async () => { const r = await UI.form('Rename Column', [colField('c', 'Column'), { name: 'to', label: 'New name' }]); return r && r.to.trim() && { op: 'rename', col: r.c, to: r.to.trim() }; }],
+        ['Remove columns', 'table-2', async () => { const r = await UI.form('Remove Column', [colField('c', 'Column')]); return r && { op: 'remove', cols: [r.c] }; }],
+        ['Fill down', 'arrow-down-to-line', async () => { const r = await UI.form('Fill Down', [colField('c', 'Column', true)]); return r && { op: 'fillDown', cols: pickCols(r.c) }; }],
+        ['Filter rows', 'list-filter', async () => { const r = await UI.form('Keep Rows', [colField('c', 'Where column'), { name: 'cond', label: 'Is', type: 'select', options: SheetsClean.CONDITIONS }, { name: 'v', label: 'Value' }]); return r && { op: 'filter', col: r.c, cond: r.cond, value: r.v }; }],
+        ['Remove blank rows', 'rows-3', async () => ({ op: 'removeBlankRows' })],
+        ['Remove duplicates', 'copy-minus', async () => { const r = await UI.form('Remove Duplicates', [colField('c', 'Compare', true)]); return r && { op: 'dedupe', cols: r.c === '*' ? [] : [r.c] }; }],
+        ['Sort', 'arrow-down-wide-narrow', async () => { const r = await UI.form('Sort', [colField('c', 'By'), { name: 'd', label: 'Order', type: 'select', options: [{ value: '', label: 'Ascending (A to Z, small to large)' }, { value: '1', label: 'Descending' }] }]); return r && { op: 'sort', col: r.c, desc: r.d === '1' }; }],
+        ['Group by', 'group', async () => { const r = await UI.form('Group By', [colField('by', 'Group by'), { name: 'agg', label: 'Calculate', type: 'select', options: ['count', 'sum', 'average', 'min', 'max', 'distinct'] }, colField('c', 'Of column')]); return r && { op: 'group', by: [r.by], agg: r.agg, col: r.agg === 'count' ? '' : r.c }; }],
+        ['Unpivot', 'rotate-3d', async () => { const r = await UI.form('Unpivot Columns', [colField('a', 'From column'), colField('b', 'To column')]); if (!r) return null; const h = head(), i = h.indexOf(r.a), j = h.indexOf(r.b); return i >= 0 && j >= i && { op: 'unpivot', cols: h.slice(i, j + 1) }; }]
+      ];
+      const tools = q('.ce-tools');
+      for (const [label, icon, make] of TOOLS) {
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.innerHTML = `<span class="ico" data-icon="${icon}"></span>`;
+        b.append(label);
+        b.addEventListener('click', async () => {
+          const st = await make();
+          if (!st) return;
+          (Array.isArray(st) ? st : [st]).forEach(x => steps.push(x));
+          draw();
+        });
+        tools.appendChild(b);
+      }
+      draw();
+      document.body.appendChild(back);
+      const close = () => back.remove();
+      q('.cancel').addEventListener('click', close);
+      back.addEventListener('keydown', e => { if (e.key === 'Escape' && !document.querySelectorAll('.modal-backdrop')[1]) close(); });
+      q('.load').addEventListener('click', () => {
+        close();
+        ctx.snapshot();
+        const dest = ctx.addSheetNamed(ctx.uniqueName(('Cleaned ' + src.name).slice(0, 31)));
+        const query = { src: { sheet: src.name, ref: refOfArea(g) }, steps: steps.slice(), r: 0, c: 0, h: 0, w: 0 };
+        writeRows(dest, query, result);
+        dest.cleans = [query];
+        ctx.buildGrid();
+        UI.toast(`${result.length - 1} rows loaded. Data → Refresh All runs the steps again.`, 4000);
+      });
+      q('.ce-tools .btn').focus();
+    }
+    /** Runs every Clean & Transform query again on its source's current data. */
+    function refreshCleans() {
+      let n = 0;
+      for (const s of book().sheets) for (const qy of s.cleans || []) {
+        const src = book().sheets.find(x => x.name === qy.src.sheet);
+        const a = src && SheetsCF.area(qy.src.ref);
+        if (!a) continue;
+        // Rows added right below the data are part of it.
+        const rowFilled = r => { for (let c = a.c1; c <= a.c2; c++) if (ctx.rawAt(r, c, src) !== '') return true; return false; };
+        while (a.r2 < 1048575 && rowFilled(a.r2 + 1)) a.r2++;
+        if (!n) ctx.snapshot();
+        qy.src.ref = refOfArea(a);
+        writeRows(s, qy, SheetsClean.run(readTable(src, a), qy.steps));
+        n++;
+      }
+      if (n) ctx.changed();
+      return n;
+    }
+
+    // =====================================================================================
     // Saving and opening
     // =====================================================================================
     /** Formula text as Excel stores it, given where the cell is. */
@@ -888,7 +1014,7 @@ function main(workbook) {
       // sparklines and slicers
       insertSparklines, clearSparklines, sparkAt, sparkCells, insertSlicer, renderSlicers,
       // scripts and web data
-      scriptsPane, newScript, fromWeb, refreshQueries,
+      scriptsPane, newScript, fromWeb, refreshQueries, cleanData, refreshCleans,
       // files
       excelFormulaOpts, tablesXml
     };

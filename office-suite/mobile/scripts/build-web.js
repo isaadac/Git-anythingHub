@@ -17,7 +17,7 @@ const wanted = new Set();
 for (const f of fs.readdirSync(SRC, { recursive: true })) {
   if (!/\.(html|js)$/.test(f)) continue;
   const text = fs.readFileSync(path.join(SRC, f), 'utf8');
-  for (const m of text.matchAll(/node_modules\/((?:@[\w.-]+\/)?[\w.-]+\/[\w./-]+\.(?:js|css|wasm))/g)) wanted.add(m[1]);
+  for (const m of text.matchAll(/node_modules\/((?:@[\w.-]+\/)?[\w.-]+\/[\w./-]+\.(?:json|m?js|css|wasm|zip)\b)/g)) wanted.add(m[1]);
 }
 for (const rel of wanted) {
   const from = path.join(ROOT, 'node_modules', rel);

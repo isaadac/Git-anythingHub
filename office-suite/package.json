@@ -32,6 +32,7 @@
     "jszip": "3.10.2",
     "mammoth": "1.13.0",
     "pptxgenjs": "4.0.1",
+    "pyodide": "314.0.7",
     "xlsx": "0.18.5"
   },
   "devDependencies": {
@@ -39,7 +40,8 @@
     "electron": "45.0.0",
     "electron-builder": "26.18.0",
     "lucide-static": "^1.63.0",
-    "playwright": "1.63.0"
+    "playwright": "1.63.0",
+    "world-atlas": "^2.0.2"
   },
   "homepage": "https://github.com/isaadac/Git-anythingHub",
   "repository": {

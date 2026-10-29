@@ -1,6 +1,9 @@
 'use strict';
 // Isadek Office — Español. Keys are the English text as it appears in the interface.
 (window.ISADEK_I18N = window.ISADEK_I18N || {}).es = {
+  // Clean & Transform
+  "Clean & Transform": "Limpiar y transformar", "Applied steps": "Pasos aplicados",
+  "Waterfall": "Cascada", "Funnel": "Embudo", "Map": "Mapa", "Run Python": "Ejecutar Python",
   // Live editing: activity and following
   "Activity": "Actividad", "Changes made in this session appear here.": "Los cambios de esta sesión aparecen aquí.", "Watch": "Ver", "Copy link": "Copiar vínculo", "Leave session": "Salir de la sesión",
   // Assistant and dictation

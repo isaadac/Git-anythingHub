@@ -28,7 +28,7 @@ const { createCrashCollector } = require('./crash-collector');
 
 const ROOT = path.resolve(__dirname, '../..');
 const RENDERER = path.join(ROOT, 'src/renderer');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.woff2': 'font/woff2', '.map': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.zip': 'application/zip', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.woff2': 'font/woff2', '.map': 'application/json' };
 const MAX_BODY = 4e6;
 
 /** Library files the pages load (../../node_modules/…): only those are served from node_modules. */
@@ -37,7 +37,7 @@ function libraryFiles() {
   for (const f of fs.readdirSync(RENDERER, { recursive: true })) {
     if (!/\.(html|js)$/.test(f)) continue;
     const text = fs.readFileSync(path.join(RENDERER, f), 'utf8');
-    for (const m of text.matchAll(/node_modules\/((?:@[\w.-]+\/)?[\w.-]+\/[\w./-]+\.(?:js|css|wasm))/g)) wanted.add('node_modules/' + m[1]);
+    for (const m of text.matchAll(/node_modules\/((?:@[\w.-]+\/)?[\w.-]+\/[\w./-]+\.(?:json|m?js|css|wasm|zip)\b)/g)) wanted.add('node_modules/' + m[1]);
   }
   return wanted;
 }

@@ -173,6 +173,9 @@
       <button class="btn big" data-chart="scatter"><span class="ico" data-icon="chart-scatter"></span>Scatter</button>
       <button class="btn big" data-chart="doughnut"><span class="ico" data-icon="donut"></span>Doughnut</button>
       <button class="btn big" data-chart="combo" title="Columns with the last series as a line"><span class="ico" data-icon="chart-no-axes-combined"></span>Combo</button>
+      <button class="btn big" data-chart="waterfall" title="How a value rises and falls to a total (a row named Total is a column from zero)"><span class="ico" data-icon="chart-column-decreasing"></span>Waterfall</button>
+      <button class="btn big" data-chart="funnel" title="Stages of a process, each as wide as its value"><span class="ico" data-icon="filter"></span>Funnel</button>
+      <button class="btn big" data-chart="map" title="Countries named in the first column, shaded by value"><span class="ico" data-icon="earth"></span>Map</button>
     </div><div class="label">Charts</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="insFunction"><span class="ico" data-icon="square-function"></span>Function</button>
@@ -200,6 +203,7 @@
       <button class="btn big" id="insPivot2" title="Summarize data with a PivotTable"><span class="ico" data-icon="table-properties"></span>PivotTable</button>
       <button class="btn big" id="refreshAll" title="Refresh every PivotTable and web query"><span class="ico" data-icon="refresh-cw"></span>Refresh<br>All</button>
       <button class="btn big" id="fromWeb" title="Get data from a CSV or JSON file, or the tables of a web page"><span class="ico" data-icon="globe"></span>From<br>Web</button>
+      <button class="btn big" id="cleanData" title="Clean and reshape the selected data step by step (trim, split, filter, remove duplicates, group…)"><span class="ico" data-icon="wand-sparkles"></span>Clean &amp;<br>Transform</button>
     </div><div class="label">Get &amp; Transform Data</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="sortAsc2"><span class="ico" data-icon="arrow-down-a-z"></span>Sort<br>A to Z</button>
@@ -265,6 +269,11 @@
   <input id="nameBox" class="namebox" value="A1" aria-label="Name box" spellcheck="false">
   <span class="fx">ƒx</span>
   <input id="fx" class="fx-input" aria-label="Formula bar" spellcheck="false" autocomplete="off">
+</div>
+<div class="py-bar" id="pyBar" role="status" hidden>
+  <span class="ico" data-icon="shield-alert"></span>
+  <span><b>Python</b> This workbook has Python formulas. They run on this device, with no network or file access.</span>
+  <button id="pyAllow" class="primary">Run Python</button>
 </div>
 
 <div class="workspace">
@@ -354,6 +363,8 @@
 <script src="js/sheets-whatif.js"></script>
 <script src="js/sheets-spark.js"></script>
 <script src="js/sheets-web.js"></script>
+<script src="js/sheets-clean.js"></script>
+<script src="js/sheets-python.js"></script>
 <script src="js/sheets-data.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/sheets.js"></script>
