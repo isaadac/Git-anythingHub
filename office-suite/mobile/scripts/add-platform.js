@@ -45,7 +45,7 @@ const MIME = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   'application/vnd.ms-excel', 'application/vnd.oasis.opendocument.spreadsheet',
-  'text/csv', 'text/comma-separated-values', 'text/tab-separated-values', 'text/markdown', 'text/plain', 'text/html'
+  'application/pdf', 'text/csv', 'text/comma-separated-values', 'text/tab-separated-values', 'text/markdown', 'text/plain', 'text/html'
 ];
 if (platform === 'android') {
   const manifest = path.join(dir, 'app/src/main/AndroidManifest.xml');

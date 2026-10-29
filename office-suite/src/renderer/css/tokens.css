@@ -75,6 +75,7 @@
 body.app-write  { --accent: #1f5fcf; --accent-strong: #184ca8; --accent-soft: #e8f0fd; --accent-fg: #1a52b8; }
 body.app-sheets { --accent: #13834a; --accent-strong: #0e6b3c; --accent-soft: #e5f4ec; --accent-fg: #0f7040; }
 body.app-slides { --accent: #c4401f; --accent-strong: #a63519; --accent-soft: #fdebe5; --accent-fg: #b53c1f; }
+body.app-pdf    { --accent: #b42318; --accent-strong: #912018; --accent-soft: #fdecea; --accent-fg: #a3201a; }
 body.app-notes  { --accent: #7c3aed; --accent-strong: #6527d4; --accent-soft: #f1eafe; --accent-fg: #6a2fd6; }
 
 /* Dark */
@@ -102,4 +103,5 @@ body.app-notes  { --accent: #7c3aed; --accent-strong: #6527d4; --accent-soft: #f
 :root[data-theme="dark"] body.app-write  { --accent: #4f8ff7; --accent-strong: #6aa2ff; --accent-soft: #1b2c4a; --accent-fg: #8db8ff; --on-accent: #08101f; }
 :root[data-theme="dark"] body.app-sheets { --accent: #2fa868; --accent-strong: #44bd7c; --accent-soft: #15301f; --accent-fg: #6fd39c; --on-accent: #06140c; }
 :root[data-theme="dark"] body.app-slides { --accent: #ea6a47; --accent-strong: #f48262; --accent-soft: #3a1d14; --accent-fg: #f6987c; --on-accent: #1d0a04; }
+:root[data-theme="dark"] body.app-pdf    { --accent: #f97066; --accent-strong: #fda29b; --accent-soft: #3d1715; --accent-fg: #fda29b; --on-accent: #2a0a08; }
 :root[data-theme="dark"] body.app-notes  { --accent: #9b6bff; --accent-strong: #ae86ff; --accent-soft: #2a1c47; --accent-fg: #bb9cff; --on-accent: #12082a; }

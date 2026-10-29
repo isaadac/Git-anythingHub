@@ -25,13 +25,14 @@ const APPS = {
   sheets: { page: 'sheets.html', title: 'Isadek Sheets', width: 1360, height: 860 },
   slides: { page: 'slides.html', title: 'Isadek Slides', width: 1360, height: 860 },
   notes: { page: 'notes.html', title: 'Isadek Notes', width: 1280, height: 840 },
+  pdf: { page: 'pdf.html', title: 'Isadek PDF', width: 1280, height: 880 },
   help: { page: 'help.html', title: 'Isadek Office Help', width: 1000, height: 760 }
 };
 
 const EXT_TO_APP = {
   '.docx': 'write', '.html': 'write', '.htm': 'write', '.txt': 'write', '.md': 'write',
   '.xlsx': 'sheets', '.xls': 'sheets', '.csv': 'sheets', '.ods': 'sheets', '.tsv': 'sheets',
-  '.pptx': 'slides', '.aslides': 'slides', '.anote': 'notes'
+  '.pptx': 'slides', '.aslides': 'slides', '.anote': 'notes', '.pdf': 'pdf'
 };
 
 const pendingFiles = new Map(); // webContents.id -> file path to open on load

@@ -35,7 +35,7 @@ test('every dictionary has the same words, each translated', () => {
 
 test('the dictionaries cover the ribbons of every app', () => {
   const missing = [];
-  for (const app of ['write', 'sheets', 'slides', 'notes']) {
+  for (const app of ['write', 'sheets', 'slides', 'notes', 'pdf']) {
     for (const w of ribbonWords(fs.readFileSync(path.join(R, app + '.html'), 'utf8'))) if (!D.es[w]) missing.push(`${app}: ${w}`);
   }
   assert.deepStrictEqual(missing, []);

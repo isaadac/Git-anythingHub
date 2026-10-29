@@ -34,6 +34,8 @@
     "electron-updater": "6.8.11",
     "jszip": "3.10.2",
     "mammoth": "1.13.0",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.4.299",
     "pptxgenjs": "4.0.1",
     "pyodide": "314.0.7",
     "xlsx": "0.18.5"
@@ -125,6 +127,13 @@
         "description": "Isadek Notes Notebook",
         "role": "Editor",
         "mimeType": "application/x-atlas-notebook"
+      },
+      {
+        "ext": "pdf",
+        "name": "PDF Document",
+        "description": "PDF Document",
+        "role": "Viewer",
+        "mimeType": "application/pdf"
       }
     ],
     "win": {

@@ -13,11 +13,12 @@ fs.mkdirSync(OUT, { recursive: true });
 fs.cpSync(SRC, path.join(OUT, 'src/renderer'), { recursive: true, filter: p => !/\.(map|md)$/.test(p) });
 
 // Library files the pages and workers use.
-const wanted = new Set();
+const wanted = new Set(), folders = new Set();
 for (const f of fs.readdirSync(SRC, { recursive: true })) {
   if (!/\.(html|js)$/.test(f)) continue;
   const text = fs.readFileSync(path.join(SRC, f), 'utf8');
   for (const m of text.matchAll(/node_modules\/((?:@[\w.-]+\/)?[\w.-]+\/[\w./-]+\.(?:json|m?js|css|wasm|zip)\b)/g)) wanted.add(m[1]);
+  for (const m of text.matchAll(/library folders:([^\n]*)/g)) for (const d of m[1].match(/node_modules\/[\w@./-]+\//g) || []) if (!d.includes('..')) folders.add(d.slice('node_modules/'.length));
 }
 for (const rel of wanted) {
   const from = path.join(ROOT, 'node_modules', rel);
@@ -26,6 +27,7 @@ for (const rel of wanted) {
   fs.mkdirSync(path.dirname(to), { recursive: true });
   fs.copyFileSync(from, to);
 }
+for (const dir of folders) fs.cpSync(path.join(ROOT, 'node_modules', dir), path.join(OUT, 'node_modules', dir), { recursive: true });
 fs.copyFileSync(path.join(ROOT, 'build/icon.png'), path.join(OUT, 'icon.png'));
 
 // The start page. A meta refresh, because the pages' CSP allows no inline script.

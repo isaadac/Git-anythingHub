@@ -5,6 +5,7 @@
   "Clean & Transform": "Bereinigen und transformieren", "Applied steps": "Angewendete Schritte",
   "Waterfall": "Wasserfall", "Funnel": "Trichter", "Map": "Karte", "Run Python": "Python ausführen",
   "Cameo": "Cameo", "Rehearse with Coach": "Mit Coach üben", "Live Captions": "Liveuntertitel", "Speaking": "Sprechen",
+  "Annotate": "Kommentieren", "Fill & Sign": "Ausfüllen und signieren", "Hand": "Hand", "Tools": "Werkzeuge", "Edit in Write": "In Write bearbeiten", "Add Text": "Text hinzufügen", "Comment": "Kommentar", "Colour": "Farbe", "Sign": "Signieren", "Date": "Datum", "Form Fields": "Formularfelder", "Forms": "Formulare", "Rotate Left": "Nach links drehen", "Rotate Right": "Nach rechts drehen", "Move Up": "Nach oben", "Move Down": "Nach unten", "Organize": "Organisieren", "Insert PDF": "PDF einfügen", "Extract": "Extrahieren", "Combine": "Kombinieren",
   "Speech": "Sprache",
   "Protect with Password": "Mit Kennwort schützen", "Password": "Kennwort",
   "Select": "Auswählen", "Draw with Touch": "Mit Fingereingabe zeichnen", "Touch": "Touch", "Touch mode": "Fingereingabemodus",

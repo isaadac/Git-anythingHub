@@ -28,7 +28,7 @@ const { createCrashCollector } = require('./crash-collector');
 
 const ROOT = path.resolve(__dirname, '../..');
 const RENDERER = path.join(ROOT, 'src/renderer');
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.zip': 'application/zip', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.woff2': 'font/woff2', '.map': 'application/json' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.zip': 'application/zip', '.css': 'text/css; charset=utf-8', '.json': 'application/json', '.png': 'image/png', '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.wasm': 'application/wasm', '.woff2': 'font/woff2', '.map': 'application/json', '.bcmap': 'application/octet-stream', '.pfb': 'application/octet-stream', '.ttf': 'font/ttf', '.onnx': 'application/octet-stream' };
 const MAX_BODY = 4e6;
 // Sent with every response: no framing by other sites (clickjacking), no MIME sniffing, no
 // referrer to other sites, and the files only for this site's pages. (No Cross-Origin-Opener-
@@ -49,9 +49,12 @@ function libraryFiles() {
     if (!/\.(html|js)$/.test(f)) continue;
     const text = fs.readFileSync(path.join(RENDERER, f), 'utf8');
     for (const m of text.matchAll(/node_modules\/((?:@[\w.-]+\/)?[\w.-]+\/[\w./-]+\.(?:json|m?js|css|wasm|zip)\b)/g)) wanted.add('node_modules/' + m[1]);
+    // Whole folders a library loads by name at run time ("// library folders: node_modules/x/dir/ …").
+    for (const m of text.matchAll(/library folders:([^\n]*)/g)) for (const d of m[1].match(/node_modules\/[\w@./-]+\//g) || []) if (!d.includes('..')) wanted.add(d);
   }
   return wanted;
 }
+const isLibrary = (libs, rel) => libs.has(rel) || [...libs].some(d => d.endsWith('/') && rel.startsWith(d));
 
 function createWebServer(opts = {}) {
   const env = opts.env || process.env;
@@ -140,7 +143,7 @@ function createWebServer(opts = {}) {
     if (rel === 'src/renderer/cloud-apps.json' && Object.keys(cloudApps).length) return json(res, 200, cloudApps);
     if (!rel) { res.writeHead(302, { Location: '/src/renderer/index.html' }); return res.end(); }
     rel = path.posix.normalize(rel);
-    const ok = (rel.startsWith('src/renderer/') && !rel.includes('..')) || libs.has(rel);
+    const ok = (rel.startsWith('src/renderer/') && !rel.includes('..')) || (!rel.includes('..') && isLibrary(libs, rel));
     const file = path.join(ROOT, rel);
     if (!ok || !file.startsWith(ROOT + path.sep)) { res.writeHead(404); return res.end('Not found'); }
     fs.stat(file, (err, st) => {
