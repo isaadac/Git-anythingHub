@@ -3658,6 +3658,8 @@
   });
 
   // The start screen's thumbnail of this workbook: the top-left cells as they are shown.
+  // The file's thumbnail (Finder, Quick Look, File Explorer): the cells on screen.
+  Platform.previewElement = () => { const g = document.getElementById('gridWrap'); if (g) g.dataset.previewAspect = '0.75'; return g; };
   Platform.preview = () => {
     const rows = [], bold = [];
     for (const tr of [...document.querySelectorAll('#grid tbody tr[data-r]')].slice(0, 14)) {

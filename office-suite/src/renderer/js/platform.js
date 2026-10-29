@@ -45,6 +45,7 @@
     },
     /** Saves bytes or text. Returns {name, path} or null if cancelled. */
     async save(opts) {
+      if (opts.data && !opts.noVersion) opts = { ...opts, data: await withThumbnail(opts) };
       const r = await saveNow(opts);
       // Each save also keeps a version of the document (File → Version History).
       // …with who made it: you, and anyone who edited with you in a live session since the last one.
@@ -721,6 +722,46 @@
     }
   };
 
+  /**
+   * Office files saved from the desktop app carry a thumbnail of their first page, slide or cells
+   * (docProps/thumbnail.jpeg), which Finder, Quick Look and File Explorer show. The app says what to
+   * picture with Platform.previewElement().
+   */
+  async function withThumbnail(opts) {
+    const name = String(opts.path || opts.name || '');
+    if (!desktop || !window.atlas.capture || !window.JSZip || !Platform.previewElement || !(opts.data instanceof Uint8Array) || opts.data.length > 25e6 || !/\.(docx|xlsx|pptx)$/i.test(name)) return opts.data;
+    try {
+      const el = Platform.previewElement();
+      if (!el) return opts.data;
+      const b = el.getBoundingClientRect(), max = el.dataset && el.dataset.previewAspect ? +el.dataset.previewAspect : 0;
+      // What shows of it on screen (inside whatever scrolls it); a page is pictured from the top,
+      // as tall as a page is.
+      let x1 = Math.max(0, b.left), y1 = Math.max(0, b.top), x2 = Math.min(innerWidth, b.right), y2 = Math.min(innerHeight, b.bottom);
+      for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+        if (getComputedStyle(a).overflow === 'visible') continue;
+        // Inside its borders and scroll bars.
+        const r = a.getBoundingClientRect(), l = r.left + a.clientLeft, t = r.top + a.clientTop;
+        x1 = Math.max(x1, l); y1 = Math.max(y1, t); x2 = Math.min(x2, l + a.clientWidth); y2 = Math.min(y2, t + a.clientHeight);
+      }
+      if (max) y2 = Math.min(y2, y1 + (x2 - x1) * max);
+      if (x2 - x1 < 40 || y2 - y1 < 40) return opts.data;
+      // No cursor, selection or highlight in the picture.
+      document.documentElement.classList.add('capturing');
+      let jpg;
+      try {
+        await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+        jpg = await window.atlas.capture({ x: x1, y: y1, width: x2 - x1, height: y2 - y1 });
+      } finally { document.documentElement.classList.remove('capturing'); }
+      if (!jpg) return opts.data;
+      const zip = await JSZip.loadAsync(opts.data);
+      zip.file('docProps/thumbnail.jpeg', jpg);
+      const rels = await zip.file('_rels/.rels').async('string');
+      if (!/metadata\/thumbnail"/.test(rels)) zip.file('_rels/.rels', rels.replace('</Relationships>', '<Relationship Id="rIdIsadekThumb" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/thumbnail" Target="docProps/thumbnail.jpeg"/></Relationships>'));
+      const ct = await zip.file('[Content_Types].xml').async('string');
+      if (!/Extension="jpeg"/i.test(ct)) zip.file('[Content_Types].xml', ct.replace(/(<Types[^>]*>)/, '$1<Default Extension="jpeg" ContentType="image/jpeg"/>'));
+      return new Uint8Array(await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE' }));
+    } catch { return opts.data; }
+  }
   async function saveNow({ data, name, path, filters, saveAs }) {
     // A document opened from (or saved to) a cloud account goes back there.
     if (Platform.isCloudPath(path) && window.Cloud) return window.Cloud.saveTo(path, name, data);

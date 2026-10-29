@@ -185,7 +185,20 @@ ipcMain.handle('file:save', async (e, { data, filePath, defaultName, filters, sa
   const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
   fs.writeFileSync(target, buf);
   addRecent(target);
+  // macOS: the file's icon in the title bar (drag it, or Cmd-click it for its folder).
+  if (process.platform === 'darwin' && win) win.setRepresentedFilename(target);
   return { path: target, name: path.basename(target) };
+});
+
+// A small picture of part of the window (the first page, slide or cells), saved inside .docx, .xlsx
+// and .pptx files as their thumbnail: Finder, Quick Look and File Explorer show it.
+ipcMain.handle('app:capture', async (e, r) => {
+  if (!r || ![r.x, r.y, r.width, r.height].every(Number.isFinite) || r.width < 16 || r.height < 16) return null;
+  const rect = { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.round(Math.min(r.width, 4000)), height: Math.round(Math.min(r.height, 4000)) };
+  const img = await e.sender.capturePage(rect);
+  if (img.isEmpty()) return null;
+  const size = img.getSize();
+  return img.resize({ width: Math.min(256, size.width), quality: 'best' }).toJPEG(85);
 });
 
 ipcMain.handle('file:choose-save-path', async (e, { defaultName, filters }) => {

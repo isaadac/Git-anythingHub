@@ -473,3 +473,8 @@ html.touch-mode .statusbar button { min-width: 36px; min-height: 30px; }
 html.touch-mode .thumbs .thumb, html.touch-mode .sheet-tabs .tab { min-height: 36px; }
 /* Tablets held upright: no group labels, leaving the page more room. */
 @media (max-width: 900px) and (orientation: portrait) { html.touch-mode .ribbon .group > .label { display: none; } }
+
+/* While the app pictures a document for its file's thumbnail */
+html.capturing, html.capturing * { caret-color: transparent !important; }
+html.capturing .sel-box, html.capturing .fill-handle, html.capturing .spill-box, html.capturing .peer-cursor, html.capturing .handle { visibility: hidden !important; }
+html.capturing ::selection { background: transparent; }

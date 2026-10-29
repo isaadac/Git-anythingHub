@@ -1809,6 +1809,8 @@ ${rules}</style></head>
   });
 
   // The start screen's thumbnail of this document: its first blocks as plain text.
+  // The file's thumbnail (Finder, Quick Look, File Explorer): the top of the first page.
+  Platform.previewElement = () => { const pg = document.getElementById('page'); if (pg) pg.dataset.previewAspect = '1.294'; return pg; };
   Platform.preview = () => {
     const blocks = [], MAX = 18, clip = t => t.replace(/\s+/g, ' ').trim().slice(0, 160);
     for (const el of document.getElementById('doc').children) {

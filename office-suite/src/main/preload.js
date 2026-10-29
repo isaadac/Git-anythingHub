@@ -19,6 +19,7 @@ contextBridge.exposeInMainWorld('atlas', {
   openData: (appName, name, data, cloudPath) => ipcRenderer.invoke('app:open-data', { app: appName, name, data, cloudPath }),
   openPath: p => ipcRenderer.invoke('app:open-path', p),
   setTitle: t => ipcRenderer.invoke('app:set-title', t),
+  capture: rect => ipcRenderer.invoke('app:capture', rect),
   closeNow: () => ipcRenderer.invoke('app:close-now'),
   fullscreen: on => ipcRenderer.invoke('app:fullscreen', on),
   recoverySave: d => ipcRenderer.invoke('recovery:save', d),

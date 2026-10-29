@@ -3277,6 +3277,8 @@
   });
 
   // The start screen's thumbnail of this presentation: the first slide's boxes, colours and words.
+  // The file's thumbnail (Finder, Quick Look, File Explorer): the first slide, as in the slide list.
+  Platform.previewElement = () => document.querySelector('#thumbs .thumb .slide');
   Platform.preview = () => {
     const box = document.createElement('div');
     box.className = 'slide';
