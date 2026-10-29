@@ -222,6 +222,7 @@
         if (typeof cell.v === 'string' && cell.v[0] === '=') cell.v = F.shiftFormula(cell.v, r - item.r, 0);
         s.cells[addr(r, c)] = cell;
       }));
+      ctx.touched(s);
       applyFilters(s);
       ctx.changed();
     }
@@ -466,6 +467,7 @@
       const res = SheetsWhatIf.goalSeek(f, start, goal);
       // Put the original back; Keep applies the answer as one undoable step.
       if (orig) change.s.cells[key] = orig; else delete change.s.cells[key];
+      ctx.touched(change.s);
       ctx.engine.invalidate();
       const fmtN = n => (Number.isFinite(n) ? +n.toPrecision(10) : '—');
       const msg = res.found ? `Goal Seek found a solution: ${r.by.toUpperCase()} = ${fmtN(res.x)} makes ${r.set.toUpperCase()} = ${fmtN(res.value)}.` : `Goal Seek may not have found a solution. Closest: ${r.by.toUpperCase()} = ${fmtN(res.x)} gives ${fmtN(res.value)}.`;
@@ -542,6 +544,7 @@
       const res = SheetsWhatIf.solve({ x0, evaluate, goal: r.goal, target: +r.target || 0, nonneg: r.nonneg === 'yes', integers: ints });
       // Put the originals back; Keep applies the solution as one undoable step.
       vars.forEach((v, i) => { const k = addr(v.r, v.c); if (saved[i]) vs.cells[k] = saved[i]; else delete vs.cells[k]; });
+      ctx.touched(vs);
       ctx.engine.invalidate();
       const objText = Number.isFinite(res.obj) ? +res.obj.toPrecision(10) : '—';
       const msg = res.ok ? `Solver found a solution. All constraints are satisfied. Objective: ${objText}.` : `Solver could not find a solution that satisfies all the constraints. Best found: objective ${objText} (constraints off by ${res.violation.toPrecision(3)}).`;

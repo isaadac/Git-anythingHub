@@ -25,6 +25,7 @@
         if (!el.getAttribute('style')) el.removeAttribute('style');
         delete el.dataset.pg;
         delete el.dataset.pgMt;
+        delete el.dataset.pgG;
       });
     }
 
@@ -64,8 +65,8 @@
       // While printing the window is only as wide as the paper, so never fall back to the phone layout then.
       const paged = printing || matchMedia('print').matches || o.isPaged();
       document.body.classList.toggle('paged', paged);
-      clearPushes();
       if (!paged) {
+        clearPushes();
         bgs.innerHTML = '';
         page.style.height = '';
         Object.values(hf).forEach(el => { el.hidden = true; });
@@ -83,7 +84,21 @@
       const notesOn = new Map();   // page -> footnotes
       const NOTE_SEP = 14;
       // Multi-column text flows across the whole document; it isn't split per page.
+      // Blocks are measured with the current page breaks in place: each pushed block remembers the
+      // gap it would have above it unpushed (data-pg-g), so how far it is pushed now is the gap
+      // measured minus that, and every block's natural place follows without removing the pushes
+      // first. That costs the browser one layout of the document instead of two, and since each
+      // shift comes from this layout's own measurements, rounding never adds up down the document.
+      const before = [...doc.querySelectorAll('[data-pg]')];
       const units = g.columns > 1 ? [] : collectUnits(bodyH);
+      let moved = 0;
+      for (const u of units) {
+        if (u.isBreak) { u.top -= moved; continue; }
+        const own = u.el.dataset.pg && u.prevBottom !== null ? Math.max(0, (u.top - u.prevBottom) - (+u.el.dataset.pgG || 0)) : 0;
+        if (u.prevBottom !== null) u.prevBottom -= moved;
+        moved += own;
+        u.top -= moved; u.bottom -= moved;
+      }
       for (const u of units) {
         const top = u.top + shift, bottom = u.isBreak ? top : u.bottom + shift;
         if (u.isBreak) { breakAt = top; continue; }
@@ -101,7 +116,8 @@
         if (target !== null && target > top + 0.5 && u.pushable) {
           const delta = target - top;
           // New margin = current gap above the block (margins collapse) + the distance to move.
-          pushes.push([u.el, Math.round((u.top - u.prevBottom + delta) * 100) / 100]);
+          const gap = u.top - u.prevBottom;
+          pushes.push([u.el, Math.round((gap + delta) * 100) / 100, gap]);
           shift += delta;
           landed = Math.floor((target + 0.5) / pitch);
         }
@@ -114,10 +130,18 @@
       if (g.columns > 1) lastBottom = doc.scrollHeight;
       pages = Math.max(1, Math.floor(Math.max(0, lastBottom - 1) / pitch) + 1);
       if (breakAt !== null) pages = Math.max(pages, Math.floor((breakAt + 0.5) / pitch) + 2);
-      for (const [el, mt] of pushes) {
-        el.dataset.pgMt = el.style.marginTop || '';
-        el.dataset.pg = '1';
-        el.style.marginTop = mt + 'px';
+      // Write only what changed: blocks no longer pushed get their own margin back.
+      const now = new Set(pushes.map(x => x[0]));
+      for (const el of before) {
+        if (now.has(el)) continue;
+        el.style.marginTop = el.dataset.pgMt || '';
+        if (!el.getAttribute('style')) el.removeAttribute('style');
+        delete el.dataset.pg; delete el.dataset.pgMt; delete el.dataset.pgG;
+      }
+      for (const [el, mt, gap] of pushes) {
+        if (!el.dataset.pg) { el.dataset.pgMt = el.style.marginTop || ''; el.dataset.pg = '1'; }
+        if (el.style.marginTop !== mt + 'px') el.style.marginTop = mt + 'px';
+        el.dataset.pgG = String(gap);
       }
       page.style.height = (pages * pitch - g.gap) + 'px';
       drawPages(g, pitch, notesOn, reserve);

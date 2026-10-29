@@ -8,10 +8,13 @@
     for (const ch of col.toUpperCase()) n = n * 26 + (ch.charCodeAt(0) - 64);
     return n - 1;
   }
+  const COL_NAMES = []; // column letters, worked out once each (addresses are built constantly)
   function indexToCol(i) {
-    let s = '';
-    i += 1;
-    while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); }
+    const known = COL_NAMES[i];
+    if (known !== undefined) return known;
+    let s = '', n = i + 1;
+    while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); }
+    if (i >= 0 && i < 16384) COL_NAMES[i] = s;
     return s;
   }
   function parseRef(ref) {
@@ -199,6 +202,8 @@
   }
 
   // ---------- Value helpers ----------
+  const NOT_LITERAL = Symbol('not a literal');
+  const FORMULA_CELL = Symbol('formula cell'); // in a column of values (book.columnValues): compute it
   class Range {
     constructor(rows) { this.rows = rows; }
     flat() { return this.rows.flat(); }
@@ -1859,6 +1864,10 @@
     value(sheet, row, col) {
       const key = sheet + '\u0000' + row + ',' + col;
       if (this.cache.has(key)) return this.cache.get(key);
+      // A constant is its own value: no caching, no dependency walk (a SUM over a million numbers
+      // reads a million of these).
+      const lit = this.literal(sheet, row, col);
+      if (lit !== NOT_LITERAL) return lit;
       if (this.stack.has(key)) return ERR.CIRC;
       if (!this.stack.size) this.warm(sheet, row, col);
       if (this.cache.has(key)) return this.cache.get(key);
@@ -1880,6 +1889,14 @@
       if (v instanceof Range) v = this.spill(sheet, row, col, v);
       this.cache.set(key, v);
       return v;
+    }
+    /** A non-formula, non-empty cell's value, or NOT_LITERAL. */
+    literal(sheet, row, col) {
+      const raw = this.book.getRaw(sheet, row, col);
+      if (raw === '' || raw === undefined || raw === null) return NOT_LITERAL;
+      if (typeof raw !== 'string') return raw;
+      if (raw[0] === '=' && raw.length > 1) return NOT_LITERAL;
+      return parseLiteral(raw);
     }
     /**
      * Evaluates a cell's precedents bottom-up with an explicit stack, so long chains
@@ -2042,9 +2059,19 @@
         case 'range': {
           const s = this.resolveSheet(n.sheet, sheet);
           const rows = [];
+          // Tall ranges read whole columns of values at once, when the workbook keeps them.
+          const cols = n.r2 - n.r1 >= 63 && this.book.columnValues ? [] : null;
+          if (cols) for (let c = n.c1; c <= n.c2; c++) cols.push(this.book.columnValues(s, c));
+          const noSpills = cols && !this.candidates(s).length;
           for (let r = n.r1; r <= n.r2; r++) {
             const row = [];
-            for (let c = n.c1; c <= n.c2; c++) row.push(this.value(s, r, c));
+            for (let c = n.c1; c <= n.c2; c++) {
+              const col = cols && cols[c - n.c1];
+              if (col) {
+                const x = col[r];
+                row.push(x === undefined ? (noSpills ? '' : this.value(s, r, c)) : x === FORMULA_CELL ? this.value(s, r, c) : x);
+              } else { const lit = this.literal(s, r, c); row.push(lit !== NOT_LITERAL ? lit : this.value(s, r, c)); }
+            }
             rows.push(row);
           }
           const out = new Range(rows);
@@ -2234,7 +2261,7 @@
     });
   }
 
-  const api = { Engine, FormulaError, ERR, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, generalText, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, parseStructured, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
+  const api = { Engine, FormulaError, ERR, FORMULA_CELL, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, generalText, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, parseStructured, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Formula = api;
 })(typeof window !== 'undefined' ? window : globalThis);

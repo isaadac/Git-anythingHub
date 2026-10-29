@@ -41,30 +41,60 @@
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
   const rawAt = (r, c, s = sheet()) => (s.cells[addr(r, c)] || {}).v ?? '';
 
+  // Where a sheet's formulas are, so finding them never means reading every cell (a sheet can hold
+  // a million values and a handful of formulas). Built on first use from the cells, kept up to date
+  // by setCell, and dropped (to be rebuilt) by anything else that changes cells: touched(s).
+  const formulaIndex = new WeakMap(); // sheet.cells -> Map(key -> [row, col])
+  function formulasOf(s) {
+    let ix = formulaIndex.get(s.cells);
+    if (ix) return ix;
+    ix = new Map();
+    for (const k in s.cells) { const v = s.cells[k].v; if (typeof v === 'string' && v[0] === '=') { const p = parseRef(k); if (p) ix.set(k, [p.row, p.col]); } }
+    formulaIndex.set(s.cells, ix);
+    return ix;
+  }
+  // Columns of cell values, parsed (FORMULA_CELL for a formula, nothing for an empty cell), for
+  // formulas over tall ranges: SUM(B2:B1000001) reads an array instead of a million keyed lookups.
+  // Built when a formula first needs one; setCell keeps them current; touched(s) drops them.
+  const columnCache = new WeakMap(); // sheet.cells -> Map(col -> array by row)
+  const valueOfRaw = v => (v === '' || v === undefined || v === null ? undefined : typeof v !== 'string' ? v : v[0] === '=' && v.length > 1 ? F.FORMULA_CELL : F.parseLiteral(v));
+  function columnValues(s, c) {
+    let cols = columnCache.get(s.cells);
+    if (!cols) columnCache.set(s.cells, cols = new Map());
+    let col = cols.get(c);
+    if (col) return col;
+    col = [];
+    const name = indexToCol(c);
+    for (let r = 0, n = s.rows; r < n; r++) { const cell = s.cells[name + (r + 1)]; if (cell) { const v = valueOfRaw(cell.v); if (v !== undefined) col[r] = v; } }
+    cols.set(c, col);
+    return col;
+  }
+  const touched = (s = sheet()) => { formulaIndex.delete(s.cells); columnCache.delete(s.cells); };
+  // The last sheet looked up by name (formulas ask for the same sheet millions of times).
+  let lastSheet = null;
+  const sheetNamed = name => (lastSheet && lastSheet.name === name && book.sheets.includes(lastSheet) ? lastSheet : (lastSheet = book.sheets.find(x => x.name === name) || null));
   const engine = new F.Engine({
     getRaw: (name, r, c) => {
-      const s = book.sheets.find(x => x.name === name);
-      return s ? rawAt(r, c, s) : '';
+      const s = sheetNamed(name);
+      if (!s) return '';
+      const cell = s.cells[addr(r, c)];
+      return cell ? cell.v ?? '' : '';
     },
     sheetNames: () => book.sheets.map(s => s.name),
-    isLegacy: (name, r, c) => { const s = book.sheets.find(x => x.name === name); return !!(s && (s.cells[addr(r, c)] || {}).li); },
+    columnValues: (name, c) => { const s = sheetNamed(name); return s ? columnValues(s, c) : null; },
+    isLegacy: (name, r, c) => { const s = sheetNamed(name); return !!(s && (s.cells[addr(r, c)] || {}).li); },
     resolveName: name => (data ? data.resolveName(name) : null),
     tableRef: (spec, sheetName, cur) => (data ? data.resolveTable(spec, sheetName, cur) : null),
     formulasInRange: (name, r1, c1, r2, c2) => {
-      const s = book.sheets.find(x => x.name === name);
+      const s = sheetNamed(name);
       if (!s) return [];
       const out = [];
+      const ix = formulasOf(s);
       const area = (r2 - r1 + 1) * (c2 - c1 + 1);
-      const keys = Object.keys(s.cells);
-      if (area < keys.length) {
-        for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) { const v = rawAt(r, c, s); if (typeof v === 'string' && v[0] === '=') out.push([r, c]); }
+      if (area < ix.size) {
+        for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) if (ix.has(addr(r, c))) out.push([r, c]);
       } else {
-        for (const k of keys) {
-          const v = s.cells[k].v;
-          if (typeof v !== 'string' || v[0] !== '=') continue;
-          const p = parseRef(k);
-          if (p.row >= r1 && p.row <= r2 && p.col >= c1 && p.col <= c2) out.push([p.row, p.col]);
-        }
+        for (const [r, c] of ix.values()) if (r >= r1 && r <= r2 && c >= c1 && c <= c2) out.push([r, c]);
       }
       return out;
     }
@@ -82,6 +112,10 @@
     if (props.s) next.s = { ...(cur.s || {}), ...props.s };
     if ((next.v === undefined || next.v === '') && (!next.s || !Object.keys(next.s).length) && !next.n) delete s.cells[key];
     else s.cells[key] = next;
+    const ix = formulaIndex.get(s.cells);
+    if (ix) { if (typeof next.v === 'string' && next.v[0] === '=' && s.cells[key]) ix.set(key, [r, c]); else ix.delete(key); }
+    const col = columnCache.has(s.cells) && columnCache.get(s.cells).get(c);
+    if (col) { const v = s.cells[key] ? valueOfRaw(s.cells[key].v) : undefined; if (v === undefined) delete col[r]; else col[r] = v; }
     if (r >= s.rows - 1) s.rows = Math.min(MAX_ROWS, r + 20);
     if (c >= s.cols - 1) s.cols = Math.min(MAX_COLS, c + 5);
   }
@@ -361,7 +395,7 @@
     rowEls = new Map();
     for (const tr of [...thead.rows, ...tbody.rows]) if (tr.dataset.r !== undefined) rowEls.set(+tr.dataset.r, tr);
     applyMerges();
-    renderVisibleCells();
+    renderVisibleCells(!force);
     paintSelection();
   }
   const tdAt = (r, c) => { const tr = rowEls.get(r); const i = colPos.get(c); return tr && i !== undefined ? tr.cells[i] : null; };
@@ -478,8 +512,9 @@
     if (fmt.bar) style.backgroundImage = `linear-gradient(90deg, ${fmt.bar.color} 0%, ${fmt.bar.color}55 ${fmt.bar.pct}%, transparent ${fmt.bar.pct}%)`;
   }
   const s_fc = c => (sheet().freezeCol && c === 0 ? 'fc' : '');
-  function renderVisibleCells() {
-    engine.invalidate();
+  /** Draws the cells on screen. keepCalc: nothing changed but the view (scrolling), so values stay. */
+  function renderVisibleCells(keepCalc) {
+    if (!keepCalc) engine.invalidate();
     cf.begin();
     paintedCells.forEach(t => { if (t.isConnected) { t.textContent = ''; t.removeAttribute('style'); t.className = t.classList.contains('hidden-merged') ? 'hidden-merged' : s_fc(+t.dataset.c); } });
     paintedCells = [];
@@ -1077,6 +1112,7 @@
           const inside = book.active === clip.sheet && r >= r0 && r < r0 + h && c >= c0 && c < c0 + w;
           if (!inside) delete src.cells[addr(r, c)];
         });
+        touched(src);
         clip = null;
       }
       anchor = { r: r0 + h - 1, c: c0 + w - 1 };
@@ -1109,6 +1145,7 @@
       if (cell) { cell.s = next; if (!Object.keys(next).length) delete cell.s; if ((cell.v === undefined || cell.v === '') && !cell.s) delete sheet().cells[addr(r, c)]; }
       else if (Object.keys(next).length) sheet().cells[addr(r, c)] = { v: '', s: next };
     });
+    touched();
     fitRows(rowsOf(g));
     changed();
   }
@@ -1176,6 +1213,7 @@
     else if (g.r1 !== g.r2 || g.c1 !== g.c2) {
       // Keep only the top-left value, as Excel does.
       forRange(g, (r, c) => { if ((r !== g.r1 || c !== g.c1) && cellAt(r, c)) delete s.cells[addr(r, c)]; });
+      touched(s);
       s.merges.push({ ...g });
       setCell(g.r1, g.c1, { s: { align: 'center' } });
       anchor = active = { r: g.r1, c: g.c1 };
@@ -1566,6 +1604,7 @@
     const undoRefused = () => {
       const k = addr(r, c);
       if (prev) sheet().cells[k] = prev; else delete sheet().cells[k];
+      touched();
       const j = undoStack.pop(); if (j) undoBytes -= j.length;
       changed(false);
     };
@@ -1783,6 +1822,7 @@
     const table = pivotTable(p);
     const res = table ? SheetsPivot.compute(table, p) : { cells: [], error: `The source sheet "${p.src.sheet}" no longer exists.` };
     if (p.extent) for (let r = p.r; r <= p.extent.r2; r++) for (let c = p.c; c <= p.extent.c2; c++) delete host.cells[addr(r, c)];
+    touched(host);
     let cells = res.cells;
     const empty = !p.rows.length && !p.cols.length && !p.vals.length;
     if (empty || res.error) cells = [[{ v: res.error || `${p.name}: choose fields in the PivotTable Fields pane`, k: 'note' }]];
@@ -1942,6 +1982,7 @@
       snapshot();
       const s = sheet();
       if (p.extent) for (let r = p.r; r <= p.extent.r2; r++) for (let c = p.c; c <= p.extent.c2; c++) delete s.cells[addr(r, c)];
+      touched(s);
       s.pivots = s.pivots.filter(x => x !== p);
       pivotPane.hidden = true; paneFor = null;
       changed();
@@ -2055,6 +2096,7 @@
         const v = typeof val === 'object' ? F.shiftFormula(val.formula, r - sr, c - sc) : val;
         const key = addr(r, c);
         delete s.cells[key];
+        touched(s);
         setCell(r, c, { v, s: src[from].s ? JSON.parse(JSON.stringify(src[from].s)) : undefined });
       });
     }
@@ -2200,6 +2242,7 @@
       if (typeof cell.v === 'string' && cell.v[0] === '=') cell.v = F.shiftFormula(cell.v, r - item.r, 0);
       sheet().cells[addr(r, c)] = cell;
     }));
+    touched();
     fitRows(rowsOf(g));
     changed();
     UI.toast(`Sorted by column ${indexToCol(col)}${hasHeader ? ' (header kept)' : ''}`);
@@ -2247,6 +2290,7 @@
     const removed = g.r2 - g.r1 + 1 - keep.length;
     forRange(g, (r, c) => delete sheet().cells[addr(r, c)]);
     keep.forEach((row, i) => row.forEach((cell, j) => { if (cell) sheet().cells[addr(g.r1 + i, g.c1 + j)] = cell; }));
+    touched();
     changed();
     UI.toast(`${removed} duplicate row${removed === 1 ? '' : 's'} removed`);
   });
@@ -2664,7 +2708,7 @@
 
   // ---------- Tables, names, What-If, sparklines, slicers, scripts, web data ----------
   data = SheetsData({
-    book: () => book, sheet, engine, rawAt, setCell, snapshot, changed, buildGrid, commitEdit, guard, shiftStructure, rangeBox, colWidth, rowH, zoomLevel, sheetByName, state, cleanStyle,
+    book: () => book, sheet, engine, rawAt, setCell, touched, snapshot, changed, buildGrid, commitEdit, guard, shiftStructure, rangeBox, colWidth, rowH, zoomLevel, sheetByName, state, cleanStyle,
     selRange, active: () => active,
     selectRange: g => { anchor = { r: g.r1, c: g.c1 }; active = { r: g.r2, c: g.c2 }; ensureSize(g.r2, g.c2); scrollIntoView(g.r1, g.c1); drawSelection(); },
     activateSheet: i => { commitEdit(); book.active = i; buildGrid(); },
@@ -2766,12 +2810,19 @@
       const s = newSheet(cleanSheetName(Platform.baseName(name)) || 'Sheet1');
       const first = text.slice(0, text.search(/\r?\n|$/));
       const delim = ext === 'tsv' ? '\t' : (first.includes(';') && !first.includes(',') ? ';' : ',');
+      // Bounds and the formula index are worked out on the way in (each is a pass over every cell later).
+      const fx = new Map();
+      let maxR = 0, maxC = 0;
       parseDelimited(text, delim).forEach((row, r) => row.forEach((v, c) => {
         if (v === '' || r >= MAX_ROWS || c >= MAX_COLS) return;
-        s.cells[addr(r, c)] = { v };
+        const k = addr(r, c);
+        s.cells[k] = { v };
+        if (v[0] === '=') fx.set(k, [r, c]);
+        if (r > maxR) maxR = r;
+        if (c > maxC) maxC = c;
       }));
-      const u = usedBounds(s);
-      s.rows = Math.max(100, u.r + 20); s.cols = Math.max(26, u.c + 5);
+      formulaIndex.set(s.cells, fx);
+      s.rows = Math.max(100, maxR + 20); s.cols = Math.max(26, maxC + 5);
       return { sheets: [s], active: 0, names: [], scripts: [] };
     }
     const wb = await parseSpreadsheet(bytes);
@@ -3089,8 +3140,8 @@
   }
   /** Like fitRows(null) but keeps heights that came from the file. */
   function fitRowsFor(s) {
-    for (const [k, cell] of Object.entries(s.cells)) {
-      const st = cell.s;
+    for (const k in s.cells) {
+      const cell = s.cells[k], st = cell.s;
       if (!st || !(st.wrap || st.size > 11)) continue;
       const p = parseRef(k);
       if (s.merges.some(m => p.row >= m.r1 && p.row <= m.r2 && p.col >= m.c1 && p.col <= m.c2)) continue;
@@ -3310,6 +3361,7 @@
           let cells = s && s.cells;
           if (!cells) { if (!orphanCells.has(u)) orphanCells.set(u, {}); cells = orphanCells.get(u); }
           if (v === null) delete cells[ref]; else { cells[ref] = v; if (s) growFor(s, ref); }
+          if (s) touched(s);
         }
       }
       if (structural) {

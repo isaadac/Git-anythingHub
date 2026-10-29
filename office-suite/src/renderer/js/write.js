@@ -777,9 +777,15 @@
     const n = layout.pages;
     document.getElementById('stPages').textContent = `Page ${Math.min(caretPage, n)} of ${n}`;
   }
-  function updateStatus() {
+  // The word count reads the whole document, so while typing it waits for a pause.
+  let wordTimer;
+  function countWords() {
+    clearTimeout(wordTimer);
     const words = (doc.innerText.match(/\S+/g) || []).length;
     document.getElementById('stWords').textContent = `${words.toLocaleString()} word${words === 1 ? '' : 's'}`;
+  }
+  function updateStatus(typing) {
+    if (typing) { clearTimeout(wordTimer); wordTimer = setTimeout(countWords, 400); } else countWords();
     updateCaretPage();
   }
   let navTimer;
@@ -788,7 +794,7 @@
     if (extras) extras.renderEquations();
     notes.renumber();
     layout.schedule();
-    updateStatus();
+    updateStatus(true);
     clearTimeout(navTimer);
     navTimer = setTimeout(refreshNav, 400);
   }
