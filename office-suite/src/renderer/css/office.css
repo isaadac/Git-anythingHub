@@ -416,3 +416,5 @@ html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame
 .thumbnail .paper-slides .box.img { background: #dfe3e9; }
 .thumbnail .paper-notes { width: 816px; height: 612px; background: linear-gradient(90deg, #ede5fd 0 220px, #fff 220px); }
 .tpl .thumbnail { aspect-ratio: 3 / 2.6; border-radius: var(--r-md); border: 1px solid var(--border); margin-bottom: var(--sp-3); }
+/* Narrow windows: the search box gives room to the document's name. */
+@media (max-width: 1180px) { .tell-me input { width: 200px; } }

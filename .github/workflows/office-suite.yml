@@ -54,6 +54,13 @@ jobs:
           pip install openpyxl python-pptx python-docx
       - name: End-to-end tests (web pages and the desktop app)
         run: xvfb-run -a npm run e2e
+      - name: Pictures of what changed (visual regression)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff
+          path: office-suite/e2e/visual/diff/
+          if-no-files-found: ignore
 
   build:
     needs: test
