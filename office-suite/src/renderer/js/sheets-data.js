@@ -396,7 +396,7 @@
         names.forEach((n, i) => {
           const row = document.createElement('div');
           row.className = 'nm-row';
-          row.innerHTML = '<b></b><input aria-label="Refers to"><span class="val"></span><button title="Delete name">✕</button>';
+          row.innerHTML = '<b></b><input aria-label="Refers to"><span class="val"></span><button title="Delete name"><span class="ico" data-icon="trash-2"></span></button>';
           row.querySelector('b').textContent = n.name;
           const input = row.querySelector('input');
           input.value = n.ref;
@@ -629,7 +629,7 @@
         const box = document.createElement('div');
         box.className = 'slicer';
         Object.assign(box.style, { left: sl.x + 'px', top: sl.y + 'px', width: sl.w + 'px', height: sl.h + 'px' });
-        box.innerHTML = '<div class="hd"><span class="t"></span><button data-a="clear" title="Clear filter">⊘</button><button data-a="del" title="Remove slicer">✕</button></div><div class="items"></div><div class="grip"></div>';
+        box.innerHTML = '<div class="hd"><span class="t"></span><button data-a="clear" title="Clear filter"><span class="ico" data-icon="filter-x"></span></button><button data-a="del" title="Remove slicer"><span class="ico" data-icon="x"></span></button></div><div class="items"></div><div class="grip"></div>';
         box.querySelector('.t').textContent = sl.col;
         layer.appendChild(box);
         if (!t) { box.querySelector('.items').textContent = `Table ${sl.table} no longer exists`; }
@@ -703,8 +703,8 @@ function main(workbook) {
         pane = document.createElement('aside');
         pane.className = 'script-pane';
         pane.setAttribute('aria-label', 'Scripts');
-        pane.innerHTML = `<header><b>Scripts</b><span class="sp"></span><button class="x" title="Close">✕</button></header>
-          <div class="row"><select aria-label="Script"></select><button data-a="new" title="New script">＋</button><button data-a="ren" title="Rename">✎</button><button data-a="del" title="Delete script">🗑</button></div>
+        pane.innerHTML = `<header><b>Scripts</b><span class="sp"></span><button class="x" title="Close"><span class="ico" data-icon="x"></span></button></header>
+          <div class="row"><select aria-label="Script"></select><button data-a="new" title="New script"><span class="ico" data-icon="plus"></span></button><button data-a="ren" title="Rename"><span class="ico" data-icon="pencil"></span></button><button data-a="del" title="Delete script">🗑</button></div>
           <textarea spellcheck="false" aria-label="Script code"></textarea>
           <div class="row"><button class="primary" data-a="run">▶ Run</button><span class="sp"></span><span class="hint">Ctrl+Enter runs</span></div>
           <pre class="out" aria-live="polite"></pre>`;

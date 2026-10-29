@@ -137,7 +137,7 @@
     pane.className = 'ai-pane proof-pane';
     pane.hidden = true;
     pane.setAttribute('aria-label', 'Spelling and grammar');
-    pane.innerHTML = `<header><b>Editor</b><span class="sp"></span><button class="lang" title="Proofing language"></button><button class="x" title="Close">✕</button></header>
+    pane.innerHTML = `<header><b>Editor</b><span class="sp"></span><button class="lang" title="Proofing language"></button><button class="x" title="Close"><span class="ico" data-icon="x"></span></button></header>
       <div class="proof-body"></div>`;
     document.body.appendChild(pane);
     const body = pane.querySelector('.proof-body');
@@ -169,7 +169,7 @@
       document.querySelectorAll('.ai-pane').forEach(p => { if (p !== pane) p.hidden = true; });
       pane.hidden = false;
       document.body.classList.add('ai-open');
-      langBtn.textContent = '🌐 ' + langName(o.lang());
+      langBtn.innerHTML = '<span class="ico" data-icon="languages"></span>'; langBtn.append(langName(o.lang()));
       ignoreOnce = new Set();
       scan();
       at = 0;
@@ -293,7 +293,7 @@
         const pick = code && (available.find(a => a === code) || available.find(a => a.split('-')[0] === code.split('-')[0]));
         await window.atlas.spellSetLanguages(pick ? [pick] : []);
       }
-      langBtn.textContent = '🌐 ' + langName(code);
+      langBtn.innerHTML = '<span class="ico" data-icon="languages"></span>'; langBtn.append(langName(code));
       UI.toast('Proofing language: ' + langName(code || navigator.language));
     }
 

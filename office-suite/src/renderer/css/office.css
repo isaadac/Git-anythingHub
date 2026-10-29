@@ -282,3 +282,14 @@ html.touch .btn, html.touch .ribbon-tabs button, html.touch .modal .actions butt
 .v-row button { border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-sm); padding: 4px 10px; cursor: pointer; font-size: var(--fs-sm); }
 .v-row .size { color: var(--subtle); font-size: var(--fs-sm); }
 .modal .muted { color: var(--muted); }
+
+/* Icons (Lucide, drawn by js/icons.js): 1em squares in the text colour */
+.ico { display: inline-grid; place-items: center; line-height: 1; flex: none; }
+.ico svg.icon { width: 1em; height: 1em; display: block; }
+.btn .ico, .titlebar .ico, .share-btn .ico, .theme-btn .ico, .ai-pane header .ico, .backstage nav .ico { font-size: 16px; }
+.btn.big .ico { font-size: 24px; }
+.btn.big .ico svg.icon { stroke-width: 1.5; }
+.btn .ico + *, .share-btn .ico + * { margin-left: 0; }
+.titlebar .qa button .ico { font-size: 17px; }
+.btn.on .ico, .btn[aria-pressed="true"] .ico { color: var(--accent-fg); }
+.theme-btn { display: inline-flex; align-items: center; gap: var(--sp-3); }

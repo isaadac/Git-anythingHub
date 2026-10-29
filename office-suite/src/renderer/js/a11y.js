@@ -190,7 +190,7 @@
     pane.className = 'ai-pane a11y-pane';
     pane.hidden = true;
     pane.setAttribute('aria-label', 'Accessibility');
-    pane.innerHTML = '<header><b>Accessibility</b><span class="sp"></span><button class="re" title="Check again">↻</button><button class="x" title="Close">✕</button></header><div class="a11y-body"></div>';
+    pane.innerHTML = '<header><b>Accessibility</b><span class="sp"></span><button class="re" title="Check again"><span class="ico" data-icon="refresh-cw"></span></button><button class="x" title="Close"><span class="ico" data-icon="x"></span></button></header><div class="a11y-body"></div>';
     document.body.appendChild(pane);
     const body = pane.querySelector('.a11y-body');
     pane.querySelector('.x').onclick = () => { pane.hidden = true; document.body.classList.remove('ai-open'); };

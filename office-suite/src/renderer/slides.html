@@ -8,16 +8,17 @@
 <link rel="stylesheet" href="css/office.css">
 <script src="js/theme.js"></script>
 <script src="js/i18n.js"></script>
+<script src="js/icons.js"></script>
 <link rel="stylesheet" href="css/slides.css">
 </head>
 <body class="app-slides">
 <div class="titlebar">
   <div class="brand"><div class="logo">P</div><span>Slides</span></div>
   <div class="qa">
-    <button data-cmd="save" title="Save (Ctrl+S)">💾</button>
-    <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
-    <button data-cmd="redo" title="Redo (Ctrl+Y)">↷</button>
-    <button data-cmd="present" title="Start slide show (F5)">▶</button>
+    <button data-cmd="save" title="Save (Ctrl+S)"><span class="ico" data-icon="save"></span></button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)"><span class="ico" data-icon="undo-2"></span></button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)"><span class="ico" data-icon="redo-2"></span></button>
+    <button data-cmd="present" title="Start slide show (F5)"><span class="ico" data-icon="play"></span></button>
   </div>
   <div class="docname"><input value="Presentation1" aria-label="Presentation name" spellcheck="false"></div>
   <span class="status-saved"></span>
@@ -41,15 +42,15 @@
 <div class="ribbon">
   <div class="ribbon-panel active" data-panel="home">
     <div class="group"><div class="controls">
-      <button class="btn big" id="newSlide"><span class="ico">▭＋</span>New<br>Slide</button>
+      <button class="btn big" id="newSlide"><span class="ico" data-icon="square-plus"></span>New<br>Slide</button>
       <div class="controls col">
         <select class="ctl" id="layout" title="Layout">
           <option value="title">Title Slide</option><option value="content" selected>Title and Content</option>
           <option value="section">Section Header</option><option value="two">Two Content</option><option value="titleonly">Title Only</option><option value="blank">Blank</option>
         </select>
-        <button class="btn" id="resetSlide" title="Put placeholders back where the layout has them">↺ Reset</button>
-        <button class="btn" id="dupSlide">⧉ Duplicate</button>
-        <button class="btn" id="delSlide">🗑 Delete</button>
+        <button class="btn" id="resetSlide" title="Put placeholders back where the layout has them"><span class="ico" data-icon="rotate-ccw"></span>Reset</button>
+        <button class="btn" id="dupSlide"><span class="ico" data-icon="copy-plus"></span>Duplicate</button>
+        <button class="btn" id="delSlide"><span class="ico" data-icon="trash-2"></span>Delete</button>
       </div>
     </div><div class="label">Slides</div></div>
     <div class="group"><div class="controls col">
@@ -62,127 +63,127 @@
         </select>
       </div>
       <div class="row">
-        <button class="btn" data-exec="bold"><b>B</b></button>
-        <button class="btn" data-exec="italic"><i>I</i></button>
-        <button class="btn" data-exec="underline"><u>U</u></button>
-        <button class="btn" data-exec="strikeThrough"><s>ab</s></button>
+        <button class="btn" data-exec="bold" aria-label="Bold"><span class="ico" data-icon="bold"></span></button>
+        <button class="btn" data-exec="italic" aria-label="Italic"><span class="ico" data-icon="italic"></span></button>
+        <button class="btn" data-exec="underline" aria-label="Underline"><span class="ico" data-icon="underline"></span></button>
+        <button class="btn" data-exec="strikeThrough" aria-label="Strikethrough"><span class="ico" data-icon="strikethrough"></span></button>
         <span class="btn color-btn" title="Font colour"><b>A</b><span class="bar" style="background:#c00000"></span><input type="color" id="textColor" value="#c00000"></span>
       </div>
     </div><div class="label">Font</div></div>
     <div class="group"><div class="controls col">
       <div class="row">
-        <button class="btn" data-exec="insertUnorderedList">• ≡</button>
-        <button class="btn" data-exec="insertOrderedList">1. ≡</button>
+        <button class="btn" data-exec="insertUnorderedList" aria-label="Bullets"><span class="ico" data-icon="list"></span></button>
+        <button class="btn" data-exec="insertOrderedList" aria-label="Numbering"><span class="ico" data-icon="list-ordered"></span></button>
       </div>
       <div class="row">
-        <button class="btn" data-align="left">⫷</button>
-        <button class="btn" data-align="center">≡</button>
-        <button class="btn" data-align="right">⫸</button>
-        <button class="btn" data-valign="top" title="Align top">⤒</button>
-        <button class="btn" data-valign="middle" title="Align middle">↕</button>
-        <button class="btn" data-valign="bottom" title="Align bottom">⤓</button>
+        <button class="btn" data-align="left" aria-label="Align left"><span class="ico" data-icon="align-left"></span></button>
+        <button class="btn" data-align="center" aria-label="Center"><span class="ico" data-icon="align-center"></span></button>
+        <button class="btn" data-align="right" aria-label="Align right"><span class="ico" data-icon="align-right"></span></button>
+        <button class="btn" data-valign="top" title="Align top"><span class="ico" data-icon="align-vertical-justify-start"></span></button>
+        <button class="btn" data-valign="middle" title="Align middle"><span class="ico" data-icon="align-vertical-justify-center"></span></button>
+        <button class="btn" data-valign="bottom" title="Align bottom"><span class="ico" data-icon="align-vertical-justify-end"></span></button>
       </div>
     </div><div class="label">Paragraph</div></div>
     <div class="group"><div class="controls col">
-      <label class="row">Fill <input type="color" class="ctl" id="shapeFill" value="#4472c4"> <button class="btn" id="noFill" title="No fill">∅</button></label>
-      <label class="row">Outline <input type="color" class="ctl" id="shapeLine" value="#2f528f"> <button class="btn" id="noLine" title="No outline">∅</button></label>
+      <label class="row">Fill <input type="color" class="ctl" id="shapeFill" value="#4472c4"> <button class="btn" id="noFill" title="No fill"><span class="ico" data-icon="paint-bucket"></span></button></label>
+      <label class="row">Outline <input type="color" class="ctl" id="shapeLine" value="#2f528f"> <button class="btn" id="noLine" title="No outline"><span class="ico" data-icon="square-dashed"></span></button></label>
     </div><div class="label">Drawing</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="insert">
     <div class="group"><div class="controls">
-      <button class="btn big" id="newSlide2"><span class="ico">▭＋</span>New<br>Slide</button>
+      <button class="btn big" id="newSlide2"><span class="ico" data-icon="square-plus"></span>New<br>Slide</button>
     </div><div class="label">Slides</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="insText"><span class="ico">A</span>Text Box</button>
-      <button class="btn big" id="insImage"><span class="ico">🖼</span>Picture</button>
-      <button class="btn big" id="insTable"><span class="ico">▦</span>Table</button>
-      <button class="btn big" id="insSmartArt" title="A diagram from a list: process, cycle, hierarchy, pyramid…"><span class="ico">⧉</span>SmartArt</button>
+      <button class="btn big" id="insText"><span class="ico" data-icon="type"></span>Text Box</button>
+      <button class="btn big" id="insImage"><span class="ico" data-icon="image"></span>Picture</button>
+      <button class="btn big" id="insTable"><span class="ico" data-icon="table"></span>Table</button>
+      <button class="btn big" id="insSmartArt" title="A diagram from a list: process, cycle, hierarchy, pyramid…"><span class="ico" data-icon="network"></span>SmartArt</button>
     </div><div class="label">Content</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="insVideo"><span class="ico">🎬</span>Video</button>
-      <button class="btn big" id="insAudio"><span class="ico">🔊</span>Audio</button>
+      <button class="btn big" id="insVideo"><span class="ico" data-icon="clapperboard"></span>Video</button>
+      <button class="btn big" id="insAudio"><span class="ico" data-icon="audio-lines"></span>Audio</button>
       <div class="controls col">
         <label class="row" title="Play when the slide appears (else on click)"><input type="checkbox" id="mediaAuto"> Start automatically</label>
         <label class="row"><input type="checkbox" id="mediaLoop"> Loop until stopped</label>
         <label class="row"><input type="checkbox" id="mediaHide"> Hide icon during show</label>
       </div>
-      <button class="btn big" id="mediaPlay"><span class="ico">⏯</span>Play</button>
+      <button class="btn big" id="mediaPlay"><span class="ico" data-icon="circle-play"></span>Play</button>
     </div><div class="label">Media</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="headerFooter"><span class="ico">▁</span>Header &amp;<br>Footer</button>
+      <button class="btn big" id="headerFooter"><span class="ico" data-icon="panel-bottom"></span>Header &amp;<br>Footer</button>
     </div><div class="label">Text</div></div>
     <div class="group"><div class="controls">
-      <button class="btn" data-shape="rect" title="Rectangle">▭</button>
-      <button class="btn" data-shape="roundRect" title="Rounded rectangle">▢</button>
-      <button class="btn" data-shape="ellipse" title="Oval">◯</button>
-      <button class="btn" data-shape="triangle" title="Triangle">△</button>
-      <button class="btn" data-shape="rightArrow" title="Arrow">➔</button>
-      <button class="btn" data-shape="line" title="Line">╱</button>
-      <button class="btn" data-shape="star5" title="Star">☆</button>
-      <button class="btn" data-shape="diamond" title="Diamond">◇</button>
-      <button class="btn" data-connector="straight" title="Arrow connector: click two shapes">↗</button>
-      <button class="btn" data-connector="elbow" title="Elbow connector: click two shapes">↳</button>
+      <button class="btn" data-shape="rect" title="Rectangle"><span class="ico" data-icon="rectangle-horizontal"></span></button>
+      <button class="btn" data-shape="roundRect" title="Rounded rectangle"><span class="ico" data-icon="square"></span></button>
+      <button class="btn" data-shape="ellipse" title="Oval"><span class="ico" data-icon="circle"></span></button>
+      <button class="btn" data-shape="triangle" title="Triangle"><span class="ico" data-icon="triangle"></span></button>
+      <button class="btn" data-shape="rightArrow" title="Arrow"><span class="ico" data-icon="move-right"></span></button>
+      <button class="btn" data-shape="line" title="Line"><span class="ico" data-icon="minus"></span></button>
+      <button class="btn" data-shape="star5" title="Star"><span class="ico" data-icon="star"></span></button>
+      <button class="btn" data-shape="diamond" title="Diamond"><span class="ico" data-icon="diamond"></span></button>
+      <button class="btn" data-connector="straight" title="Arrow connector: click two shapes"><span class="ico" data-icon="move-up-right"></span></button>
+      <button class="btn" data-connector="elbow" title="Elbow connector: click two shapes"><span class="ico" data-icon="corner-down-right"></span></button>
     </div><div class="label">Shapes</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="design">
     <div class="group"><div class="controls themes" id="themes"></div><div class="label">Themes</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="designIdeas" title="Designer: other layouts for this slide's title, text and pictures"><span class="ico">✨</span>Design<br>Ideas</button>
+      <button class="btn big" id="designIdeas" title="Designer: other layouts for this slide's title, text and pictures"><span class="ico" data-icon="sparkles"></span>Design<br>Ideas</button>
     </div><div class="label">Designer</div></div>
     <div class="group"><div class="controls col">
       <label class="row">Background <input type="color" class="ctl" id="slideBg" value="#ffffff"></label>
       <button class="btn" id="bgAll">Apply to all slides</button>
-      <button class="btn" id="bgImage">🖼 Background picture</button>
-      <button class="btn" id="hideMaster" title="Hide the master's shapes, footers and slide number on this slide">⊘ Hide background graphics</button>
+      <button class="btn" id="bgImage"><span class="ico" data-icon="image"></span>Background picture</button>
+      <button class="btn" id="hideMaster" title="Hide the master's shapes, footers and slide number on this slide"><span class="ico" data-icon="eye-off"></span>Hide background graphics</button>
     </div><div class="label">Customize</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="masterView2"><span class="ico">▤</span>Slide<br>Master</button>
+      <button class="btn big" id="masterView2"><span class="ico" data-icon="layout-template"></span>Slide<br>Master</button>
     </div><div class="label">Master</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="review">
     <div class="group"><div class="controls">
-      <button class="btn big" id="proofEditor" title="Spelling &amp; Grammar (F7)"><span class="ico">ABC✓</span>Spelling</button>
-      <button class="btn big" id="proofLang" title="Proofing language"><span class="ico">🌐</span>Language</button>
+      <button class="btn big" id="proofEditor" title="Spelling &amp; Grammar (F7)"><span class="ico" data-icon="spell-check"></span>Spelling</button>
+      <button class="btn big" id="proofLang" title="Proofing language"><span class="ico" data-icon="languages"></span>Language</button>
     </div><div class="label">Proofing</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="a11yCheck" title="Find things that make the presentation hard to use for people with disabilities"><span class="ico">♿</span>Check<br>Accessibility</button>
+      <button class="btn big" id="a11yCheck" title="Find things that make the presentation hard to use for people with disabilities"><span class="ico" data-icon="accessibility"></span>Check<br>Accessibility</button>
     </div><div class="label">Accessibility</div></div>
   </div>
   <div class="ribbon-panel" data-panel="viewtab">
     <div class="group"><div class="controls">
-      <button class="btn big" id="masterView" title="Edit the master and layouts: shapes, backgrounds and placeholders shared by slides"><span class="ico">▤</span>Slide<br>Master</button>
+      <button class="btn big" id="masterView" title="Edit the master and layouts: shapes, backgrounds and placeholders shared by slides"><span class="ico" data-icon="layout-template"></span>Slide<br>Master</button>
     </div><div class="label">Master Views</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="master">
     <div class="group"><div class="controls">
-      <button class="btn big" id="insLayout"><span class="ico">▭＋</span>Insert<br>Layout</button>
+      <button class="btn big" id="insLayout"><span class="ico" data-icon="square-plus"></span>Insert<br>Layout</button>
       <div class="controls col">
-        <button class="btn" id="renameLayout">✎ Rename</button>
-        <button class="btn" id="delLayout">🗑 Delete</button>
+        <button class="btn" id="renameLayout"><span class="ico" data-icon="pencil"></span>Rename</button>
+        <button class="btn" id="delLayout"><span class="ico" data-icon="trash-2"></span>Delete</button>
         <select class="ctl" id="insPlaceholder" title="Insert Placeholder"><option value="">Insert Placeholder…</option><option value="title">Title</option><option value="subtitle">Subtitle</option><option value="body">Content</option></select>
       </div>
     </div><div class="label">Edit Master</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="headerFooter2"><span class="ico">▁</span>Header &amp;<br>Footer</button>
-      <button class="btn big" id="closeMaster"><span class="ico">✕</span>Close<br>Master View</button>
+      <button class="btn big" id="headerFooter2"><span class="ico" data-icon="panel-bottom"></span>Header &amp;<br>Footer</button>
+      <button class="btn big" id="closeMaster"><span class="ico" data-icon="x"></span>Close<br>Master View</button>
     </div><div class="label">Close</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="transitions">
     <div class="group"><div class="controls">
-      <button class="btn big" data-trans="none"><span class="ico">▭</span>None</button>
-      <button class="btn big" data-trans="fade"><span class="ico">◐</span>Fade</button>
-      <button class="btn big" data-trans="push"><span class="ico">⇠</span>Push</button>
-      <button class="btn big" data-trans="wipe"><span class="ico">▤</span>Wipe</button>
-      <button class="btn big" data-trans="split"><span class="ico">◫</span>Split</button>
-      <button class="btn big" data-trans="cover"><span class="ico">⧉</span>Cover</button>
-      <button class="btn big" data-trans="uncover"><span class="ico">⬚</span>Uncover</button>
-      <button class="btn big" data-trans="zoom"><span class="ico">⤢</span>Zoom</button>
-      <button class="btn big" data-trans="morph" title="Morph: objects on this and the previous slide glide from one place to the other (duplicate a slide, then move things)"><span class="ico">⇝</span>Morph</button>
+      <button class="btn big" data-trans="none"><span class="ico" data-icon="square-x"></span>None</button>
+      <button class="btn big" data-trans="fade"><span class="ico" data-icon="blend"></span>Fade</button>
+      <button class="btn big" data-trans="push"><span class="ico" data-icon="arrow-left-to-line"></span>Push</button>
+      <button class="btn big" data-trans="wipe"><span class="ico" data-icon="paint-roller"></span>Wipe</button>
+      <button class="btn big" data-trans="split"><span class="ico" data-icon="columns-2"></span>Split</button>
+      <button class="btn big" data-trans="cover"><span class="ico" data-icon="layers"></span>Cover</button>
+      <button class="btn big" data-trans="uncover"><span class="ico" data-icon="layers-2"></span>Uncover</button>
+      <button class="btn big" data-trans="zoom"><span class="ico" data-icon="zoom-in"></span>Zoom</button>
+      <button class="btn big" data-trans="morph" title="Morph: objects on this and the previous slide glide from one place to the other (duplicate a slide, then move things)"><span class="ico" data-icon="shapes"></span>Morph</button>
     </div><div class="label">Transition to This Slide</div></div>
     <div class="group"><div class="controls col">
       <label class="row">Duration <input class="ctl" id="transDur" type="number" min="0.1" max="30" step="0.25" value="1" style="width:60px"> s</label>
@@ -208,56 +209,56 @@
     </div><div class="label">Timing</div></div>
     <div class="group"><div class="controls">
       <div class="controls col">
-        <button class="btn" id="animEarlier">▲ Move Earlier</button>
-        <button class="btn" id="animLater">▼ Move Later</button>
+        <button class="btn" id="animEarlier"><span class="ico" data-icon="arrow-up"></span>Move Earlier</button>
+        <button class="btn" id="animLater"><span class="ico" data-icon="arrow-down"></span>Move Later</button>
       </div>
-      <button class="btn big" id="animPreview"><span class="ico">▶</span>Preview</button>
+      <button class="btn big" id="animPreview"><span class="ico" data-icon="play"></span>Preview</button>
     </div><div class="label">Order</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="arrange">
     <div class="group"><div class="controls">
-      <button class="btn big" id="toFront"><span class="ico">⬒</span>Bring to<br>Front</button>
-      <button class="btn big" id="toBack"><span class="ico">⬓</span>Send to<br>Back</button>
+      <button class="btn big" id="toFront"><span class="ico" data-icon="bring-to-front"></span>Bring to<br>Front</button>
+      <button class="btn big" id="toBack"><span class="ico" data-icon="send-to-back"></span>Send to<br>Back</button>
     </div><div class="label">Order</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="altText" title="Describe the selected picture, video or shape for screen readers"><span class="ico">💬</span>Alt<br>Text</button>
+      <button class="btn big" id="altText" title="Describe the selected picture, video or shape for screen readers"><span class="ico" data-icon="message-square-text"></span>Alt<br>Text</button>
     </div><div class="label">Accessibility</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="groupEls" title="Group (Ctrl+G); Shift+click to select several objects"><span class="ico">⧈</span>Group</button>
-      <button class="btn big" id="ungroupEls" title="Ungroup (Ctrl+Shift+G)"><span class="ico">⧉</span>Ungroup</button>
+      <button class="btn big" id="groupEls" title="Group (Ctrl+G); Shift+click to select several objects"><span class="ico" data-icon="group"></span>Group</button>
+      <button class="btn big" id="ungroupEls" title="Ungroup (Ctrl+Shift+G)"><span class="ico" data-icon="ungroup"></span>Ungroup</button>
     </div><div class="label">Group</div></div>
     <div class="group"><div class="controls col">
-      <button class="btn" id="rotRight">↻ Rotate right 90°</button>
-      <button class="btn" id="rotLeft">↺ Rotate left 90°</button>
+      <button class="btn" id="rotRight"><span class="ico" data-icon="rotate-cw"></span>Rotate right 90°</button>
+      <button class="btn" id="rotLeft"><span class="ico" data-icon="rotate-ccw"></span>Rotate left 90°</button>
     </div><div class="controls col">
-      <button class="btn" id="flipH">⇋ Flip horizontal</button>
-      <button class="btn" id="flipV">⇵ Flip vertical</button>
+      <button class="btn" id="flipH"><span class="ico" data-icon="flip-horizontal-2"></span>Flip horizontal</button>
+      <button class="btn" id="flipV"><span class="ico" data-icon="flip-vertical-2"></span>Flip vertical</button>
     </div><div class="label">Rotate</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="alignCenterH"><span class="ico">⇹</span>Center<br>Horizontally</button>
-      <button class="btn big" id="alignCenterV"><span class="ico">⇵</span>Center<br>Vertically</button>
-      <button class="btn big" id="dupEl"><span class="ico">⧉</span>Duplicate</button>
-      <button class="btn big" id="delEl"><span class="ico">🗑</span>Delete</button>
+      <button class="btn big" id="alignCenterH"><span class="ico" data-icon="align-center-horizontal"></span>Center<br>Horizontally</button>
+      <button class="btn big" id="alignCenterV"><span class="ico" data-icon="align-center-vertical"></span>Center<br>Vertically</button>
+      <button class="btn big" id="dupEl"><span class="ico" data-icon="copy-plus"></span>Duplicate</button>
+      <button class="btn big" id="delEl"><span class="ico" data-icon="trash-2"></span>Delete</button>
     </div><div class="label">Arrange</div></div>
   </div>
 
   <div class="ribbon-panel" data-panel="show">
     <div class="group"><div class="controls">
-      <button class="btn big" data-cmd="present"><span class="ico">▶</span>From<br>Beginning</button>
-      <button class="btn big" data-cmd="present-current"><span class="ico">▷</span>From Current<br>Slide</button>
-      <button class="btn big" data-cmd="presenter-view" title="Your notes, the next slide and a timer on this screen; the slides on the other screen or window"><span class="ico">🖥</span>Presenter<br>View</button>
+      <button class="btn big" data-cmd="present"><span class="ico" data-icon="play"></span>From<br>Beginning</button>
+      <button class="btn big" data-cmd="present-current"><span class="ico" data-icon="square-play"></span>From Current<br>Slide</button>
+      <button class="btn big" data-cmd="presenter-view" title="Your notes, the next slide and a timer on this screen; the slides on the other screen or window"><span class="ico" data-icon="presentation"></span>Presenter<br>View</button>
     </div><div class="label">Start Slide Show</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="recordShow" title="Record narration and timings from the first slide"><span class="ico">⏺</span>Record</button>
+      <button class="btn big" id="recordShow" title="Record narration and timings from the first slide"><span class="ico" data-icon="circle-dot"></span>Record</button>
       <div class="controls col">
-        <button class="btn" id="recordCurrent">⏺ From Current Slide</button>
-        <button class="btn" id="clearRecording">✕ Clear Recording</button>
+        <button class="btn" id="recordCurrent"><span class="ico" data-icon="circle-dot"></span>From Current Slide</button>
+        <button class="btn" id="clearRecording"><span class="ico" data-icon="circle-x"></span>Clear Recording</button>
       </div>
-      <button class="btn big" id="handouts" title="Print or save handouts and notes pages"><span class="ico">🗎</span>Handouts</button>
+      <button class="btn big" id="handouts" title="Print or save handouts and notes pages"><span class="ico" data-icon="printer"></span>Handouts</button>
     </div><div class="label">Set Up</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="toggleNotes"><span class="ico">🗒</span>Notes</button>
+      <button class="btn big" id="toggleNotes"><span class="ico" data-icon="notebook-pen"></span>Notes</button>
     </div><div class="label">View</div></div>
   </div>
 </div>
@@ -282,23 +283,23 @@
 
 <div class="presenter" id="presenter" hidden><div class="slide" id="presentSlide"></div><div class="present-hint" id="presentHint"></div></div>
 <div class="presenter-view" id="presenterView" hidden>
-  <div class="pv-top"><span id="pvTimer" class="pv-timer">0:00:00</span><button class="pv-btn" id="pvPause" title="Pause timer">⏸</button><button class="pv-btn" id="pvReset" title="Restart timer">↺</button><span class="pv-spacer"></span><span id="pvClock"></span></div>
+  <div class="pv-top"><span id="pvTimer" class="pv-timer">0:00:00</span><button class="pv-btn" id="pvPause" title="Pause timer"><span class="ico" data-icon="pause"></span></button><button class="pv-btn" id="pvReset" title="Restart timer"><span class="ico" data-icon="rotate-ccw"></span></button><span class="pv-spacer"></span><span id="pvClock"></span></div>
   <div class="pv-main">
     <div class="pv-current" id="pvCurrentBox"><div class="slide" id="pvCurrent"></div></div>
     <div class="pv-side">
       <div class="pv-label" id="pvNextLabel">Next slide</div>
       <div class="pv-next" id="pvNextBox"><div class="slide" id="pvNext"></div></div>
-      <div class="pv-notes-bar"><span>Notes</span><button class="pv-btn" id="pvZoomOut" title="Smaller notes">A−</button><button class="pv-btn" id="pvZoomIn" title="Larger notes">A+</button></div>
+      <div class="pv-notes-bar"><span>Notes</span><button class="pv-btn" id="pvZoomOut" title="Smaller notes"><span class="ico" data-icon="a-arrow-down"></span></button><button class="pv-btn" id="pvZoomIn" title="Larger notes"><span class="ico" data-icon="a-arrow-up"></span></button></div>
       <div class="pv-notes" id="pvNotes"></div>
     </div>
   </div>
-  <div class="pv-bottom"><button class="pv-btn" id="pvPrev" title="Previous (←)">◀</button><span id="pvCount"></span><button class="pv-btn" id="pvNextBtn" title="Next (→, Space)">▶</button><span class="pv-spacer"></span><button class="pv-btn" id="pvBlack" title="Black screen (B)">■ Black</button><button class="pv-btn" id="pvEnd" title="End show (Esc)">End Show</button></div>
+  <div class="pv-bottom"><button class="pv-btn" id="pvPrev" title="Previous (←)"><span class="ico" data-icon="chevron-left"></span></button><span id="pvCount"></span><button class="pv-btn" id="pvNextBtn" title="Next (→, Space)"><span class="ico" data-icon="chevron-right"></span></button><span class="pv-spacer"></span><button class="pv-btn" id="pvBlack" title="Black screen (B)"><span class="ico" data-icon="square"></span>Black</button><button class="pv-btn" id="pvEnd" title="End show (Esc)">End Show</button></div>
 </div>
 <div class="print-slides" id="printSlides"></div>
 
 <div class="backstage">
   <nav>
-    <button class="back" title="Back">←</button>
+    <button class="back" title="Back"><span class="ico" data-icon="arrow-left"></span></button>
     <button data-cmd="new">New</button>
     <button data-cmd="open">Open</button>
     <button data-cmd="open-cloud">Open from Cloud</button>

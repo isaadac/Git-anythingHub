@@ -290,7 +290,8 @@
     people.setAttribute('aria-live', 'polite');
     const btn = document.createElement('button');
     btn.className = 'share-btn live-btn';
-    btn.textContent = 'Live';
+    btn.innerHTML = '<span class="ico" data-icon="users"></span><span class="lbl">Live</span>';
+    const label = btn.querySelector('.lbl');
     btn.title = 'Edit together in real time';
     const share = bar.querySelector('.share-btn');
     bar.insertBefore(people, share || bar.querySelector('.qa'));
@@ -300,7 +301,7 @@
 
     session.onChange(S => {
       btn.classList.toggle('on', S.status !== 'off');
-      btn.textContent = S.status === 'live' ? `Live · ${S.peers.length}` : S.status === 'off' ? 'Live' : 'Live…';
+      label.textContent = S.status === 'live' ? `Live · ${S.peers.length}` : S.status === 'off' ? 'Live' : 'Live…';
       btn.title = S.status === 'live' ? 'In a live session — click for the invite link' : S.status === 'off' ? 'Edit together in real time' : 'Connecting…';
       people.innerHTML = '';
       if (S.status !== 'off') S.peers.filter(p => p.id !== S.id).forEach(p => {

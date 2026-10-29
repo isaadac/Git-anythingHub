@@ -15,7 +15,8 @@
    */
   function attach(o) {
     const bar = document.querySelector('.titlebar');
-    const btn = el('button', 'share-btn ai-btn', '✨ Assistant');
+    const btn = el('button', 'share-btn ai-btn');
+    btn.innerHTML = '<span class="ico" data-icon="sparkles"></span>Assistant';
     btn.title = 'Ask Claude about this document';
     btn.addEventListener('mousedown', e => e.preventDefault());
     bar.insertBefore(btn, bar.querySelector('.live-btn') || bar.querySelector('.share-btn') || bar.querySelector('.qa'));
@@ -23,7 +24,7 @@
     const pane = el('aside', 'ai-pane');
     pane.hidden = true;
     pane.setAttribute('aria-label', 'Assistant');
-    pane.innerHTML = `<header><b>Assistant</b><span class="sp"></span><button class="gear" title="Settings">⚙</button><button class="x" title="Close">✕</button></header>
+    pane.innerHTML = `<header><b>Assistant</b><span class="sp"></span><button class="gear" title="Settings"><span class="ico" data-icon="settings"></span></button><button class="x" title="Close"><span class="ico" data-icon="x"></span></button></header>
       <div class="ai-actions"></div><div class="ai-log" aria-live="polite"></div>
       <div class="ai-input"><label class="ai-ctx"><input type="checkbox" checked> Include the document</label>
       <textarea rows="3" placeholder="Ask anything about this document…"></textarea>

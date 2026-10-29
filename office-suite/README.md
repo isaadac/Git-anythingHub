@@ -65,6 +65,7 @@ npm start          # run the desktop app
 npm test           # unit tests (formula engine, number formats, merging, dictionaries…)
 npm run e2e        # end-to-end tests in Chromium and the desktop app (xvfb-run -a on Linux)
 npm run load-test  # live-editing server under load (see the options in scripts/collab-load.js)
+node scripts/build-icons.js   # after using a new icon (data-icon="name", any Lucide name)
 npm run dist       # build installers for the current OS into dist/
 npm run dist:win   # or :mac / :linux
 ```

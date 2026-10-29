@@ -8,19 +8,20 @@
 <link rel="stylesheet" href="css/office.css">
 <script src="js/theme.js"></script>
 <script src="js/i18n.js"></script>
+<script src="js/icons.js"></script>
 <link rel="stylesheet" href="css/notes.css">
 </head>
 <body class="app-notes">
 <div class="titlebar">
   <div class="brand"><div class="logo">N</div><span>Notes</span></div>
   <div class="qa">
-    <button data-cmd="undo" title="Undo (Ctrl+Z)">↶</button>
-    <button data-cmd="redo" title="Redo (Ctrl+Y)">↷</button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)"><span class="ico" data-icon="undo-2"></span></button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)"><span class="ico" data-icon="redo-2"></span></button>
   </div>
   <div class="docname"><input id="nbName" value="My Notebook" aria-label="Notebook name" spellcheck="false"></div>
   <span class="status-saved" id="savedState"></span>
   <span class="status-saved" id="syncState"></span>
-  <button class="share-btn" id="syncBtn" title="Keep this notebook in the cloud and in sync on all your devices">⇅ Sync</button>
+  <button class="share-btn" id="syncBtn" title="Keep this notebook in the cloud and in sync on all your devices"><span class="ico" data-icon="refresh-cw"></span>Sync</button>
 </div>
 
 <div class="ribbon-tabs">
@@ -34,66 +35,66 @@
 <div class="ribbon">
   <div class="ribbon-panel active" data-panel="home">
     <div class="group"><div class="controls">
-      <button class="btn" data-exec="bold" title="Bold (Ctrl+B)"><b>B</b></button>
-      <button class="btn" data-exec="italic" title="Italic (Ctrl+I)"><i>I</i></button>
-      <button class="btn" data-exec="underline" title="Underline (Ctrl+U)"><u>U</u></button>
-      <button class="btn" data-exec="strikeThrough" title="Strikethrough"><s>ab</s></button>
-      <button class="btn" id="highlight" title="Highlight">🖍</button>
+      <button class="btn" data-exec="bold" title="Bold (Ctrl+B)"><span class="ico" data-icon="bold"></span></button>
+      <button class="btn" data-exec="italic" title="Italic (Ctrl+I)"><span class="ico" data-icon="italic"></span></button>
+      <button class="btn" data-exec="underline" title="Underline (Ctrl+U)"><span class="ico" data-icon="underline"></span></button>
+      <button class="btn" data-exec="strikeThrough" title="Strikethrough"><span class="ico" data-icon="strikethrough"></span></button>
+      <button class="btn" id="highlight" title="Highlight"><span class="ico" data-icon="highlighter"></span></button>
       <input type="color" class="ctl" id="fontColor" value="#c00000" title="Font colour" style="width:32px;padding:1px">
-      <button class="btn" data-exec="removeFormat" title="Clear formatting">⌫A</button>
+      <button class="btn" data-exec="removeFormat" title="Clear formatting"><span class="ico" data-icon="remove-formatting"></span></button>
     </div><div class="label">Basic Text</div></div>
     <div class="group"><div class="controls">
-      <button class="btn" data-exec="insertUnorderedList" title="Bullets">• ≡</button>
-      <button class="btn" data-exec="insertOrderedList" title="Numbering">1. ≡</button>
-      <button class="btn" data-exec="outdent" title="Decrease indent">⇤</button>
-      <button class="btn" data-exec="indent" title="Increase indent">⇥</button>
+      <button class="btn" data-exec="insertUnorderedList" title="Bullets"><span class="ico" data-icon="list"></span></button>
+      <button class="btn" data-exec="insertOrderedList" title="Numbering"><span class="ico" data-icon="list-ordered"></span></button>
+      <button class="btn" data-exec="outdent" title="Decrease indent"><span class="ico" data-icon="indent-decrease"></span></button>
+      <button class="btn" data-exec="indent" title="Increase indent"><span class="ico" data-icon="indent-increase"></span></button>
     </div><div class="label">Lists</div></div>
     <div class="group"><div class="controls">
-      <button class="btn" data-block="h1" title="Heading 1">H1</button>
-      <button class="btn" data-block="h2" title="Heading 2">H2</button>
-      <button class="btn" data-block="p" title="Normal text">¶</button>
+      <button class="btn" data-block="h1" title="Heading 1"><span class="ico" data-icon="heading-1"></span></button>
+      <button class="btn" data-block="h2" title="Heading 2"><span class="ico" data-icon="heading-2"></span></button>
+      <button class="btn" data-block="p" title="Normal text"><span class="ico" data-icon="pilcrow"></span></button>
     </div><div class="label">Styles</div></div>
     <div class="group"><div class="controls">
-      <button class="btn" data-tag="todo" title="To Do checkbox (Ctrl+1)">☐ To Do</button>
-      <button class="btn" data-tag="tag-important" title="Important (Ctrl+2)">★ Important</button>
-      <button class="btn" data-tag="tag-question" title="Question (Ctrl+3)">? Question</button>
-      <button class="btn" data-tag="tag-idea" title="Idea (Ctrl+4)">💡 Idea</button>
+      <button class="btn" data-tag="todo" title="To Do checkbox (Ctrl+1)"><span class="ico" data-icon="square-check"></span>To Do</button>
+      <button class="btn" data-tag="tag-important" title="Important (Ctrl+2)"><span class="ico" data-icon="star"></span>Important</button>
+      <button class="btn" data-tag="tag-question" title="Question (Ctrl+3)"><span class="ico" data-icon="circle-help"></span>Question</button>
+      <button class="btn" data-tag="tag-idea" title="Idea (Ctrl+4)"><span class="ico" data-icon="lightbulb"></span>Idea</button>
     </div><div class="label">Tags</div></div>
   </div>
   <div class="ribbon-panel" data-panel="insert">
     <div class="group"><div class="controls">
-      <button class="btn big" id="insTable"><span class="ico">▦</span>Table</button>
-      <button class="btn big" id="insPicture"><span class="ico">🖼</span>Picture</button>
-      <button class="btn big" id="insLink"><span class="ico">🔗</span>Link</button>
-      <button class="btn big" id="insDate"><span class="ico">📅</span>Date &amp;<br>Time</button>
-      <button class="btn big" id="insRule"><span class="ico">―</span>Line</button>
+      <button class="btn big" id="insTable"><span class="ico" data-icon="table"></span>Table</button>
+      <button class="btn big" id="insPicture"><span class="ico" data-icon="image"></span>Picture</button>
+      <button class="btn big" id="insLink"><span class="ico" data-icon="link"></span>Link</button>
+      <button class="btn big" id="insDate"><span class="ico" data-icon="calendar-clock"></span>Date &amp;<br>Time</button>
+      <button class="btn big" id="insRule"><span class="ico" data-icon="minus"></span>Line</button>
     </div><div class="label">Insert</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="insFile" title="Attach a file to the page (kept in the notebook)"><span class="ico">📎</span>File<br>Attachment</button>
-      <button class="btn big" id="recAudio" title="Record audio into the page"><span class="ico">🎙</span><span class="lbl">Record Audio</span></button>
+      <button class="btn big" id="insFile" title="Attach a file to the page (kept in the notebook)"><span class="ico" data-icon="paperclip"></span>File<br>Attachment</button>
+      <button class="btn big" id="recAudio" title="Record audio into the page"><span class="ico" data-icon="mic"></span><span class="lbl">Record Audio</span></button>
     </div><div class="label">Files &amp; Recording</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="pageTemplate" title="A new page from a template: meeting notes, to-do list, lecture notes…"><span class="ico">🗒</span>Page<br>Templates</button>
+      <button class="btn big" id="pageTemplate" title="A new page from a template: meeting notes, to-do list, lecture notes…"><span class="ico" data-icon="layout-template"></span>Page<br>Templates</button>
     </div><div class="label">Pages</div></div>
   </div>
   <div class="ribbon-panel" data-panel="draw">
     <div class="group"><div class="controls">
-      <button class="btn big" id="drawOff" title="Type and select"><span class="ico">⌶</span>Type</button>
-      <button class="btn big pen" data-pen="#1f1f1f" data-w="2" title="Black pen"><span class="ico" style="color:#1f1f1f">✎</span>Black</button>
-      <button class="btn big pen" data-pen="#1565c0" data-w="2" title="Blue pen"><span class="ico" style="color:#1565c0">✎</span>Blue</button>
-      <button class="btn big pen" data-pen="#c62828" data-w="2" title="Red pen"><span class="ico" style="color:#c62828">✎</span>Red</button>
-      <button class="btn big pen" data-pen="#2e7d32" data-w="2" title="Green pen"><span class="ico" style="color:#2e7d32">✎</span>Green</button>
-      <button class="btn big pen" data-pen="#fff176" data-w="14" data-hl="1" title="Highlighter"><span class="ico" style="color:#e0c000">▮</span>Highlighter</button>
-      <button class="btn big" id="eraser" title="Eraser: touch a stroke to remove it"><span class="ico">⌫</span>Eraser</button>
+      <button class="btn big" id="drawOff" title="Type and select"><span class="ico" data-icon="text-cursor"></span>Type</button>
+      <button class="btn big pen" data-pen="#1f1f1f" data-w="2" title="Black pen"><span class="ico" style="color:#1f1f1f" data-icon="pen-line"></span>Black</button>
+      <button class="btn big pen" data-pen="#1565c0" data-w="2" title="Blue pen"><span class="ico" style="color:#1565c0" data-icon="pen-line"></span>Blue</button>
+      <button class="btn big pen" data-pen="#c62828" data-w="2" title="Red pen"><span class="ico" style="color:#c62828" data-icon="pen-line"></span>Red</button>
+      <button class="btn big pen" data-pen="#2e7d32" data-w="2" title="Green pen"><span class="ico" style="color:#2e7d32" data-icon="pen-line"></span>Green</button>
+      <button class="btn big pen" data-pen="#fff176" data-w="14" data-hl="1" title="Highlighter"><span class="ico" style="color:#e0c000" data-icon="highlighter"></span>Highlighter</button>
+      <button class="btn big" id="eraser" title="Eraser: touch a stroke to remove it"><span class="ico" data-icon="eraser"></span>Eraser</button>
     </div><div class="label">Pens</div></div>
     <div class="group"><div class="controls">
-      <button class="btn big" id="clearInk"><span class="ico">🗑</span>Clear<br>Drawing</button>
+      <button class="btn big" id="clearInk"><span class="ico" data-icon="trash-2"></span>Clear<br>Drawing</button>
     </div><div class="label">Ink</div></div>
   </div>
   <div class="ribbon-panel" data-panel="view">
     <div class="group"><div class="controls">
-      <button class="btn big" id="fullPage" title="Hide the notebook navigation (F11)"><span class="ico">⛶</span>Full Page<br>View</button>
-      <button class="btn big" id="ruled" title="Show lines on the page"><span class="ico">☰</span>Rule<br>Lines</button>
+      <button class="btn big" id="fullPage" title="Hide the notebook navigation (F11)"><span class="ico" data-icon="maximize-2"></span>Full Page<br>View</button>
+      <button class="btn big" id="ruled" title="Show lines on the page"><span class="ico" data-icon="notebook"></span>Rule<br>Lines</button>
     </div><div class="label">Views</div></div>
   </div>
 </div>
@@ -102,16 +103,16 @@
   <nav class="nb-nav" id="nav" aria-label="Notebook">
     <div class="nb-top">
       <select id="nbSelect" aria-label="Notebook"></select>
-      <button id="nbAdd" class="nb-mini" title="New notebook">＋</button>
+      <button id="nbAdd" class="nb-mini" title="New notebook"><span class="ico" data-icon="book-plus"></span></button>
     </div>
     <input id="search" type="search" placeholder="Search notes (Ctrl+E)" aria-label="Search notes">
     <div class="nb-cols">
       <div class="nb-col">
-        <div class="nb-head">Sections <button id="secAdd" class="nb-mini" title="New section">＋</button></div>
+        <div class="nb-head">Sections <button id="secAdd" class="nb-mini" title="New section"><span class="ico" data-icon="folder-plus"></span></button></div>
         <ul id="sections" class="nb-list" aria-label="Sections"></ul>
       </div>
       <div class="nb-col">
-        <div class="nb-head">Pages <button id="pageAdd" class="nb-mini" title="New page (Ctrl+N)">＋</button></div>
+        <div class="nb-head">Pages <button id="pageAdd" class="nb-mini" title="New page (Ctrl+N)"><span class="ico" data-icon="file-plus"></span></button></div>
         <ul id="pages" class="nb-list" aria-label="Pages"></ul>
       </div>
     </div>
@@ -135,7 +136,7 @@
 
 <div class="backstage">
   <nav>
-    <button class="back" title="Back">←</button>
+    <button class="back" title="Back"><span class="ico" data-icon="arrow-left"></span></button>
     <button data-cmd="new-notebook">New Notebook</button>
     <button data-cmd="open">Open Notebook (.anote)…</button>
     <button data-cmd="save-as">Export Notebook (.anote)…</button>

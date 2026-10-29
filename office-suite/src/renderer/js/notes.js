@@ -835,7 +835,7 @@
   // Phones: the notebook list slides over the page.
   const navBtn = document.createElement('button');
   navBtn.className = 'share-btn nav-btn';
-  navBtn.textContent = '☰ Pages';
+  navBtn.innerHTML = '<span class="ico" data-icon="panel-left"></span>Pages';
   navBtn.setAttribute('aria-label', 'Show sections and pages');
   document.querySelector('.titlebar').insertBefore(navBtn, document.querySelector('.titlebar .qa'));
   navBtn.addEventListener('click', () => document.body.classList.toggle('nav-open'));

@@ -1357,7 +1357,7 @@
       rules.forEach((r, i) => {
         const row = document.createElement('div');
         row.className = 'cf-row';
-        row.innerHTML = '<div><span class="cf-swatch">AaBb</span><span class="cf-desc"></span></div><input aria-label="Applies to"><div><button data-a="up" title="Move up">▲</button> <button data-a="down" title="Move down">▼</button> <button data-a="del" title="Delete rule">✕</button></div>';
+        row.innerHTML = '<div><span class="cf-swatch">AaBb</span><span class="cf-desc"></span></div><input aria-label="Applies to"><div><button data-a="up" title="Move up"><span class="ico" data-icon="chevron-up"></span></button> <button data-a="down" title="Move down"><span class="ico" data-icon="chevron-down"></span></button> <button data-a="del" title="Delete rule"><span class="ico" data-icon="trash-2"></span></button></div>';
         row.querySelector('.cf-desc').textContent = SheetsCF.describe(r);
         const sw = row.querySelector('.cf-swatch');
         if (r.style) Object.assign(sw.style, { background: r.style.bg || '', color: r.style.color || '', fontWeight: r.style.b ? '700' : '', fontStyle: r.style.i ? 'italic' : '' });
@@ -2511,7 +2511,7 @@
       const box = document.createElement('div');
       box.className = 'chart';
       Object.assign(box.style, { left: ch.x + 'px', top: ch.y + 'px', width: ch.w + 'px', height: ch.h + 'px' });
-      box.innerHTML = `<div class="bar"><button data-a="title" title="Edit title and data">✎</button><button data-a="type" title="Change chart type">⇄</button><button data-a="png" title="Save as image">⤓</button><button data-a="del" title="Delete chart">✕</button></div><canvas></canvas><div class="grip"></div>`;
+      box.innerHTML = `<div class="bar"><button data-a="title" title="Edit title and data"><span class="ico" data-icon="pencil"></span></button><button data-a="type" title="Change chart type"><span class="ico" data-icon="chart-column"></span></button><button data-a="png" title="Save as image"><span class="ico" data-icon="image-down"></span></button><button data-a="del" title="Delete chart"><span class="ico" data-icon="trash-2"></span></button></div><canvas></canvas><div class="grip"></div>`;
       layer.appendChild(box);
       drawChart(box.querySelector('canvas'), ch);
       const barEl = box.querySelector('.bar');

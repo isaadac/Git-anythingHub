@@ -1550,8 +1550,8 @@
   pvq('pvBlack').addEventListener('click', e => { const on = e.currentTarget.classList.toggle('on'); pvq('pvCurrentBox').classList.toggle('black', on); audience.send({ cmd: 'black', on }); });
   pvq('pvEnd').addEventListener('click', pvEnd);
   pvq('pvPause').addEventListener('click', e => {
-    if (pv.pausedAt) { pv.paused += Date.now() - pv.pausedAt; pv.pausedAt = 0; e.currentTarget.textContent = '⏸'; }
-    else { pv.pausedAt = Date.now(); e.currentTarget.textContent = '▶'; }
+    if (pv.pausedAt) { pv.paused += Date.now() - pv.pausedAt; pv.pausedAt = 0; Icons.set(e.currentTarget.querySelector('.ico') || e.currentTarget, 'pause'); }
+    else { pv.pausedAt = Date.now(); Icons.set(e.currentTarget.querySelector('.ico') || e.currentTarget, 'play'); }
     pvClock();
   });
   pvq('pvReset').addEventListener('click', () => { pv.started = Date.now(); pv.paused = 0; pv.pausedAt = pv.pausedAt ? Date.now() : 0; pvClock(); });
@@ -2288,7 +2288,7 @@
   designer.className = 'designer-pane';
   designer.hidden = true;
   designer.setAttribute('aria-label', 'Designer');
-  designer.innerHTML = '<header><b>Designer</b><span class="sp"></span><button class="x" title="Close">✕</button></header><div class="ideas"></div>';
+  designer.innerHTML = '<header><b>Designer</b><span class="sp"></span><button class="x" title="Close"><span class="ico" data-icon="x"></span></button></header><div class="ideas"></div>';
   document.body.appendChild(designer);
   designer.querySelector('.x').addEventListener('click', () => { designer.hidden = true; document.body.classList.remove('designer-open'); });
   function showDesigner() {
