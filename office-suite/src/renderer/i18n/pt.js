@@ -1,6 +1,8 @@
 'use strict';
 // Isadek Office — Português. Keys are the English text as it appears in the interface.
 (window.ISADEK_I18N = window.ISADEK_I18N || {}).pt = {
+  // Chart styles and template filters
+  "Chart styles": "Estilos de gráfico", "Modern": "Moderno", "Monochrome": "Monocromático", "Colour-blind safe": "Seguro para daltônicos", "Data labels": "Rótulos de dados", "Documents": "Documentos", "Workbooks": "Pastas de trabalho", "Presentations": "Apresentações", "Show templates for": "Mostrar modelos de",
   // Start screen
   "Good morning": "Bom dia", "Good afternoon": "Boa tarde", "Good evening": "Boa noite", "Pinned": "Fixados", "Search recent files": "Pesquisar arquivos recentes", "Pin to the top": "Fixar no topo", "Unpin": "Desafixar", "No recent files match.": "Nenhum arquivo recente corresponde.", "Every recent file is pinned.": "Todos os arquivos recentes estão fixados.",
   // Ribbon display and the mini toolbar

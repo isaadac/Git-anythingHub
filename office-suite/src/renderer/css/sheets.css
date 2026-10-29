@@ -185,3 +185,10 @@ body.sheet-protected #protectSheet .ico { color: var(--accent-fg); }
 .script-pane .out { flex: 1; min-height: 60px; overflow: auto; margin: 0; padding: 6px 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); font: 12px var(--font-mono); white-space: pre-wrap; }
 .script-pane .out.err { color: var(--danger-fg); }
 body.dark .tbl-filter { background: #2b2b2b; color: #eee; }
+/* Chart styles menu: a row of swatches per palette */
+.chart-styles { min-width: 240px; }
+.chart-styles button[role=menuitemradio] { grid-template-columns: auto 1fr; }
+.chart-styles .swatches { display: inline-flex; gap: 2px; }
+.chart-styles .swatches i { width: 12px; height: 12px; border-radius: 3px; display: block; }
+.chart-styles button[aria-checked="true"]:not(.labels-toggle) { background: var(--accent-soft); color: var(--accent-fg); }
+.chart-styles .labels-toggle { border-top: 1px solid var(--border); border-radius: 0 0 var(--r-sm) var(--r-sm); margin-top: var(--sp-2); padding-top: 9px; }

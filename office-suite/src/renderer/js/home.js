@@ -138,9 +138,32 @@
     });
   }
 
-  // Write templates, each shown as a miniature of its first page
+  // Templates for every app, each shown as a miniature of its first page, sheet or slide.
   const tplBox = document.getElementById('templates');
-  WriteTemplates.list.filter(t => t.id !== 'blank').slice(0, 6).forEach(t => tplBox.appendChild(WriteTemplates.card(t, () => WriteTemplates.open(t, !Platform.desktop))));
+  const writeCard = t => WriteTemplates.card(t, () => WriteTemplates.open(t, !Platform.desktop));
+  const suiteCard = app => t => SuiteTemplates.card(app, t, () => SuiteTemplates.open(app, t, !Platform.desktop));
+  const docs = WriteTemplates.list.filter(t => t.id !== 'blank');
+  const SHOW = {
+    all: () => [...docs.filter(t => ['resume', 'cover-letter'].includes(t.id)).map(writeCard), ...SuiteTemplates.sheets.slice(0, 2).map(suiteCard('sheets')), suiteCard('slides')(SuiteTemplates.slides[0])],
+    write: () => docs.slice(0, 5).map(writeCard),
+    sheets: () => SuiteTemplates.sheets.map(suiteCard('sheets')),
+    slides: () => SuiteTemplates.slides.map(suiteCard('slides'))
+  };
+  const chips = [...document.querySelectorAll('#tplFilter button')];
+  function showTemplates(f) {
+    chips.forEach(c => c.setAttribute('aria-checked', String(c.dataset.f === f)));
+    tplBox.replaceChildren(...SHOW[f]());
+  }
+  chips.forEach(c => c.addEventListener('click', () => showTemplates(c.dataset.f)));
+  document.getElementById('tplFilter').addEventListener('keydown', e => {
+    const i = chips.findIndex(c => c.getAttribute('aria-checked') === 'true');
+    const d = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+    if (!d) return;
+    e.preventDefault();
+    const next = chips[(i + d + chips.length) % chips.length];
+    showTemplates(next.dataset.f); next.focus();
+  });
+  showTemplates('all');
   document.getElementById('moreTemplates').addEventListener('click', async () => {
     const t = await WriteTemplates.pick('Write templates');
     if (t) WriteTemplates.open(t, !Platform.desktop);

@@ -10,13 +10,19 @@
   const SAVE_FILTERS = [{ name: 'PowerPoint Presentation', extensions: ['pptx'] }, { name: 'Isadek Presentation', extensions: ['aslides'] }];
   const OPEN_FILTERS = [{ name: 'Presentations', extensions: ['pptx', 'aslides'] }];
 
+  // Themes use fonts every computer can show the same (bundled metric-compatible stand-ins for
+  // Calibri, Cambria and Arial), so a deck looks the same wherever it is opened.
   const THEMES = {
     office: { name: 'Office', bg: '#ffffff', title: '#262626', text: '#404040', accent: '#4472c4', font: 'Calibri', titleFont: 'Calibri Light' },
-    dark: { name: 'Midnight', bg: '#1f2430', title: '#ffffff', text: '#d0d4dc', accent: '#5fb3f9', font: 'Segoe UI', titleFont: 'Segoe UI' },
-    ocean: { name: 'Ocean', bg: '#0f4c81', title: '#ffffff', text: '#dbe9f6', accent: '#ffd166', font: 'Calibri', titleFont: 'Georgia' },
-    ion: { name: 'Ion', bg: '#13665c', title: '#ffffff', text: '#e3f4f1', accent: '#f4b942', font: 'Trebuchet MS', titleFont: 'Trebuchet MS' },
-    sunset: { name: 'Sunset', bg: '#fff4ec', title: '#b7472a', text: '#5b3a29', accent: '#e07a5f', font: 'Georgia', titleFont: 'Georgia' },
-    slate: { name: 'Slate', bg: '#f2f2f2', title: '#2f3e46', text: '#354f52', accent: '#52796f', font: 'Verdana', titleFont: 'Verdana' }
+    dark: { name: 'Midnight', bg: '#111827', title: '#f9fafb', text: '#cbd5e1', accent: '#60a5fa', font: 'Calibri', titleFont: 'Calibri Light' },
+    ocean: { name: 'Ocean', bg: '#0b3d6b', title: '#ffffff', text: '#d6e6f5', accent: '#ffd166', font: 'Calibri', titleFont: 'Cambria' },
+    ion: { name: 'Ion', bg: '#115e59', title: '#ffffff', text: '#ccfbf1', accent: '#fbbf24', font: 'Arial', titleFont: 'Arial' },
+    sunset: { name: 'Sunset', bg: '#fff4ec', title: '#b23a1e', text: '#5b3a29', accent: '#e07a5f', font: 'Cambria', titleFont: 'Cambria' },
+    slate: { name: 'Slate', bg: '#f1f3f5', title: '#1f2d3d', text: '#3c4b5c', accent: '#52796f', font: 'Arial', titleFont: 'Arial' },
+    aurora: { name: 'Aurora', bg: '#1e1b4b', title: '#ffffff', text: '#c7d2fe', accent: '#f472b6', font: 'Arial', titleFont: 'Arial' },
+    paper: { name: 'Paper', bg: '#fbf8f3', title: '#1c1917', text: '#44403c', accent: '#b45309', font: 'Cambria', titleFont: 'Cambria' },
+    mint: { name: 'Mint', bg: '#ecfdf5', title: '#064e3b', text: '#065f46', accent: '#059669', font: 'Calibri', titleFont: 'Calibri Light' },
+    graphite: { name: 'Graphite', bg: '#18181b', title: '#fafafa', text: '#d4d4d8', accent: '#facc15', font: 'Arial', titleFont: 'Arial' }
   };
 
   UI.initRibbon();
@@ -533,7 +539,10 @@
       if (frame) renderSlide(slide(), frame, false);
     }, 250);
   }
-  function renderAll() { renderStage(); renderThumbs(); fitStage(); drawLivePeers(); }
+  function renderAll() {
+    renderStage(); renderThumbs(); fitStage(); drawLivePeers();
+    document.querySelectorAll('#themes .theme-swatch').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.theme === pres.theme)));
+  }
   function fitStage() {
     const r = stageWrap.getBoundingClientRect();
     const s = Math.max(0.1, Math.min((r.width - 40) / W, (r.height - 40) / H));
@@ -1201,12 +1210,18 @@
   // ---------- Design ----------
   const themesBox = document.getElementById('themes');
   Object.entries(THEMES).forEach(([key, t]) => {
+    // A miniature title slide in the theme's colours and fonts.
     const b = document.createElement('button');
     b.className = 'theme-swatch';
+    b.dataset.theme = key;
+    b.title = t.name;
+    b.setAttribute('aria-label', t.name + ' theme');
     b.style.background = t.bg;
     b.style.color = t.text;
-    b.style.borderBottom = `4px solid ${t.accent}`;
-    b.innerHTML = `<span class="t" style="color:${t.title};font-family:${t.titleFont}">Aa</span><span>${t.name}</span>`;
+    b.innerHTML = '<span class="t">Aa</span><i class="ln"></i><i class="ln short"></i><i class="bar"></i><span class="nm"></span>';
+    b.querySelector('.t').style.cssText = `color:${t.title};font-family:"${t.titleFont}"`;
+    b.querySelector('.bar').style.background = t.accent;
+    b.querySelector('.nm').textContent = t.name;
     b.addEventListener('click', () => {
       snapshot();
       pres.theme = key;
@@ -2466,7 +2481,9 @@
   async function loadFile(f) {
     try {
       const ext = Platform.extOf(f.name);
-      if (ext === 'aslides') {
+      const tpl = window.SuiteTemplates && SuiteTemplates.fromBytes(f.data, 'slides');
+      if (tpl) pres = cleanPres({ theme: tpl.theme, slides: tpl.slides });
+      else if (ext === 'aslides') {
         pres = cleanPres(JSON.parse(Platform.bytesToText(f.data)));
       } else pres = await fromPptx(f.data);
     } catch (err) {

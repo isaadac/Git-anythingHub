@@ -17,8 +17,8 @@ const BASE = process.env.E2E_BASE + '/src/renderer/';
   await p.goto(BASE + 'index.html');
   const hello = await p.evaluate(() => [document.getElementById('greeting').textContent, document.getElementById('today').textContent]);
   check('greets the person by first name, with today\'s date', /^Good (morning|afternoon|evening), Ada$/.test(hello[0]) && hello[1].length > 5, hello.join(' / '));
-  const tpl = await p.$$eval('#templates .tpl', ts => ts.map(t => [t.querySelector('b').textContent, !!t.querySelector('.thumbnail .paper-write h1, .thumbnail .paper-write h2, .thumbnail .paper-write p')]));
-  check('templates show a miniature of their first page', tpl.length === 6 && tpl.every(t => t[1]), JSON.stringify(tpl));
+  const tpl = await p.$$eval('#templates .tpl', ts => ts.map(t => [t.querySelector(':scope > b').textContent, !!t.querySelector('.thumbnail .paper-write h1, .thumbnail .paper-write p, .thumbnail .paper-sheets td, .thumbnail .paper-slides .box')]));
+  check('templates show a miniature of their first page, sheet or slide', tpl.length === 5 && tpl.every(t => t[1] && t[0]), JSON.stringify(tpl));
   const scale = await p.$eval('#templates .tpl .paper', e => e.style.transform);
   check('…scaled to fit the card', /^scale\(0\.\d+\)$/.test(scale), scale);
 

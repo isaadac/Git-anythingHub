@@ -49,9 +49,14 @@ body.hide-notes .notes { display: none; }
 .guide { position: absolute; background: #e3008c; z-index: 6; pointer-events: none; }
 
 .themes { max-width: 560px !important; }
-.theme-swatch { width: 84px; height: 48px; border: 1px solid var(--border); cursor: pointer; border-radius: 2px; display: flex; flex-direction: column; justify-content: center; padding: 4px 6px; font-size: 11px; overflow: hidden; }
-.theme-swatch:hover { outline: 2px solid var(--accent); }
-.theme-swatch .t { font-size: 15px; font-weight: 600; }
+.theme-swatch { position: relative; width: 96px; height: 54px; border: 1px solid var(--border); cursor: pointer; border-radius: var(--r-sm); padding: 7px 9px; overflow: hidden; text-align: left; box-shadow: var(--sh-1); transition: transform var(--dur-1), box-shadow var(--dur-1); }
+.theme-swatch:hover, .theme-swatch:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; box-shadow: var(--sh-2); }
+.theme-swatch[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.theme-swatch .t { display: block; font-size: 16px; font-weight: 600; line-height: 1; margin-bottom: 5px; }
+.theme-swatch .ln { display: block; height: 3px; width: 54px; border-radius: 2px; background: currentColor; opacity: .55; margin-bottom: 3px; }
+.theme-swatch .ln.short { width: 36px; }
+.theme-swatch .bar { position: absolute; left: 0; right: 0; bottom: 0; height: 5px; }
+.theme-swatch .nm { position: absolute; right: 7px; top: 7px; font-size: 9.5px; opacity: .8; }
 
 .presenter { position: fixed; inset: 0; background: #000; z-index: 300; display: grid; place-items: center; cursor: none; }
 .presenter[hidden] { display: none; }
@@ -165,3 +170,6 @@ body.connecting #stage, body.connecting #stage .el { cursor: crosshair !importan
   .thumb .num { font-size: 10px; }
   .notes { height: 60px; }
 }
+/* The theme gallery scrolls inside its group, like Office's, rather than widening the ribbon. */
+.controls.themes { display: flex; gap: 6px; max-width: min(560px, 46vw); overflow-x: auto; padding: 3px; scrollbar-width: thin; }
+.controls.themes .theme-swatch { flex: none; }

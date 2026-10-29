@@ -55,6 +55,12 @@
   .file-card .pin { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface); color: var(--muted); display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity var(--dur-1); box-shadow: var(--sh-1); }
   .file-card:hover .pin, .file-card:focus-within .pin, .file-card .pin.on { opacity: 1; }
   .file-card .pin.on { color: var(--accent-fg); }
+  .tpl-tools { display: flex; gap: var(--sp-5); align-items: center; }
+  .chips { display: inline-flex; gap: 4px; padding: 3px; background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-pill); }
+  .chips button { border: 0; background: none; color: var(--text-2); font: inherit; font-size: var(--fs-sm); font-weight: var(--fw-medium); padding: 4px 12px; border-radius: var(--r-pill); cursor: pointer; }
+  .chips button:hover { color: var(--text); }
+  .chips button[aria-checked="true"] { background: var(--surface); color: var(--text); box-shadow: var(--sh-1); }
+  .home-templates { grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); }
   .recent-tools { display: flex; gap: var(--sp-4); align-items: center; }
   .recent-tools input { height: 28px; border: 1px solid var(--border); border-radius: var(--r-pill); padding: 0 12px; background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 400; width: 200px; }
   .recent { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--sh-1); }
@@ -92,7 +98,7 @@
     <button class="app-card" data-app="slides"><div class="art art-slides" aria-hidden="true"><i></i><i></i></div><div class="lbl"><div class="tile t-slides">P</div><div><strong>Isadek Slides</strong><span>Blank presentation · .pptx</span></div></div></button>
     <button class="app-card" data-app="notes"><div class="art art-notes" aria-hidden="true"><i></i><i></i><i></i></div><div class="lbl"><div class="tile t-notes">N</div><div><strong>Isadek Notes</strong><span>Notebooks · saved as you type</span></div></div></button>
   </div>
-  <h2>Templates <button class="linkbtn" id="moreTemplates">More templates</button></h2>
+  <h2>Templates <span class="tpl-tools"><span class="chips" role="radiogroup" aria-label="Show templates for" id="tplFilter"><button role="radio" aria-checked="true" data-f="all">All</button><button role="radio" aria-checked="false" data-f="write">Documents</button><button role="radio" aria-checked="false" data-f="sheets">Workbooks</button><button role="radio" aria-checked="false" data-f="slides">Presentations</button></span><button class="linkbtn" id="moreTemplates">More templates</button></span></h2>
   <div class="tpl-grid home-templates" id="templates"></div>
   <section id="pinnedBox" hidden>
     <h2>Pinned</h2>
@@ -113,6 +119,7 @@
 <script src="js/mobile.js"></script>
 <script src="js/cloud.js"></script>
 <script src="js/write-templates.js"></script>
+<script src="js/templates.js"></script>
 <script src="js/home.js"></script>
 </body>
 </html>

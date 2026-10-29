@@ -9,7 +9,7 @@ const SP = process.env.E2E_WORK;
   // Home → template
   await p.goto(process.env.E2E_BASE + '/src/renderer/index.html');
   const cards = await p.$$eval('#templates .tpl > b', bs => bs.map(b => b.textContent));
-  check('Home shows Write templates', cards.length === 6 && cards.includes('Resume'), cards.join(', '));
+  check('Home shows templates, Write ones included', cards.length === 5 && cards.includes('Resume') && cards.includes('Monthly budget') && cards.includes('Pitch deck'), cards.join(', '));
   await p.click('#templates .tpl >> text=Resume');
   await p.waitForURL('**/write.html'); await p.waitForTimeout(500);
   const resume = await p.evaluate(() => ({ title: document.querySelector('#doc h1.title') && document.querySelector('#doc h1.title').textContent, name: document.querySelector('.titlebar .docname input').value, sections: [...document.querySelectorAll('#doc h2')].map(h => h.textContent).join(',') }));

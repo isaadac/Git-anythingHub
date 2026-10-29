@@ -2338,7 +2338,18 @@
   });
 
   // ---------- Charts ----------
-  const PALETTE = ['#4472c4', '#ed7d31', '#a5a5a5', '#ffc000', '#5b9bd5', '#70ad47', '#264478', '#9e480e'];
+  // Chart styles: a palette each. New charts use Modern; charts from Excel files (and older Isadek
+  // workbooks) keep Office's colours. "Colour-blind safe" is the Okabe–Ito palette.
+  const CHART_STYLES = {
+    modern: { name: 'Modern', colors: ['#3b6fd8', '#f08a3c', '#2fa86b', '#9b5de5', '#e5484d', '#14a3b8', '#e6b800', '#6b7a90'] },
+    office: { name: 'Office', colors: ['#4472c4', '#ed7d31', '#a5a5a5', '#ffc000', '#5b9bd5', '#70ad47', '#264478', '#9e480e'] },
+    ocean: { name: 'Ocean', colors: ['#0b4f8a', '#2f80d1', '#69aef0', '#0d8a9c', '#4cc3d4', '#1c3d66', '#9cc9f5', '#5b7fa6'] },
+    sunset: { name: 'Sunset', colors: ['#d1495b', '#ed8b3d', '#f3c13a', '#8e4162', '#e86f51', '#61304b', '#f6a65f', '#b5838d'] },
+    forest: { name: 'Forest', colors: ['#2d6a4f', '#52b788', '#95d5b2', '#7f8c3a', '#b7c96b', '#1b4332', '#74a57f', '#cad2a8'] },
+    mono: { name: 'Monochrome', colors: ['#1f2937', '#4b5563', '#6b7280', '#9ca3af', '#374151', '#111827', '#d1d5db', '#525866'] },
+    safe: { name: 'Colour-blind safe', colors: ['#0072b2', '#e69f00', '#009e73', '#cc79a7', '#56b4e9', '#d55e00', '#f0e442', '#000000'] }
+  };
+  const chartColors = ch => (CHART_STYLES[ch.style] || CHART_STYLES.office).colors;
   const CHART_TYPES = ['bar', 'line', 'pie', 'hbar', 'area', 'scatter', 'doughnut', 'combo'];
   function insertChart(type) {
     const g = opRange();
@@ -2347,7 +2358,7 @@
     if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 20000) return UI.toast('Select a smaller range for the chart');
     snapshot();
     const b = rangeBox(g);
-    sheet().charts.push({ type, range: rangeText(g), x: b.x + b.w + 20, y: b.y, w: 440, h: 280, title: '' });
+    sheet().charts.push({ type, range: rangeText(g), x: b.x + b.w + 20, y: b.y, w: 440, h: 280, title: '', style: 'modern' });
     renderCharts();
     state.markDirty();
   }
@@ -2385,6 +2396,8 @@
     return { labels, xs, series, catRef: hasRowLabels ? ref(p.col, r1, p.col, r2) : null, catNumeric: numericX };
   }
   const quoteSheet = n => (/^[A-Za-z_][\w.]*$/.test(n) && !/^[A-Za-z]{1,3}\d+$/.test(n) ? n : `'${n.replace(/'/g, "''")}'`);
+  const INK = '#1f2937', AXIS = '#6b7280', GRID = '#eceef1', BASE = '#c4c8cf', FONT = 'Calibri, Carlito, Arial, sans-serif';
+  const fmtNum = v => F.formatGeneral(+(+v).toPrecision(10));
   function drawChart(canvas, ch) {
     const dpr = window.devicePixelRatio || 1;
     const W = ch.w, H = ch.h - 22;
@@ -2395,119 +2408,202 @@
     ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
     const data = chartData(ch);
     if (!data || !data.series.length || !data.labels.length) return;
+    const C = chartColors(ch);
     const title = ch.title || (data.series.length === 1 ? data.series[0].name : 'Chart');
-    ctx.fillStyle = '#404040'; ctx.textAlign = 'center'; ctx.font = '600 14px Calibri, Arial';
-    ctx.fillText(title, W / 2, 20);
-    ctx.font = '11px Calibri, Arial';
+    ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.font = `600 15px ${FONT}`;
+    ctx.fillText(title, W / 2, 22);
+    ctx.font = `11.5px ${FONT}`;
+    ctx.lineJoin = ctx.lineCap = 'round';
     if (ch.type === 'pie' || ch.type === 'doughnut') {
       const vals = data.series[0].values.map(v => Math.max(0, v));
       const total = vals.reduce((a, b) => a + b, 0) || 1;
-      const cx = W * 0.4, cy = H / 2 + 10, rad = Math.max(10, Math.min(W * 0.35, H / 2 - 30));
+      const cx = W * 0.38, cy = H / 2 + 12, rad = Math.max(10, Math.min(W * 0.3, H / 2 - 34));
+      const inner = ch.type === 'doughnut' ? rad * 0.6 : 0;
       let a0 = -Math.PI / 2;
       vals.forEach((v, i) => {
         const a1 = a0 + v / total * Math.PI * 2;
-        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.arc(cx, cy, rad, a0, a1); ctx.closePath();
-        ctx.fillStyle = PALETTE[i % PALETTE.length]; ctx.fill();
-        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.beginPath(); ctx.arc(cx, cy, rad, a0, a1); ctx.arc(cx, cy, inner, a1, a0, true); ctx.closePath();
+        ctx.fillStyle = C[i % C.length]; ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke();
+        if (ch.labels && v / total >= 0.04) {
+          const mid = (a0 + a1) / 2, r = inner ? (rad + inner) / 2 : rad * 0.64;
+          ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = `600 11.5px ${FONT}`;
+          ctx.fillText(Math.round(v / total * 100) + '%', cx + Math.cos(mid) * r, cy + Math.sin(mid) * r + 4);
+          ctx.font = `11.5px ${FONT}`;
+        }
         a0 = a1;
       });
-      if (ch.type === 'doughnut') { ctx.beginPath(); ctx.arc(cx, cy, rad * 0.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); }
-      ctx.textAlign = 'left';
+      if (inner) {
+        ctx.fillStyle = INK; ctx.textAlign = 'center'; ctx.font = `600 ${Math.max(12, Math.round(inner / 2.6))}px ${FONT}`;
+        ctx.fillText(fmtNum(vals.reduce((a, b) => a + b, 0)), cx, cy + inner / 8);
+        ctx.font = `11px ${FONT}`; ctx.fillStyle = AXIS; ctx.fillText('Total', cx, cy + inner / 8 + 15);
+      }
+      ctx.textAlign = 'left'; ctx.font = `11.5px ${FONT}`;
       data.labels.forEach((l, i) => {
-        const y = 44 + i * 18;
-        if (y > H - 10) return;
-        ctx.fillStyle = PALETTE[i % PALETTE.length]; ctx.fillRect(W * 0.78, y - 9, 10, 10);
-        ctx.fillStyle = '#404040'; ctx.fillText(`${l} (${Math.round(vals[i] / total * 100)}%)`, W * 0.78 + 14, y);
+        const y = 50 + i * 20;
+        if (y > H - 8) return;
+        dot(ctx, W * 0.72 + 5, y - 4, C[i % C.length]);
+        ctx.fillStyle = INK; ctx.fillText(l.slice(0, 18), W * 0.72 + 15, y);
+        ctx.fillStyle = AXIS; ctx.fillText(`${Math.round(vals[i] / total * 100)}%`, W * 0.72 + 15 + ctx.measureText(l.slice(0, 18) + ' ').width, y);
       });
       return;
     }
-    if (ch.type === 'scatter') return drawScatter(ctx, data, W, H);
+    if (ch.type === 'scatter') return drawScatter(ctx, data, W, H, C);
     const all = data.series.flatMap(s => s.values);
     let max = Math.max(0, ...all), min = Math.min(0, ...all);
     if (max === min) max = min + 1;
     const step = niceStep((max - min) / 5);
     max = Math.ceil(max / step) * step; min = Math.floor(min / step) * step;
-    const legendH = data.series.length > 1 ? 20 : 0;
-    const L = 48, R = W - 14, T = 34, B = H - 26 - legendH;
+    const legendH = data.series.length > 1 ? 24 : 0;
     const horizontal = ch.type === 'hbar';
-    ctx.strokeStyle = '#e1e1e1'; ctx.fillStyle = '#595959'; ctx.lineWidth = 1;
+    ctx.font = `11.5px ${FONT}`;
+    const L = horizontal ? Math.min(W * 0.3, 14 + Math.max(...data.labels.map(l => ctx.measureText(l.slice(0, 14)).width))) : 14 + Math.max(...[min, max, (min + max) / 2].map(v => ctx.measureText(fmtNum(v)).width));
+    const R = W - 16, T = 38, B = H - 26 - legendH;
+    ctx.lineWidth = 1;
     for (let v = min; v <= max + step / 1e6; v += step) {
+      ctx.strokeStyle = Math.abs(v) < step / 1e6 ? BASE : GRID; ctx.fillStyle = AXIS;
       if (horizontal) {
-        const x = L + (v - min) / (max - min) * (R - L);
+        const x = Math.round(L + (v - min) / (max - min) * (R - L)) + 0.5;
         ctx.beginPath(); ctx.moveTo(x, T); ctx.lineTo(x, B); ctx.stroke();
-        ctx.textAlign = 'center'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), x, B + 14);
+        ctx.textAlign = 'center'; ctx.fillText(fmtNum(v), x, B + 16);
       } else {
-        const y = B - (v - min) / (max - min) * (B - T);
+        const y = Math.round(B - (v - min) / (max - min) * (B - T)) + 0.5;
         ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke();
-        ctx.textAlign = 'right'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), L - 6, y + 4);
+        ctx.textAlign = 'right'; ctx.fillText(fmtNum(v), L - 8, y + 4);
       }
     }
     const n = data.labels.length;
     const band = (horizontal ? (B - T) : (R - L)) / n;
     const zero = horizontal ? L + (0 - min) / (max - min) * (R - L) : B - (0 - min) / (max - min) * (B - T);
+    const every = Math.max(1, Math.ceil(n / Math.max(1, Math.floor((horizontal ? B - T : R - L) / (horizontal ? 16 : 42)))));
     data.labels.forEach((l, i) => {
-      ctx.fillStyle = '#595959';
-      if (horizontal) { ctx.textAlign = 'right'; ctx.fillText(l.slice(0, 8), L - 4, T + band * i + band / 2 + 4); }
-      else { ctx.textAlign = 'center'; ctx.fillText(l.slice(0, Math.max(3, Math.floor(band / 6))), L + band * i + band / 2, B + 14); }
+      if (i % every) return;
+      ctx.fillStyle = AXIS;
+      if (horizontal) { ctx.textAlign = 'right'; ctx.fillText(l.slice(0, 14), L - 8, T + band * i + band / 2 + 4); }
+      else { ctx.textAlign = 'center'; ctx.fillText(l.slice(0, Math.max(3, Math.floor(band * every / 6.5))), L + band * i + band / 2, B + 16); }
     });
+    const label = (text, x, y, align = 'center') => { ctx.save(); ctx.fillStyle = INK; ctx.font = `600 11px ${FONT}`; ctx.textAlign = align; ctx.fillText(text, x, y); ctx.restore(); };
     data.series.forEach((s, si) => {
-      ctx.fillStyle = ctx.strokeStyle = PALETTE[si % PALETTE.length];
+      const col = C[si % C.length];
+      ctx.fillStyle = ctx.strokeStyle = col;
       const asLine = ch.type === 'line' || (ch.type === 'combo' && si === data.series.length - 1 && data.series.length > 1);
-      if (ch.type === 'area') {
-        const pts = s.values.map((v, i) => [L + band * i + band / 2, B - (v - min) / (max - min) * (B - T)]);
-        ctx.globalAlpha = 0.45;
-        ctx.beginPath(); ctx.moveTo(pts[0][0], zero); pts.forEach(([x, y]) => ctx.lineTo(x, y)); ctx.lineTo(pts[pts.length - 1][0], zero); ctx.closePath(); ctx.fill();
-        ctx.globalAlpha = 1; ctx.lineWidth = 2; ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
-      } else if (asLine) {
-        ctx.lineWidth = 2.25; ctx.beginPath();
-        s.values.forEach((v, i) => { const x = L + band * i + band / 2, y = B - (v - min) / (max - min) * (B - T); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); });
-        ctx.stroke();
-        s.values.forEach((v, i) => { const x = L + band * i + band / 2, y = B - (v - min) / (max - min) * (B - T); ctx.beginPath(); ctx.arc(x, y, 3, 0, Math.PI * 2); ctx.fill(); });
+      const yOf = v => B - (v - min) / (max - min) * (B - T);
+      if (ch.type === 'area' || asLine) {
+        const pts = s.values.map((v, i) => [L + band * i + band / 2, yOf(v)]);
+        if (ch.type === 'area') {
+          const grad = ctx.createLinearGradient(0, T, 0, B);
+          grad.addColorStop(0, hexAlpha(col, 0.38)); grad.addColorStop(1, hexAlpha(col, 0.04));
+          ctx.fillStyle = grad;
+          ctx.beginPath(); ctx.moveTo(pts[0][0], zero); pts.forEach(([x, y]) => ctx.lineTo(x, y)); ctx.lineTo(pts[pts.length - 1][0], zero); ctx.closePath(); ctx.fill();
+        }
+        ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.beginPath(); pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke();
+        if (asLine && pts.length <= 60) pts.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(x, y, 3.5, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke(); });
+        if (ch.labels) pts.forEach(([x, y], i) => label(fmtNum(s.values[i]), x, y - 9));
       } else {
         const nBars = ch.type === 'combo' && data.series.length > 1 ? data.series.length - 1 : data.series.length;
-        const bw = band * 0.7 / nBars;
+        const gap = band * (nBars > 1 ? 0.22 : 0.3);
+        const bw = (band - gap) / nBars;
         s.values.forEach((v, i) => {
-          const off = band * 0.15 + bw * si;
+          const off = gap / 2 + bw * si;
+          const inset = nBars > 1 ? Math.min(1.5, bw * 0.1) : 0;
+          ctx.fillStyle = col;
           if (horizontal) {
             const x = L + (v - min) / (max - min) * (R - L);
-            ctx.fillRect(Math.min(zero, x), T + band * i + off, Math.abs(x - zero), Math.max(1, bw - 1));
+            bar(ctx, Math.min(zero, x), T + band * i + off + inset, Math.abs(x - zero), Math.max(1, bw - inset * 2), v >= 0 ? 'right' : 'left');
+            if (ch.labels) label(fmtNum(v), v >= 0 ? x + 4 : x - 4, T + band * i + off + bw / 2 + 4, v >= 0 ? 'left' : 'right');
           } else {
-            const y = B - (v - min) / (max - min) * (B - T);
-            ctx.fillRect(L + band * i + off, Math.min(zero, y), Math.max(1, bw - 1), Math.abs(zero - y));
+            const y = yOf(v);
+            bar(ctx, L + band * i + off + inset, Math.min(zero, y), Math.max(1, bw - inset * 2), Math.abs(zero - y), v >= 0 ? 'top' : 'bottom');
+            if (ch.labels) label(fmtNum(v), L + band * i + off + bw / 2, v >= 0 ? y - 5 : y + 13);
           }
         });
       }
     });
-    if (legendH) {
-      let x = L;
-      ctx.textAlign = 'left';
-      data.series.forEach((s, si) => {
-        ctx.fillStyle = PALETTE[si % PALETTE.length]; ctx.fillRect(x, H - 16, 10, 10);
-        ctx.fillStyle = '#404040'; ctx.fillText(s.name, x + 14, H - 7);
-        x += ctx.measureText(s.name).width + 32;
-      });
-    }
+    if (legendH) legend(ctx, data.series.map(s => s.name), C, W, H);
   }
+  /** A bar with its outer end rounded. */
+  function bar(ctx, x, y, w, h, end) {
+    const r = Math.max(0, Math.min(4, w / 3, h / 3));
+    const radii = { top: [r, r, 0, 0], bottom: [0, 0, r, r], right: [0, r, r, 0], left: [r, 0, 0, r] }[end];
+    ctx.beginPath();
+    if (ctx.roundRect && r > 0.5) ctx.roundRect(x, y, w, h, radii); else ctx.rect(x, y, w, h);
+    ctx.fill();
+  }
+  function dot(ctx, x, y, color) { ctx.beginPath(); ctx.arc(x, y, 4.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); }
+  /** The series names in a row along the bottom, centred. */
+  function legend(ctx, names, C, W, H) {
+    ctx.font = `11.5px ${FONT}`; ctx.textAlign = 'left';
+    const widths = names.map(n => ctx.measureText(n).width + 14 + 18);
+    let x = Math.max(8, (W - widths.reduce((a, b) => a + b, 0) + 18) / 2);
+    names.forEach((n, i) => { dot(ctx, x + 4.5, H - 13, C[i % C.length]); ctx.fillStyle = INK; ctx.fillText(n, x + 14, H - 9); x += widths[i]; });
+  }
+  const hexAlpha = (hex, a) => { const m = /^#?([0-9a-f]{6})$/i.exec(hex); if (!m) return hex; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
   /** Scatter: numeric x and y axes, a point per row. */
-  function drawScatter(ctx, data, W, H) {
+  function drawScatter(ctx, data, W, H, C) {
     const pts = data.series.map(s => s.values.map((y, i) => [data.xs[i], y]).filter(([x]) => typeof x === 'number'));
     const xsAll = pts.flat().map(p => p[0]), ysAll = pts.flat().map(p => p[1]);
     if (!xsAll.length) return;
     const scale = (lo, hi) => { if (lo === hi) { lo -= 1; hi += 1; } const st = niceStep((hi - lo) / 5); return [Math.floor(lo / st) * st, Math.ceil(hi / st) * st, st]; };
     const [x0, x1, xs] = scale(Math.min(...xsAll), Math.max(...xsAll)), [y0, y1, ys] = scale(Math.min(0, ...ysAll), Math.max(...ysAll));
-    const legendH = data.series.length > 1 ? 20 : 0;
-    const L = 48, R = W - 14, T = 34, B = H - 26 - legendH;
+    const legendH = data.series.length > 1 ? 24 : 0;
+    const L = 14 + Math.max(...[y0, y1].map(v => ctx.measureText(fmtNum(v)).width)), R = W - 16, T = 38, B = H - 26 - legendH;
     const X = v => L + (v - x0) / (x1 - x0) * (R - L), Y = v => B - (v - y0) / (y1 - y0) * (B - T);
-    ctx.strokeStyle = '#e1e1e1'; ctx.fillStyle = '#595959'; ctx.lineWidth = 1;
-    for (let v = y0; v <= y1 + ys / 1e6; v += ys) { ctx.beginPath(); ctx.moveTo(L, Y(v)); ctx.lineTo(R, Y(v)); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), L - 6, Y(v) + 4); }
-    for (let v = x0; v <= x1 + xs / 1e6; v += xs) { ctx.textAlign = 'center'; ctx.fillText(F.formatGeneral(+v.toPrecision(10)), X(v), B + 14); }
-    pts.forEach((list, si) => { ctx.fillStyle = PALETTE[si % PALETTE.length]; list.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(X(x), Y(y), 3.5, 0, Math.PI * 2); ctx.fill(); }); });
-    if (legendH) { let x = L; ctx.textAlign = 'left'; data.series.forEach((s, si) => { ctx.fillStyle = PALETTE[si % PALETTE.length]; ctx.fillRect(x, H - 16, 10, 10); ctx.fillStyle = '#404040'; ctx.fillText(s.name, x + 14, H - 7); x += ctx.measureText(s.name).width + 32; }); }
+    ctx.lineWidth = 1; ctx.fillStyle = AXIS;
+    for (let v = y0; v <= y1 + ys / 1e6; v += ys) { ctx.strokeStyle = Math.abs(v) < ys / 1e6 ? BASE : GRID; const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(fmtNum(v), L - 8, y + 4); }
+    for (let v = x0; v <= x1 + xs / 1e6; v += xs) { ctx.textAlign = 'center'; ctx.fillText(fmtNum(v), X(v), B + 16); }
+    pts.forEach((list, si) => list.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(X(x), Y(y), 4, 0, Math.PI * 2); ctx.fillStyle = hexAlpha(C[si % C.length], 0.8); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); }));
+    if (legendH) legend(ctx, data.series.map(s => s.name), C, W, H);
   }
   function niceStep(raw) {
     const p = Math.pow(10, Math.floor(Math.log10(raw || 1)));
     const f = raw / p;
     return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+  }
+  /** Chart styles: a palette per style (shown as swatches), and data labels on or off. */
+  // icons: tag check
+  function chartStyleMenu(btn, ch, redraw) {
+    const old = document.querySelector('.chart-styles');
+    if (old) { old.remove(); return; }
+    const menu = document.createElement('div');
+    menu.className = 'ribbon-menu chart-styles';
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', 'Chart styles');
+    const current = CHART_STYLES[ch.style] ? ch.style : 'office';
+    Object.entries(CHART_STYLES).forEach(([id, st]) => {
+      const b = document.createElement('button');
+      b.setAttribute('role', 'menuitemradio');
+      b.setAttribute('aria-checked', String(id === current));
+      b.dataset.style = id;
+      const sw = document.createElement('span');
+      sw.className = 'swatches';
+      st.colors.slice(0, 6).forEach(c => { const i = document.createElement('i'); i.style.background = c; sw.appendChild(i); });
+      const name = document.createElement('span');
+      name.textContent = st.name;
+      b.append(sw, name);
+      b.addEventListener('click', () => { snapshot(); ch.style = id; redraw(); menu.querySelectorAll('[role=menuitemradio]').forEach(x => x.setAttribute('aria-checked', String(x === b))); });
+      menu.appendChild(b);
+    });
+    const lab = document.createElement('button');
+    lab.setAttribute('role', 'menuitemcheckbox');
+    lab.setAttribute('aria-checked', String(!!ch.labels));
+    lab.className = 'labels-toggle';
+    lab.innerHTML = '<span class="ico" data-icon="tag"></span><span>Data labels</span><span class="ico check" data-icon="check"></span>';
+    lab.addEventListener('click', () => { snapshot(); ch.labels = !ch.labels; lab.setAttribute('aria-checked', String(ch.labels)); redraw(); });
+    menu.appendChild(lab);
+    const r = btn.getBoundingClientRect();
+    menu.style.top = Math.round(r.bottom + 6) + 'px';
+    menu.style.left = Math.round(Math.min(r.left, window.innerWidth - 240)) + 'px';
+    document.body.appendChild(menu);
+    (menu.querySelector('[aria-checked="true"]') || menu.firstChild).focus();
+    const close = () => { menu.remove(); document.removeEventListener('mousedown', off, true); };
+    const off = e => { if (!menu.contains(e.target) && !btn.contains(e.target)) close(); };
+    document.addEventListener('mousedown', off, true);
+    menu.addEventListener('keydown', e => {
+      const items = [...menu.querySelectorAll('button')], i = items.indexOf(document.activeElement);
+      if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+      if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+      if (e.key === 'Escape') { close(); btn.focus(); }
+    });
   }
   function renderCharts() {
     const layer = document.getElementById('chartsLayer');
@@ -2517,7 +2613,7 @@
       const box = document.createElement('div');
       box.className = 'chart';
       Object.assign(box.style, { left: ch.x + 'px', top: ch.y + 'px', width: ch.w + 'px', height: ch.h + 'px' });
-      box.innerHTML = `<div class="bar"><button data-a="title" title="Edit title and data"><span class="ico" data-icon="pencil"></span></button><button data-a="type" title="Change chart type"><span class="ico" data-icon="chart-column"></span></button><button data-a="png" title="Save as image"><span class="ico" data-icon="image-down"></span></button><button data-a="del" title="Delete chart"><span class="ico" data-icon="trash-2"></span></button></div><canvas></canvas><div class="grip"></div>`;
+      box.innerHTML = `<div class="bar"><button data-a="title" title="Edit title and data"><span class="ico" data-icon="pencil"></span></button><button data-a="type" title="Change chart type"><span class="ico" data-icon="chart-column"></span></button><button data-a="style" title="Chart styles"><span class="ico" data-icon="paintbrush"></span></button><button data-a="png" title="Save as image"><span class="ico" data-icon="image-down"></span></button><button data-a="del" title="Delete chart"><span class="ico" data-icon="trash-2"></span></button></div><canvas></canvas><div class="grip"></div>`;
       layer.appendChild(box);
       drawChart(box.querySelector('canvas'), ch);
       const barEl = box.querySelector('.bar');
@@ -2545,6 +2641,7 @@
       barEl.addEventListener('click', async e => {
         const a = e.target.dataset.a;
         if (a === 'del') { snapshot(); sheet().charts.splice(i, 1); renderCharts(); state.markDirty(); }
+        if (a === 'style') return chartStyleMenu(e.target.closest('button'), ch, () => { drawChart(box.querySelector('canvas'), ch); state.markDirty(); });
         if (a === 'type') { snapshot(); ch.type = CHART_TYPES[(CHART_TYPES.indexOf(ch.type) + 1) % CHART_TYPES.length]; drawChart(box.querySelector('canvas'), ch); state.markDirty(); }
         if (a === 'title') {
           const r = await UI.form('Chart', [{ name: 'title', label: 'Title', value: ch.title }, { name: 'range', label: 'Data range', value: ch.range }]);
@@ -2615,6 +2712,8 @@
     const n = (v, d, lo, hi) => (typeof v === 'number' && isFinite(v) ? Math.max(lo, Math.min(hi, v)) : d);
     const out = { type: ch.type, range: ch.range, x: n(ch.x, 100, 0, 1e7), y: n(ch.y, 100, 0, 1e8), w: n(ch.w, 440, 200, 4000), h: n(ch.h, 280, 150, 4000), title: typeof ch.title === 'string' ? ch.title.slice(0, 200) : '' };
     if (typeof ch.sheet === 'string' && ch.sheet.length <= 31) out.sheet = ch.sheet;
+    if (typeof ch.style === 'string' && Object.prototype.hasOwnProperty.call(CHART_STYLES, ch.style)) out.style = ch.style;
+    if (ch.labels === true) out.labels = true;
     return out;
   }
   const cleanSizes = (obj, lo, hi) => {
@@ -2643,7 +2742,24 @@
     });
   }
 
+  /** A workbook template (js/templates.js) as a new workbook: cells, column widths and charts. */
+  function workbookFromTemplate(t) {
+    const d = t.sheet, s = newSheet(cleanSheetName(d.name) || 'Sheet1');
+    d.rows.forEach((row, r) => row.forEach((cell, c) => {
+      if (cell == null || cell === '') return;
+      const o = typeof cell === 'object' ? cell : { v: String(cell) };
+      const st = cleanStyle(o.s) || {};
+      if (o.s && typeof o.s.fmt === 'string') st.fmt = o.s.fmt;
+      s.cells[addr(r, c)] = Object.keys(st).length ? { v: o.v, s: st } : { v: o.v };
+    }));
+    Object.entries(d.widths || {}).forEach(([c, w]) => { s.colWidths[c] = w; });
+    Object.entries(d.heights || {}).forEach(([r, h]) => { s.rowHeights[r] = h; });
+    s.charts = (d.charts || []).map(cleanChart).filter(Boolean);
+    return { sheets: [s], active: 0, names: [], scripts: [] };
+  }
   async function workbookFromFile(bytes, name) {
+    const tpl = window.SuiteTemplates && SuiteTemplates.fromBytes(bytes, 'sheets');
+    if (tpl) return workbookFromTemplate(tpl);
     const ext = Platform.extOf(name);
     if (ext === 'csv' || ext === 'tsv') {
       const text = Platform.bytesToText(bytes).replace(/^﻿/, '');
@@ -2869,9 +2985,9 @@
       const data = chartData(ch, s);
       if (!data || !data.series.length) return;
       const series = (ch.type === 'pie' || ch.type === 'doughnut' ? data.series.slice(0, 1) : data.series).map((x, k) => ({
-        ...x, color: PALETTE[k % PALETTE.length], catRef: data.catRef, cats: ch.type === 'scatter' ? data.xs : data.labels, catNumeric: ch.type === 'scatter' || data.catNumeric
+        ...x, color: chartColors(ch)[k % 8], catRef: data.catRef, cats: ch.type === 'scatter' ? data.xs : data.labels, catNumeric: ch.type === 'scatter' || data.catNumeric
       }));
-      parts.push(SheetsCharts.toXml({ type: ch.type, title: ch.title || (series.length === 1 && ch.type !== 'scatter' ? series[0].name : ''), series, palette: PALETTE }));
+      parts.push(SheetsCharts.toXml({ type: ch.type, title: ch.title || (series.length === 1 && ch.type !== 'scatter' ? series[0].name : ''), series, palette: chartColors(ch) }));
       const at = (x, y) => { const c = cellOfPx(s, Math.max(0, x - RH_W), 'col'), r = cellOfPx(s, Math.max(0, y - HEAD_H), 'row'); return { col: c.i, colOff: c.off, row: r.i, rowOff: r.off }; };
       anchors.push({ name: ch.title || 'Chart ' + (i + 1), from: at(ch.x, ch.y), to: at(ch.x + ch.w, ch.y + ch.h) });
     });

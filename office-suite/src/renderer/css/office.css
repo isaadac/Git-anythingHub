@@ -286,7 +286,9 @@ html.touch .btn, html.touch .ribbon-tabs button, html.touch .modal .actions butt
 .modal .muted { color: var(--muted); }
 
 /* Icons (Lucide, drawn by js/icons.js): 1em squares in the text colour */
-.ico { display: inline-grid; place-items: center; line-height: 1; flex: none; }
+/* Icons are pictures inside their control: clicks go to the control itself (handlers read e.target). */
+.ico { display: inline-grid; place-items: center; line-height: 1; flex: none; pointer-events: none; }
+svg.icon { pointer-events: none; }
 .ico svg.icon { width: 1em; height: 1em; display: block; }
 .btn .ico, .titlebar .ico, .share-btn .ico, .theme-btn .ico, .ai-pane header .ico, .backstage nav .ico { font-size: 16px; }
 .btn.big .ico { font-size: 24px; }

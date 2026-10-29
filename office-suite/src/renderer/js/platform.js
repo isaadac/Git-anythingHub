@@ -367,7 +367,8 @@
           const panel = ribbon.querySelector('.ribbon-panel.active');
           if (!panel || document.body.classList.contains('ribbon-tabs') && !document.body.classList.contains('ribbon-peek')) return;
           for (const step of ['compact-1', 'compact-2']) {
-            if (ribbon.scrollWidth <= ribbon.clientWidth + 1) break;
+            // The panel's own width: its slide-in transform would make the ribbon's look wider.
+            if (panel.scrollWidth <= panel.clientWidth + 1) break;
             ribbon.classList.add(step);
           }
         };
