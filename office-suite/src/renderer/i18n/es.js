@@ -1,6 +1,8 @@
 'use strict';
 // Isadek Office — Español. Keys are the English text as it appears in the interface.
 (window.ISADEK_I18N = window.ISADEK_I18N || {}).es = {
+  // Assistant and dictation
+  "Dictate": "Dictar", "Voice": "Voz", "Dictate: type with your voice": "Dictar: escriba con su voz", "Dictate your question": "Dicte su pregunta", "Include my other open files": "Incluir mis otros archivos abiertos", "Rewrite this section": "Reescribir esta sección", "Suggest as tracked changes": "Sugerir como cambios controlados", "Make a presentation": "Crear una presentación", "Open as slides": "Abrir como diapositivas", "Deck from outline": "Presentación desde esquema", "Build deck": "Crear presentación", "Summarize notebook": "Resumir bloc de notas",
   // Chart styles and template filters
   "Chart styles": "Estilos de gráfico", "Modern": "Moderno", "Monochrome": "Monocromo", "Colour-blind safe": "Apto para daltónicos", "Data labels": "Etiquetas de datos", "Documents": "Documentos", "Workbooks": "Libros", "Presentations": "Presentaciones", "Show templates for": "Mostrar plantillas de",
   // Start screen

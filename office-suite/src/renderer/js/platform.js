@@ -359,14 +359,15 @@
         b.addEventListener('click', () => Platform.emit(b.dataset.cmd)));
       UI.commandSearch();
       UI.ribbonModes();
-      // A ribbon too wide for the window gets more compact step by step, as Office's does: small
-      // buttons drop their words (still read out and shown as tooltips), then big buttons shrink.
+      // A ribbon too wide for the window gets more compact step by step, as Office's does: groups
+      // move closer together, small buttons drop their words (still read out and shown as
+      // tooltips), then big buttons shrink.
       if (ribbon && window.ResizeObserver) {
         const fit = () => {
-          ribbon.classList.remove('compact-1', 'compact-2');
+          ribbon.classList.remove('compact-0', 'compact-1', 'compact-2');
           const panel = ribbon.querySelector('.ribbon-panel.active');
           if (!panel || document.body.classList.contains('ribbon-tabs') && !document.body.classList.contains('ribbon-peek')) return;
-          for (const step of ['compact-1', 'compact-2']) {
+          for (const step of ['compact-0', 'compact-1', 'compact-2']) {
             // The panel's own width: its slide-in transform would make the ribbon's look wider.
             if (panel.scrollWidth <= panel.clientWidth + 1) break;
             ribbon.classList.add(step);

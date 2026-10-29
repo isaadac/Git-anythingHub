@@ -842,12 +842,29 @@
   $('nav').addEventListener('click', e => { if (innerWidth <= 760 && e.target.closest('#pages li, .results li')) document.body.classList.remove('nav-open'); });
 
   // ---------- Assistant and proofing ----------
+  // Dictate: what is said goes in at the cursor as if typed.
+  Assistant.dictateButton(document.getElementById('dictate'), text => {
+    if (!body.contains(getSelection().anchorNode)) restoreSel();
+    body.focus();
+    document.execCommand('insertText', false, Assistant.spaced(body, text));
+  });
   Assistant.attach({
     app: 'notes',
-    context: () => { commit(); const r = savedRange && !savedRange.collapsed ? savedRange.toString() : ''; return { document: `# ${page.title || 'Untitled page'}\n\n${toMarkdown(page.html)}`, selection: r, hasSelection: !!r.trim() }; },
+    context: action => {
+      commit();
+      const r = savedRange && !savedRange.collapsed ? savedRange.toString() : '';
+      // The whole notebook: every section and page, in order.
+      if (action && action.scope === 'notebook') {
+        const parts = [`# Notebook: ${nb.name}`];
+        nb.sections.forEach(s => { parts.push(`## Section: ${s.name}`); s.pages.forEach(p => parts.push(`### ${p.title || 'Untitled page'}\n\n${toMarkdown(p.html)}`)); });
+        return { document: parts.join('\n\n'), selection: '', hasSelection: false };
+      }
+      return { document: `# ${page.title || 'Untitled page'}\n\n${toMarkdown(page.html)}`, selection: r, hasSelection: !!r.trim() };
+    },
     format: 'In Isadek Notes you may use Markdown: # headings, **bold**, - lists, and "- [ ] " for to-do items.',
     actions: [
       { label: 'Summarize page', prompt: 'Summarize this page in a few bullet points.' },
+      { label: 'Summarize notebook', scope: 'notebook', prompt: 'Summarize this whole notebook: a short overview, then the key points of each section as bullets, then any open questions or action items across it. Use Markdown headings.' },
       { label: 'To-do list', prompt: 'Turn the action items on this page into a to-do list ("- [ ] " items). Reply with only the list.' },
       { label: 'Tidy up notes', prompt: 'Rewrite these notes so they are well organized with short headings and bullet points. Keep every fact.' },
       { label: 'Questions to ask', prompt: 'What open questions or gaps are in these notes? List them.' }

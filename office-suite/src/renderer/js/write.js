@@ -498,7 +498,31 @@
     if (name === null) return;
     try { localStorage.setItem('atlas-author', name.replace(/[^\w .@'-]/g, '').slice(0, 64) || 'Author'); } catch { /* ignore */ }
   }
-  const review = WriteReview({ doc, author: getAuthor, changed: () => { changed(); if (!commentsPane.hidden) review.renderPane(); }, pane: commentsPane });
+  // ---------- Undo for changes the app makes (not typed) ----------
+  // The browser's undo knows typing and execCommand only. Changes the app makes to whole
+  // paragraphs (the Assistant's rewrites) are kept here as before/after copies: Ctrl+Z takes the
+  // latest back while the document is just as it left it; otherwise the browser's undo runs.
+  const appEdits = [], appRedos = [];
+  const docState = () => { const c = doc.cloneNode(true); layout.clearPushes(c); return c.innerHTML; };
+  function appEdit(fn) {
+    const before = docState();
+    fn();
+    const after = docState();
+    if (before === after) return false;
+    appEdits.push({ before, after });
+    if (appEdits.length > 20) appEdits.shift();
+    appRedos.length = 0;
+    return true;
+  }
+  function appUndo(redo) {
+    const from = redo ? appRedos : appEdits, to = redo ? appEdits : appRedos, top = from[from.length - 1];
+    if (!top || docState() !== (redo ? top.before : top.after)) return false;
+    from.pop(); to.push(top);
+    doc.innerHTML = redo ? top.after : top.before;
+    changed();
+    return true;
+  }
+  const review = WriteReview({ doc, author: getAuthor, edit: appEdit, changed: () => { changed(); if (!commentsPane.hidden) review.renderPane(); }, pane: commentsPane });
   document.getElementById('setAuthor').addEventListener('click', setAuthor);
   document.getElementById('addComment').addEventListener('click', async () => {
     restoreSelection();
@@ -1295,8 +1319,8 @@ ${rules}</style></head>
       case 'export-html': save(true, 'html'); break;
       case 'export-txt': save(true, 'txt'); break;
       case 'print': { extras.updateFields(); const restore = layout.forPrint(); try { await Platform.print(); } finally { restore(); } break; }
-      case 'undo': if (!liveUndo('undoLocal')) exec('undo'); break;
-      case 'redo': if (!liveUndo('redoLocal')) exec('redo'); break;
+      case 'undo': if (!appUndo(false) && !liveUndo('undoLocal')) exec('undo'); break;
+      case 'redo': if (!appUndo(true) && !liveUndo('redoLocal')) exec('redo'); break;
       case 'find': openFind(false); break;
       case 'replace': openFind(true); break;
       case 'home': Platform.desktop ? Platform.newWindow('home') : (location.href = 'index.html'); break;
@@ -1489,13 +1513,15 @@ ${rules}</style></head>
     return true;
   }
   [doc, ...HF].forEach(el => el.addEventListener('beforeinput', e => {
-    if ((e.inputType === 'historyUndo' || e.inputType === 'historyRedo') && liveUndo(e.inputType === 'historyUndo' ? 'undoLocal' : 'redoLocal')) e.preventDefault();
+    if (e.inputType !== 'historyUndo' && e.inputType !== 'historyRedo') return;
+    const redo = e.inputType === 'historyRedo';
+    if ((el === doc && appUndo(redo)) || liveUndo(redo ? 'redoLocal' : 'undoLocal')) e.preventDefault();
   }));
   [doc, ...HF].forEach(el => el.addEventListener('keydown', e => {
     if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
     const k = e.key.toLowerCase();
     const which = k === 'z' ? (e.shiftKey ? 'redoLocal' : 'undoLocal') : k === 'y' && !e.shiftKey ? 'redoLocal' : null;
-    if (which && liveUndo(which)) e.preventDefault();
+    if (which && ((el === doc && appUndo(which === 'redoLocal')) || liveUndo(which))) e.preventDefault();
   }));
   doc.addEventListener('input', () => setTimeout(drawLivePeers, 0));
 
@@ -1572,10 +1598,55 @@ ${rules}</style></head>
   document.getElementById('stLang').addEventListener('click', () => proofing.languageDialog());
 
   // ---------- Assistant ----------
-  function aiContext() {
+  /** The section around a node: its heading and everything up to the next heading as high or higher. */
+  function sectionAround(node) {
+    let start = topBlock(node) || doc.firstElementChild;
+    while (start && !/^H[1-6]$/.test(start.tagName) && start.previousElementSibling) start = start.previousElementSibling;
+    if (!start) return [];
+    const level = /^H[1-6]$/.test(start.tagName) ? +start.tagName[1] : 7;
+    const blocks = [start];
+    for (let n = start.nextElementSibling; n && !(/^H[1-6]$/.test(n.tagName) && +n.tagName[1] <= level); n = n.nextElementSibling) blocks.push(n);
+    return blocks;
+  }
+  const blocksMarkdown = blocks => { const d = document.createElement('div'); blocks.forEach(b => d.appendChild(b.cloneNode(true))); return htmlToMarkdown(d); };
+  function aiContext(action) {
     const r = savedRange && doc.contains(savedRange.commonAncestorContainer) ? savedRange.cloneRange() : null;
+    const document_ = htmlToMarkdown(doc.cloneNode(true));
+    // "This section": the heading the cursor is under, down to the next heading at its level.
+    if (action && action.scope === 'section') {
+      const blocks = r ? sectionAround(r.startContainer) : [];
+      return { document: document_, selection: blocks.length ? blocksMarkdown(blocks) : '', hasSelection: blocks.length > 0, blocks };
+    }
     const selection = r && !r.collapsed ? r.toString() : '';
-    return { document: htmlToMarkdown(doc.cloneNode(true)), selection, hasSelection: !!selection.trim(), range: r };
+    // A selection across paragraphs is rewritten paragraph by paragraph.
+    let blocks = null;
+    if (r && !r.collapsed) {
+      const a = topBlock(r.startContainer), b = topBlock(r.endContainer);
+      if (a && b && a !== b) { blocks = []; for (let n = a; n; n = n.nextElementSibling) { blocks.push(n); if (n === b) break; } }
+    }
+    return { document: document_, selection: blocks ? blocksMarkdown(blocks) : selection, hasSelection: !!selection.trim(), range: r, blocks };
+  }
+  /** Puts a rewrite in place of whole paragraphs (a section), as one step Ctrl+Z takes back. */
+  function aiReplaceBlocks(text, blocks) {
+    if (!blocks.every(b => doc.contains(b))) return UI.toast('The text that was rewritten has changed; ask again', 4000);
+    review.replaceBlocks(blocks, sanitize(markdownToHtml(text.trim())));
+    changed();
+  }
+  /** Puts a rewrite in place of the selection or section as tracked changes, for the author to accept or reject. */
+  function aiTracked(text, ctx) {
+    const html = sanitize(markdownToHtml(text.trim()));
+    let done;
+    if (ctx.blocks && ctx.blocks.length && ctx.blocks.every(b => doc.contains(b))) done = review.replaceBlocksTracked(ctx.blocks, html);
+    else if (ctx.range && doc.contains(ctx.range.startContainer)) {
+      const t = document.createElement('template');
+      t.innerHTML = html;
+      const kids = [...t.content.children];
+      if (kids.length <= 1) done = review.replaceTextTracked(ctx.range, (kids[0] || t.content).textContent);
+      else done = review.replaceBlocksTracked([topBlock(ctx.range.startContainer)], html);
+    } else return UI.toast('The text that was rewritten has changed; ask again', 4000);
+    if (!done) return UI.toast('No changes to suggest');
+    if (!commentsPane.hidden) review.renderPane();
+    UI.toast(`Suggested as tracked changes (${review.count()}). Review → Accept or Reject.`, 4000);
   }
   /** Puts a reply (Markdown) into the document at the range, or in place of it. */
   function aiInsert(text, ctx, replace) {
@@ -1606,6 +1677,13 @@ ${rules}</style></head>
     }
     UI.toast(replace ? 'Replaced' : 'Inserted');
   }
+  // Dictate: what is said goes in at the cursor as if typed (tracked when tracking is on).
+  Assistant.dictateButton(document.getElementById('dictate'), text => {
+    if (!doc.contains(getSelection().anchorNode)) restoreSelection();
+    doc.focus();
+    text = Assistant.spaced(doc, text);
+    if (review.tracking) review.insertText(text); else document.execCommand('insertText', false, text);
+  });
   Assistant.attach({
     app: 'write',
     context: aiContext,
@@ -1616,12 +1694,16 @@ ${rules}</style></head>
       { label: 'Fix spelling & grammar', prompt: 'Correct the spelling, grammar and punctuation of the selected text. Change nothing else.', selection: true },
       { label: 'Make shorter', prompt: 'Rewrite the selected text to about half its length, keeping the essential points.', selection: true },
       { label: 'Make more formal', prompt: 'Rewrite the selected text in a more formal, professional tone.', selection: true },
+      { label: 'Rewrite this section', scope: 'section', selection: true, prompt: 'Rewrite the section in <selection> (the part of the document the cursor is in) so it reads clearly and concisely. Keep its headings, facts and language, and keep one paragraph for each paragraph unless a paragraph is better split or merged. Reply with the whole rewritten section in Markdown.' },
       { label: 'Continue writing', prompt: 'Continue the document from where it ends with one or two paragraphs in the same style. Reply with only the new text.' },
-      { label: 'Suggest a title', prompt: 'Suggest a short, fitting title for this document. Reply with only the title.' }
+      { label: 'Suggest a title', prompt: 'Suggest a short, fitting title for this document. Reply with only the title.' },
+      { label: 'Make a presentation', prompt: 'Turn this document into a presentation outline: "# " for the title slide (with a one-line subtitle under it) and for each major part, "## " for each slide with 3 to 5 short "- " points taken from the document, and a "Notes:" line of speaker notes for each slide. Reply with only the outline.' }
     ],
     buttons: [
-      { label: 'Replace selection', selection: true, run: (text, ctx) => aiInsert(text, ctx, true) },
-      { label: 'Insert', run: text => aiInsert(text, aiContext(), false) }
+      { label: 'Suggest as tracked changes', selection: true, run: (text, ctx) => aiTracked(text, ctx) },
+      { label: 'Replace selection', selection: true, run: (text, ctx) => (ctx.blocks && !ctx.range ? aiReplaceBlocks(text, ctx.blocks) : aiInsert(text, ctx, true)) },
+      { label: 'Insert', run: text => aiInsert(text, aiContext(), false) },
+      { label: 'Open as slides', run: text => (/^#{1,3}\s/m.test(text) ? SuiteTemplates.openOutline(state.name || 'Presentation', text) : UI.toast('This reply isn\'t an outline; ask for a presentation first', 4000)) }
     ]
   });
 

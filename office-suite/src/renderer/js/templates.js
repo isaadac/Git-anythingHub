@@ -201,6 +201,20 @@
     } catch { return null; }
   }
 
+  /** Opens an outline (Markdown) as a new presentation built from it. */
+  function openOutline(name, markdown) {
+    const bytes = new TextEncoder().encode(JSON.stringify({ isadekOutline: String(markdown).slice(0, 200000) }));
+    return Platform.openData('slides', String(name).replace(/\.[^.]+$/, '') + '.pptx', bytes);
+  }
+  /** The outline a handed-over file carries, or null for any other file. */
+  function outlineFrom(bytes) {
+    if (!bytes || bytes.length > 1e6 || bytes[0] !== 0x7b) return null;
+    try {
+      const m = JSON.parse(new TextDecoder().decode(bytes));
+      return m && typeof m.isadekOutline === 'string' && Object.keys(m).length === 1 ? m.isadekOutline : null;
+    } catch { return null; }
+  }
+
   /** A template's card: its miniature, name and what it is for. */
   function card(app, t, onPick) {
     const b = document.createElement('button');
@@ -214,5 +228,5 @@
     return b;
   }
 
-  window.SuiteTemplates = { sheets: SHEETS, slides: SLIDES, preview, open, fromBytes, card };
+  window.SuiteTemplates = { sheets: SHEETS, slides: SLIDES, preview, open, fromBytes, card, openOutline, outlineFrom };
 })();

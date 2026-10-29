@@ -2482,7 +2482,9 @@
     try {
       const ext = Platform.extOf(f.name);
       const tpl = window.SuiteTemplates && SuiteTemplates.fromBytes(f.data, 'slides');
+      const outline = !tpl && window.SuiteTemplates && SuiteTemplates.outlineFrom(f.data);
       if (tpl) pres = cleanPres({ theme: tpl.theme, slides: tpl.slides });
+      else if (outline) { pres = cleanPres({ theme: 'office', slides: [] }); pres.slides = deckFromOutline(outline); if (!pres.slides.length) pres.slides = [newSlide('title')]; }
       else if (ext === 'aslides') {
         pres = cleanPres(JSON.parse(Platform.bytesToText(f.data)));
       } else pres = await fromPptx(f.data);
@@ -2860,6 +2862,47 @@
     state.markDirty();
     UI.toast(`Added ${Math.min(sections.length, 50)} slide${sections.length === 1 ? '' : 's'}`);
   }
+  /**
+   * Slides from an outline (Markdown): "# " lines start a part (a section slide; the first one is
+   * the title slide), "## " lines start a slide whose "- " lines are its points, "Notes:" lines
+   * are speaker notes. Text only; nothing in it is taken as markup.
+   */
+  function deckFromOutline(text) {
+    const parts = [];
+    for (const raw of String(text).replace(/\r/g, '').split('\n').slice(0, 5000)) {
+      const line = raw.trim();
+      if (!line || /^---+$/.test(line)) continue;
+      let m;
+      if ((m = /^(#{1,3})\s+(?:slide\s*\d+\s*[:.\-–]\s*)?(.+)$/i.exec(line))) parts.push({ level: m[1].length, title: m[2].replace(/\*\*/g, ''), body: [], notes: [] });
+      else if (!parts.length) parts.push({ level: 2, title: line.replace(/^\s*[-*•]\s+/, ''), body: [], notes: [] });
+      else if (/^notes?:/i.test(line)) parts[parts.length - 1].notes.push(line.replace(/^notes?:\s*/i, ''));
+      else parts[parts.length - 1].body.push(line);
+    }
+    return parts.slice(0, 80).map((p, i) => {
+      const kind = i === 0 && (p.level === 1 || p.body.length <= 1) ? 'title' : p.level === 1 ? 'section' : 'content';
+      const sl = newSlide(kind);
+      const title = sl.elements.find(e => e.ph === 'title');
+      const body = sl.elements.find(e => e.ph === 'body' || e.ph === 'subtitle');
+      if (title) title.html = escapeHtml(p.title.slice(0, 300));
+      if (body && p.body.length) body.html = body.ph === 'body' ? toListHtml(p.body.slice(0, 12)) : escapeHtml(p.body.map(l => l.replace(/^\s*[-*•]\s+/, '')).join(' · ').slice(0, 500));
+      sl.notes = p.notes.join('\n').slice(0, 20000);
+      return sl;
+    });
+  }
+  const untouched = () => pres.slides.length === 1 && !pres.slides[0].elements.some(e => (e.html || '').replace(/<[^>]*>/g, '').trim() || e.type !== 'text');
+  /** Builds a whole deck from an outline: in place of a blank presentation, else after this slide. */
+  function aiDeck(text) {
+    const slides = deckFromOutline(text);
+    if (!slides.length) return UI.toast('No slides found in the reply', 3000);
+    if (masterTarget) return UI.toast('Close Master View to add slides');
+    commitEditing();
+    snapshot();
+    if (untouched()) { pres.slides = slides; current = 0; } else { pres.slides.splice(current + 1, 0, ...slides); current++; }
+    selectedId = null;
+    renderAll();
+    state.markDirty();
+    UI.toast(`Built ${slides.length} slide${slides.length === 1 ? '' : 's'}`);
+  }
   Assistant.attach({
     app: 'slides',
     context: aiContext,
@@ -2867,12 +2910,14 @@
     format: 'In Isadek Slides, write slides as an outline: a "## " heading line with each slide\'s title, then its points as "- " lines (at most six short points), and optionally a "Notes:" line with speaker notes.',
     actions: [
       { label: 'Draft slides', prompt: 'Draft 5 to 8 slides on the topic I describe next, as an outline. Topic: ', fill: true },
+      { label: 'Deck from outline', prompt: 'Turn the outline I give next into a complete presentation outline: "# " for the title slide and for each part, "## " for each slide with 3 to 5 short "- " points, a "Notes:" line of speaker notes for each slide, and a closing slide. Outline:\n', fill: true },
       { label: 'Speaker notes', prompt: 'Write speaker notes for the current slide: what to say, in 3 to 5 natural sentences. Reply with only the notes.' },
       { label: 'Improve this text', prompt: 'Rewrite the selected text box for a slide: shorter, punchier, parallel bullet points. Keep it as bullet lines if it has several points.', selection: true },
       { label: 'Summarize the deck', prompt: 'Summarize this presentation in three sentences, then suggest anything missing.' },
       { label: 'Add a closing slide', prompt: 'Write one closing slide that sums up the presentation, as an outline.' }
     ],
     buttons: [
+      { label: 'Build deck', run: text => aiDeck(text) },
       { label: 'Add as slides', run: text => aiSlides(text) },
       { label: 'Add to notes', run: text => { snapshot(); const s = slide(); s.notes = (s.notes ? s.notes + '\n' : '') + text.trim(); renderStage(); state.markDirty(); UI.toast('Added to the speaker notes'); } },
       { label: 'Replace text box', selection: true, run: (text, ctx) => {

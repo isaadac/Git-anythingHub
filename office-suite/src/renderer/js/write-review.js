@@ -405,7 +405,139 @@
       return d.body.innerHTML;
     }
 
+    // ---------------- A rewrite as tracked changes ----------------
+    // The Assistant's rewrite of a passage goes in as the edits a person would have made: the
+    // paragraphs are lined up, unchanged ones are left alone, changed ones get word-level
+    // insertions and deletions, and added or removed paragraphs are tracked whole. One Ctrl+Z
+    // takes it all back.
+    const words = t => t.match(/\s+|[^\s]+/g) || [];
+    const norm = t => t.replace(/\s+/g, ' ').trim();
+    /** Word-level differences: [['eq'|'del'|'ins', text], …]. */
+    function diffWords(a, b) {
+      const A = words(a), B = words(b), n = A.length, m = B.length;
+      if (n * m > 4e6) return [['del', a], ['ins', b]];
+      const L = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+      for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+      const out = [];
+      const add = (k, t) => { const last = out[out.length - 1]; if (last && last[0] === k) last[1] += t; else out.push([k, t]); };
+      let i = 0, j = 0;
+      while (i < n && j < m) {
+        if (A[i] === B[j]) { add('eq', A[i]); i++; j++; }
+        else if (L[i + 1][j] >= L[i][j + 1]) add('del', A[i++]);
+        else add('ins', B[j++]);
+      }
+      while (i < n) add('del', A[i++]);
+      while (j < m) add('ins', B[j++]);
+      // Changes separated only by spaces read as one change: "a lot of money" → "about $40,000",
+      // not five alternating pieces.
+      const res = [];
+      for (let k = 0; k < out.length;) {
+        if (out[k][0] === 'eq') { res.push(out[k++]); continue; }
+        let del = '', ins = '', end = k;
+        for (let x = k; x < out.length; x++) {
+          const [kind, t] = out[x];
+          if (kind === 'eq' && !(/^\s+$/.test(t) && out[x + 1] && out[x + 1][0] !== 'eq')) break;
+          if (kind !== 'ins') del += t;
+          if (kind !== 'del') ins += t;
+          end = x + 1;
+        }
+        if (del) res.push(['del', del]);
+        if (ins) res.push(['ins', ins]);
+        k = end;
+      }
+      return res;
+    }
+    const opsHtml = ops => ops.map(([k, t]) => (k === 'eq' ? esc(t) : `<${k} ${attrs()}>${esc(t)}</${k}>`)).join('');
+    const SIMPLE = /^(P|H[1-6]|BLOCKQUOTE|LI)$/;
+    /** An element with all its text marked as deleted (structure kept). */
+    function deletedCopy(el) {
+      const c = el.cloneNode(true);
+      const w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+      const nodes = [];
+      while (w.nextNode()) if (w.currentNode.nodeValue.trim() && !w.currentNode.parentElement.closest('del.tc')) nodes.push(w.currentNode);
+      nodes.forEach(n => { const d = document.createElement('del'); d.className = 'tc'; d.dataset.author = cleanAuthor(o.author()); d.setAttribute('datetime', new Date().toISOString().replace(/\.\d+Z$/, 'Z')); n.replaceWith(d); d.appendChild(n); });
+      return c.outerHTML;
+    }
+    /** A new element with its content marked as inserted. */
+    function insertedCopy(el) {
+      const c = el.cloneNode(true);
+      if (/^(UL|OL)$/.test(c.tagName)) { [...c.children].forEach(li => { li.innerHTML = `<ins ${attrs()}>${li.innerHTML}</ins>`; }); return c.outerHTML; }
+      if (c.tagName === 'TABLE') { c.querySelectorAll('td,th').forEach(td => { if (td.innerHTML.trim()) td.innerHTML = `<ins ${attrs()}>${td.innerHTML}</ins>`; }); return c.outerHTML; }
+      c.innerHTML = `<ins ${attrs()}>${c.innerHTML}</ins>`;
+      return c.outerHTML;
+    }
+    /**
+     * Replaces whole blocks (top-level elements, in order) with new ones (from the reply's HTML)
+     * as tracked changes. Returns false if there was nothing to change.
+     */
+    function replaceBlocksTracked(oldBlocks, newHtml) {
+      const t = document.createElement('template');
+      t.innerHTML = newHtml;
+      const fresh = [...t.content.children];
+      const A = oldBlocks.map(el => norm(el.textContent)), B = fresh.map(el => norm(el.textContent));
+      // Line the paragraphs up: the longest run of unchanged ones stays as it is.
+      const n = A.length, m = B.length;
+      const L = Array.from({ length: n + 1 }, () => new Uint16Array(m + 1));
+      for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) L[i][j] = A[i] === B[j] && A[i] ? L[i + 1][j + 1] + 1 : Math.max(L[i + 1][j], L[i][j + 1]);
+      const parts = [];
+      let i = 0, j = 0, changes = 0;
+      const flush = (olds, news) => {
+        const k = Math.min(olds.length, news.length);
+        for (let x = 0; x < k; x++) {
+          const a = olds[x], b = news[x];
+          if (SIMPLE.test(a.tagName) && SIMPLE.test(b.tagName)) {
+            // The paragraph keeps its kind (a heading stays a heading); its words are tracked.
+            const el = a.cloneNode(false);
+            el.innerHTML = opsHtml(diffWords(a.textContent, b.textContent));
+            parts.push(el.outerHTML);
+          } else { parts.push(deletedCopy(a), insertedCopy(b)); }
+          changes++;
+        }
+        olds.slice(k).forEach(a => { parts.push(deletedCopy(a)); changes++; });
+        news.slice(k).forEach(b => { parts.push(insertedCopy(b)); changes++; });
+      };
+      let olds = [], news = [];
+      while (i < n || j < m) {
+        if (i < n && j < m && A[i] === B[j] && A[i]) { flush(olds, news); olds = []; news = []; parts.push(oldBlocks[i].outerHTML); i++; j++; }
+        else if (j < m && (i >= n || L[i][j + 1] >= L[i + 1][j])) news.push(fresh[j++]);
+        else olds.push(oldBlocks[i++]);
+      }
+      flush(olds, news);
+      if (!changes) return false;
+      const was = tracking; tracking = false;
+      try { replaceBlocks(oldBlocks, parts.join('')); } finally { tracking = was; }
+      o.changed();
+      return true;
+    }
+    /**
+     * Puts HTML in place of whole blocks. Done on the document directly (the browser's insertHTML
+     * merges and restyles neighbouring paragraphs), through o.edit so that one Ctrl+Z takes it back.
+     */
+    function replaceBlocks(blocks, html) {
+      const run = () => {
+        const t = document.createElement('template');
+        t.innerHTML = html;
+        const nodes = [...t.content.childNodes];
+        blocks[0].before(...nodes);
+        blocks.forEach(b => b.remove());
+        const last = nodes.filter(n => n.nodeType === 1).pop();
+        if (last) { const r = document.createRange(); r.selectNodeContents(last); r.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); }
+      };
+      if (o.edit) o.edit(run); else run();
+    }
+    /** Replaces the text of a range inside one paragraph with new text, as tracked word changes. */
+    function replaceTextTracked(range, text) {
+      const ops = diffWords(range.toString(), text);
+      if (ops.every(x => x[0] === 'eq')) return false;
+      const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      const was = tracking; tracking = false;
+      try { document.execCommand('insertHTML', false, opsHtml(ops)); } finally { tracking = was; }
+      o.changed();
+      return true;
+    }
+
     return {
+      replaceBlocksTracked, replaceTextTracked, replaceBlocks, diffWords,
       get tracking() { return tracking; },
       setTracking(on) { tracking = !!on; },
       insertText, deleteSelection,
