@@ -522,7 +522,7 @@
     changed();
     return true;
   }
-  const review = WriteReview({ doc, author: getAuthor, edit: appEdit, changed: () => { changed(); if (!commentsPane.hidden) review.renderPane(); }, pane: commentsPane });
+  const review = WriteReview({ doc, author: getAuthor, edit: appEdit, peers: () => (live && live.status === 'live' ? live.peers.map(p => p.name) : []), changed: () => { changed(); if (!commentsPane.hidden) review.renderPane(); }, pane: commentsPane });
   document.getElementById('setAuthor').addEventListener('click', setAuthor);
   document.getElementById('addComment').addEventListener('click', async () => {
     restoreSelection();
@@ -1423,8 +1423,22 @@ ${rules}</style></head>
     out.sources = notes.sources;
     return out;
   }
+  /** Where an offset in a text ends up after the text changes: moved along by what changed before it. */
+  function mapOffset(before, after, off) {
+    if (before === after) return off;
+    let shift = 0;
+    for (const h of Merge3.hunks([...before], [...after])) {
+      if (h.e <= off && !(h.s === h.e && h.s === off)) shift += h.rep.length - (h.e - h.s); // wholly before the caret
+      else if (h.s < off) return h.s + shift + h.rep.length; // the caret's own text changed: after the change
+    }
+    return Math.max(0, Math.min(after.length, off + shift));
+  }
   function liveApply(changes) {
+    setTimeout(() => review.checkMentions(), 0); // a comment that mentions you, from someone else
     const caret = caretInfo();
+    // The text of the paragraphs the caret is in, to move it along with what others type before it.
+    const textBefore = new Map();
+    if (caret) [caret.b, caret.fb].forEach(id => { const el = blockById.get(id); if (el) textBefore.set(id, el.textContent); });
     let sourcesChanged = false;
     for (const [k, v] of Object.entries(changes)) {
       if (k.startsWith('b:')) {
@@ -1459,9 +1473,10 @@ ${rules}</style></head>
     if (!doc.firstElementChild) doc.innerHTML = '<p><br></p>';
     // The caret stays where it was in the text.
     if (caret && caret.b && blockById.get(caret.b) && blockById.get(caret.b).isConnected) {
-      const a = pointAt(blockById.get(caret.b), caret.o);
+      const moved = (id, o) => (textBefore.has(id) && blockById.get(id) ? mapOffset(textBefore.get(id), blockById.get(id).textContent, o) : o);
+      const a = pointAt(blockById.get(caret.b), moved(caret.b, caret.o));
       const fbl = blockById.get(caret.fb);
-      const f = fbl && fbl.isConnected ? pointAt(fbl, caret.fo) : a;
+      const f = fbl && fbl.isConnected ? pointAt(fbl, moved(caret.fb, caret.fo)) : a;
       try { getSelection().setBaseAndExtent(a[0], a[1], f[0], f[1]); } catch { /* ignore */ }
     }
     if (sourcesChanged) notes.refreshCitations();
@@ -1502,6 +1517,13 @@ ${rules}</style></head>
     state: liveState,
     apply: liveApply,
     presence: () => caretInfo(),
+    textFields: ['h'], // a paragraph's HTML merges by words when two people edit it at once
+    describe(k) {
+      if (k.startsWith('b:')) { const el = blockById.get(k.slice(2)); const t = el && el.isConnected ? el.textContent.replace(/\s+/g, ' ').trim() : ''; return t ? `“${t.slice(0, 40)}${t.length > 40 ? '…' : ''}”` : 'a paragraph'; }
+      return k.startsWith('hf:') ? 'header or footer' : k === 'setup' ? 'page setup' : k === 'sources' ? 'sources' : null;
+    },
+    reveal(k) { const el = k.startsWith('b:') && blockById.get(k.slice(2)); if (el && el.isConnected) { el.scrollIntoView({ block: 'center' }); el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1200); } },
+    follow(c) { const el = c && blockById.get(c.b); if (el && el.isConnected) { const r = el.getBoundingClientRect(); if (r.top < 120 || r.bottom > innerHeight - 40) el.scrollIntoView({ block: 'center' }); } },
     showPeers(list) { livePeers = list; drawLivePeers(); }
   });
   document.addEventListener('selectionchange', () => live.moved());

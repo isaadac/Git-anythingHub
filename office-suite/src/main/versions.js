@@ -20,7 +20,7 @@ function writeIndex(dir, idx) {
   fs.renameSync(tmp, path.join(dir, 'index.json'));
 }
 
-ipcMain.handle('versions:add', (_e, key, name, data) => {
+ipcMain.handle('versions:add', (_e, key, name, data, by) => {
   if (!validKey(key) || !(data instanceof Uint8Array) || data.length > MAX_BYTES) return false;
   const dir = dirOf(key);
   fs.mkdirSync(dir, { recursive: true });
@@ -33,7 +33,7 @@ ipcMain.handle('versions:add', (_e, key, name, data) => {
   if (last && now - last.created < WINDOW_MS) { try { fs.unlinkSync(path.join(dir, last.id + '.bin')); } catch { /* gone */ } idx.versions.pop(); }
   const id = String(now);
   fs.writeFileSync(path.join(dir, id + '.bin'), data);
-  idx.versions.push({ id, name: String(name || '').slice(0, 255), size: data.length, hash, created: last && now - last.created < WINDOW_MS ? last.created : now, saved: now });
+  idx.versions.push({ id, name: String(name || '').slice(0, 255), by: (Array.isArray(by) ? by : []).filter(x => typeof x === 'string').map(x => x.replace(/[^\w .@'-]/g, '').slice(0, 60)).filter(Boolean).slice(0, 10), size: data.length, hash, created: last && now - last.created < WINDOW_MS ? last.created : now, saved: now });
   while (idx.versions.length > KEEP) { const old = idx.versions.shift(); try { fs.unlinkSync(path.join(dir, old.id + '.bin')); } catch { /* gone */ } }
   idx.key = key;
   writeIndex(dir, idx);
@@ -41,7 +41,7 @@ ipcMain.handle('versions:add', (_e, key, name, data) => {
 });
 ipcMain.handle('versions:list', (_e, key) => {
   if (!validKey(key)) return [];
-  return readIndex(dirOf(key)).versions.map(v => ({ id: v.id, name: v.name, size: v.size, saved: v.saved })).reverse();
+  return readIndex(dirOf(key)).versions.map(v => ({ id: v.id, name: v.name, by: v.by || [], size: v.size, saved: v.saved })).reverse();
 });
 ipcMain.handle('versions:read', (_e, key, id) => {
   if (!validKey(key) || !/^\d{1,16}$/.test(String(id))) return null;

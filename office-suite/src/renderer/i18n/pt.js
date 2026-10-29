@@ -1,6 +1,8 @@
 'use strict';
 // Isadek Office — Português. Keys are the English text as it appears in the interface.
 (window.ISADEK_I18N = window.ISADEK_I18N || {}).pt = {
+  // Live editing: activity and following
+  "Activity": "Atividade", "Changes made in this session appear here.": "As alterações desta sessão aparecem aqui.", "Watch": "Assistir", "Copy link": "Copiar link", "Leave session": "Sair da sessão",
   // Assistant and dictation
   "Dictate": "Ditar", "Voice": "Voz", "Dictate: type with your voice": "Ditar: digite com sua voz", "Dictate your question": "Dite sua pergunta", "Include my other open files": "Incluir meus outros arquivos abertos", "Rewrite this section": "Reescrever esta seção", "Suggest as tracked changes": "Sugerir como alterações controladas", "Make a presentation": "Criar uma apresentação", "Open as slides": "Abrir como slides", "Deck from outline": "Apresentação a partir de tópicos", "Build deck": "Criar apresentação", "Summarize notebook": "Resumir bloco de anotações",
   // Chart styles and template filters

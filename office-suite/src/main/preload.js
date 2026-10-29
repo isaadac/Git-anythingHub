@@ -59,7 +59,7 @@ contextBridge.exposeInMainWorld('atlas', {
   reportError: r => ipcRenderer.invoke('crash:report', r),
   crashStatus: () => ipcRenderer.invoke('crash:status'),
   setCrashReports: on => ipcRenderer.invoke('app:crash-reports', on),
-  versionsAdd: (key, name, data) => ipcRenderer.invoke('versions:add', key, name, data),
+  versionsAdd: (key, name, data, by) => ipcRenderer.invoke('versions:add', key, name, data, by),
   versionsList: key => ipcRenderer.invoke('versions:list', key),
   versionsRead: (key, id) => ipcRenderer.invoke('versions:read', key, id),
   notesList: () => ipcRenderer.invoke('notes:list'),

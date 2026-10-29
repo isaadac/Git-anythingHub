@@ -279,8 +279,9 @@ html.touch .btn, html.touch .ribbon-tabs button, html.touch .modal .actions butt
 /* Version History */
 .modal.versions { width: min(580px, 94vw); }
 .v-list { max-height: 50vh; overflow: auto; display: flex; flex-direction: column; gap: var(--sp-1); margin: var(--sp-4) 0; }
-.v-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: var(--sp-4); align-items: center; padding: var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--border); }
+.v-row { display: grid; grid-template-columns: auto 1fr auto auto auto; gap: var(--sp-4); align-items: center; padding: var(--sp-4) var(--sp-3); border-bottom: 1px solid var(--border); }
 .v-row:hover { background: var(--surface-2); }
+.v-row .by { color: var(--muted); font-size: var(--fs-sm); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .v-row button { border: 1px solid var(--border); background: var(--surface); border-radius: var(--r-sm); padding: 4px 10px; cursor: pointer; font-size: var(--fs-sm); }
 .v-row .size { color: var(--subtle); font-size: var(--fs-sm); }
 .modal .muted { color: var(--muted); }
@@ -427,3 +428,33 @@ html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame
 .ai-input .mic.on .ico, #dictate.on .ico { animation: pulse 1.2s var(--ease-in-out) infinite; }
 @keyframes pulse { 50% { opacity: .45; } }
 .ai-msg .body[data-with]::before { content: attr(data-with); display: block; font-size: var(--fs-xs); color: var(--muted); margin-bottom: var(--sp-2); }
+
+/* Live editing: who changed what, following someone */
+.activity-pane { position: fixed; right: var(--sp-4); top: calc(var(--chrome-h, 194px) + var(--sp-2)); width: min(320px, 92vw); max-height: 60vh; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); box-shadow: var(--sh-3); z-index: 61; display: flex; flex-direction: column; overflow: hidden; animation: slide-from-right var(--dur-3) var(--ease-out); }
+.activity-pane[hidden] { display: none; }
+.activity-pane header { display: flex; align-items: center; padding: var(--sp-5) var(--sp-5) var(--sp-4) var(--sp-6); border-bottom: 1px solid var(--border); }
+.activity-pane header .sp { flex: 1; }
+.activity-pane header button { border: 0; background: none; cursor: pointer; color: var(--muted); width: 28px; height: 28px; border-radius: var(--r-sm); }
+.activity-pane .list { overflow: auto; padding: var(--sp-3); }
+.activity-pane .act { display: flex; gap: var(--sp-4); padding: var(--sp-4); border-radius: var(--r-md); cursor: pointer; font-size: var(--fs-sm); }
+.activity-pane .act:hover, .activity-pane .act:focus-visible { background: var(--hover); }
+.activity-pane .dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 4px; flex: none; }
+.activity-pane .when { color: var(--muted); font-size: var(--fs-xs); }
+.activity-pane .what div { color: var(--text-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
+.activity-pane .empty { color: var(--muted); padding: var(--sp-5); }
+.live-avatar[role=button] { cursor: pointer; }
+.live-avatar.following { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.follow-banner { position: fixed; left: 50%; bottom: calc(var(--status-h) + 16px); transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: var(--sp-5); padding: 8px 8px 8px 16px; background: var(--n-800); color: var(--n-0); border-radius: var(--r-pill); box-shadow: var(--sh-3); animation: fade-up var(--dur-3) var(--ease-out); }
+.follow-banner[hidden] { display: none; }
+.follow-banner .watch { border: 0; background: var(--accent); color: var(--on-accent); border-radius: var(--r-pill); padding: 6px 14px; cursor: pointer; font-weight: var(--fw-semibold); }
+#doc .flash { animation: flash 1.2s var(--ease-out); }
+@keyframes flash { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } }
+
+/* @mentions */
+.mention-list { position: absolute; z-index: 5; margin-top: 2px; min-width: 200px; background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-md); box-shadow: var(--sh-3); padding: var(--sp-2); }
+.mention-list[hidden] { display: none; }
+.mention-list .opt { padding: 6px 10px; border-radius: var(--r-sm); cursor: pointer; color: var(--text); font-size: var(--fs-md); }
+.mention-list .opt.on, .mention-list .opt:hover { background: var(--accent-soft); color: var(--accent-fg); }
+.modal label:has(> .mention-list) { position: relative; }
+.mention { color: var(--accent-fg); background: var(--accent-soft); border-radius: var(--r-xs); padding: 0 2px; font-weight: var(--fw-medium); }
+.comments-pane .card.mentions-me { border-left: 3px solid var(--accent); }

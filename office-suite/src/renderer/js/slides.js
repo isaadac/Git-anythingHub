@@ -1352,6 +1352,7 @@
   /** Shows slide i with its builds done up to `upTo` (0 = none, Infinity = all). */
   let shownSlide = null; // what the show displays now, for Morph
   function showSlide(i, animate = true, upTo = 0) {
+    if (live) live.moved(); // people following see the same slide
     finishRunning();
     clearTimeout(advanceTimer);
     const s = pres.slides[i];
@@ -1415,6 +1416,7 @@
     shownSlide = null;
     if (recording) finishRecording();
     presenter.hidden = true;
+    if (live) live.moved();
     Platform.fullscreen(false);
     goTo(showIndex);
   }
@@ -2719,9 +2721,47 @@
       }
       state.markDirty();
     },
-    presence: () => ({ slide: pres.slides[current] && pres.slides[current].id, el: selectedId }),
+    textFields: ['html'], // a text box's words merge when two people edit it at once
+    presence: () => ({ slide: pres.slides[current] && pres.slides[current].id, el: selectedId, show: presenter.hidden ? null : pres.slides[showIndex] && pres.slides[showIndex].id }),
+    describe(k) {
+      const num = id => pres.slides.findIndex(x => x.id === id) + 1;
+      let m;
+      if ((m = /^s:(.+)$/.exec(k))) return num(m[1]) ? `slide ${num(m[1])}` : 'a slide';
+      if ((m = /^e:([^:]+):(.+)$/.exec(k))) {
+        const sl = pres.slides.find(x => x.id === m[1]), el = sl && sl.elements.find(e => e.id === m[2]);
+        const t = el && (el.html || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+        return sl ? `slide ${num(m[1])}${t ? `: “${t.slice(0, 30)}”` : ''}` : 'a slide';
+      }
+      return k === 'deck' ? 'design' : null;
+    },
+    reveal(k) { const m = /^[se]:([^:]+)/.exec(k); const i = m ? pres.slides.findIndex(x => x.id === m[1]) : -1; if (i >= 0) goTo(i); },
+    // Following the presenter: their slide, in your editor or your own slide show.
+    follow(p, peer) {
+      const id = p.show || p.slide, i = pres.slides.findIndex(x => x.id === id);
+      if (i < 0) return;
+      if (!presenter.hidden) { if (i !== showIndex) { showIndex = i; showSlide(i, false); } return; }
+      if (i !== current) goTo(i);
+      followBanner(p.show ? peer : null, i);
+    },
     showPeers(list) { livePeers = list; drawLivePeers(); }
   });
+
+  /** While following someone who is presenting: "Ben is presenting · Watch". */
+  let banner = null;
+  function followBanner(peer, i) {
+    if (!peer) { if (banner) banner.hidden = true; return; }
+    if (!banner) {
+      banner = document.createElement('div');
+      banner.className = 'follow-banner';
+      banner.setAttribute('role', 'status');
+      banner.innerHTML = '<span class="who"></span><button class="primary watch">Watch</button>';
+      document.body.appendChild(banner);
+      banner.querySelector('.watch').addEventListener('click', () => { banner.hidden = true; present(banner.at); });
+    }
+    banner.at = i;
+    banner.querySelector('.who').textContent = `${peer.name} is presenting`;
+    banner.hidden = false;
+  }
 
   // ---------- Accessibility ----------
   function slideTitle(s) {
@@ -2960,5 +3000,5 @@
     } finally { box.remove(); }
   };
 
-  window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide, get live() { return live; } };
+  window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide, get live() { return live; }, get showIndex() { return presenter.hidden ? null : showIndex; } };
 })();

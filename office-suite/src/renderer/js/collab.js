@@ -5,8 +5,9 @@
 // Each app describes its document as a map of keys to JSON values (a paragraph, a cell, a slide,
 // a shape) through an adapter. After each local change the map is compared with the last
 // version everyone has, and only the keys that changed are sent. The server orders all changes,
-// so every copy ends up the same: the latest change to a key wins. While your own change to a key
-// is on its way, changes from others to that key are ignored (yours comes after them).
+// so every copy ends up the same. When someone else's change to a key arrives while yours to it is
+// still on its way, the two are merged (merge3.js: by field, and by words for text) and the merged
+// value is sent, so two people typing in one paragraph both keep their words.
 (function () {
   const COLORS = ['#d13438', '#0078d4', '#107c10', '#8764b8', '#ca5010', '#038387', '#c239b3', '#986f0b'];
   const enc = s => JSON.stringify(s === undefined ? null : s);
@@ -42,11 +43,18 @@
       ws: null, room: null, server: null, id: null, peers: [], status: 'off',
       known: new Map(),       // key -> JSON everyone has (as far as we know)
       pending: new Map(),     // key -> number of our latest unacknowledged change
+      base: new Map(),        // key -> JSON the server has for it, as far as we know (to merge from)
+      sent: new Map(),        // key -> [[n, JSON before, JSON after]] of our changes not yet acknowledged
+      hist: new Map(),        // key -> [{ seq, before, after }]: our latest acknowledged changes to it
+      seq: 0,                 // the last change from the server we have
+      held: new Map(),        // key -> JSON the server holds after the changes handled so far
+      lastFrom: new Map(),    // person -> key -> { seq, j }: their latest change to it
+      activity: [],           // who changed what: { who, color, own, keys, at }
       remoteLog: [], remoteCount: 0, // remote changes, for undo
       undo: [], redo: [], record: true, // your own changes, for undo that leaves others' edits alone
       queue: [], n: 0, timer: null, retry: 0, wantOpen: false, first: true, creating: false
     };
-    const listeners = new Set();
+    const listeners = new Set(), activityListeners = new Set();
     const emit = () => listeners.forEach(f => { try { f(S); } catch { /* ignore */ } });
 
     function send(m) { if (S.ws && S.ws.readyState === 1) { S.ws.send(JSON.stringify(m)); return true; } return false; }
@@ -58,15 +66,17 @@
       if (adapter.busy && adapter.busy()) { S.timer = setTimeout(flush, 300); return; }
       const cur = adapter.state();
       const ops = [], log = [];
-      for (const [k, v] of Object.entries(cur)) { const j = enc(v); if (S.known.get(k) !== j) { ops.push({ k, v }); log.push({ k, before: S.known.get(k), after: j }); S.known.set(k, j); } }
-      for (const k of [...S.known.keys()]) if (!(k in cur)) { ops.push({ k, v: null }); log.push({ k, before: S.known.get(k), after: undefined }); S.known.delete(k); }
+      const keep = k => { if (!S.base.has(k)) S.base.set(k, S.known.has(k) ? S.known.get(k) : null); };
+      for (const [k, v] of Object.entries(cur)) { const j = enc(v); if (S.known.get(k) !== j) { keep(k); ops.push({ k, v }); log.push({ k, before: S.known.get(k), after: j }); S.known.set(k, j); } }
+      for (const k of [...S.known.keys()]) if (!(k in cur)) { keep(k); ops.push({ k, v: null }); log.push({ k, before: S.known.get(k), after: undefined }); S.known.delete(k); }
       if (!ops.length) return;
+      note({ who: S.name || 'You', color: S.color, own: true }, ops.map(o => o.k));
       if (S.record) remember(log);
       const n = ++S.n;
-      ops.forEach(o => S.pending.set(o.k, n));
+      ops.forEach((o, i) => { S.pending.set(o.k, n); if (!S.sent.has(o.k)) S.sent.set(o.k, []); S.sent.get(o.k).push([n, log[i].before === undefined ? null : log[i].before, enc(o.v)]); });
       // Big changes (pasting a large table) go in several messages.
       let batch = [], size = 0;
-      const out = () => { if (batch.length) send({ t: 'op', n, ops: batch }); batch = []; size = 0; };
+      const out = () => { if (batch.length) send({ t: 'op', n, seen: S.seq, ops: batch }); batch = []; size = 0; };
       for (const o of ops) {
         const s = (o.v === null ? 4 : enc(o.v).length) + o.k.length;
         if (size + s > 8e6) out();
@@ -115,16 +125,78 @@
       if (!S.queue.length) return;
       if (adapter.busy && adapter.busy()) { setTimeout(deliver, 250); return; }
       flush();
-      const changes = {};
+      const changes = {}, merged = {};
+      let cur = null;
       for (const m of S.queue.splice(0)) {
+        if (m.from === S.id) { acknowledged(m); continue; }
+        S.seq = Math.max(S.seq, m.seq || 0); // "seen" counts only changes applied here
+        const p = S.peers.find(x => x.id === m.from);
+        note({ who: p ? p.name : 'Someone', color: p ? p.color : '#888' }, m.ops.map(o => o.k));
         for (const o of m.ops) {
-          if (S.pending.has(o.k)) continue;
-          changes[o.k] = o.v;
           S.remoteLog.push({ i: ++S.remoteCount, k: o.k, v: o.v });
+          const track = () => {
+            S.held.set(o.k, enc(o.v));
+            if (!S.lastFrom.has(m.from)) S.lastFrom.set(m.from, new Map());
+            S.lastFrom.get(m.from).set(o.k, { seq: m.seq, j: enc(o.v) });
+          };
+          // Our changes to this key that the sender hadn't seen: acknowledged ones (put before
+          // theirs) and any still on the way (to be put after).
+          const unseen = (S.hist.get(o.k) || []).filter(h => h.seq > (Number.isInteger(m.seen) ? m.seen : Infinity));
+          const pend = S.pending.has(o.k);
+          if (!unseen.length && !pend) { changes[o.k] = o.v; delete merged[o.k]; track(); continue; }
+          if (!cur) cur = adapter.state();
+          const parse = j => (j === null || j === undefined ? undefined : JSON.parse(j));
+          // What they started from: their own previous version of this key if it came after our
+          // first change they hadn't seen, else what the server had just before that change.
+          const prev = (S.lastFrom.get(m.from) || new Map()).get(o.k);
+          const base = unseen.length ? parse(prev && prev.seq > unseen[0].seq ? prev.j : unseen[0].before) : parse(S.base.get(o.k));
+          const mine = o.k in merged ? merged[o.k] : cur[o.k];
+          // Both people's apps work this out the same way: whose change the server put first decides.
+          const m3 = Merge3.merge3(base, mine, o.v, adapter.textFields || [], '', !pend);
+          if (pend) S.base.set(o.k, o.v === null ? null : enc(o.v));
+          if (enc(m3) === enc(o.v)) { changes[o.k] = o.v; delete merged[o.k]; track(); continue; } // theirs has it all
+          if (pend && enc(m3) === enc(mine)) { track(); continue; } // ours lands after theirs with the same result
+          // Otherwise the merge is shown here and sent to everyone.
+          if (o.v === null) S.known.delete(o.k); else S.known.set(o.k, enc(o.v));
+          track();
+          merged[o.k] = m3 === undefined ? null : m3;
         }
       }
       if (S.remoteLog.length > 20000) S.remoteLog.splice(0, S.remoteLog.length - 20000);
       applyRemote(changes);
+      // The merged values are local changes: shown here and sent to everyone.
+      const local = {};
+      for (const [k, v] of Object.entries(merged)) if (!cur || enc(cur[k]) !== enc(v)) local[k] = v;
+      if (Object.keys(local).length) adapter.apply(local);
+      if (Object.keys(merged).length) flush();
+    }
+    /** The server has our changes up to m.n. */
+    function acknowledged(m) {
+      // They are now the base to merge from, and are remembered with where the server put them,
+      // for changes others made without seeing them.
+      S.seq = Math.max(S.seq, m.seq || 0);
+      for (const [k, list] of [...S.sent]) {
+        let done = null;
+        while (list.length && list[0][0] <= m.n) { const [, , after] = list.shift(); done = done ? { ...done, after } : { seq: m.seq, before: S.held.has(k) ? S.held.get(k) : null, after }; }
+        if (done) S.held.set(k, done.after);
+        if (done) {
+          S.base.set(k, done.after);
+          const h = S.hist.get(k) || [];
+          h.push(done);
+          if (h.length > 20) h.shift();
+          S.hist.set(k, h);
+        }
+        if (!list.length) S.sent.delete(k);
+      }
+      for (const [k, n] of [...S.pending]) if (n <= m.n) { S.pending.delete(k); S.base.delete(k); }
+    }
+    /** Who changed what, for the Activity list (a person's quick successive changes are one entry). */
+    function note(who, keys) {
+      const now = Date.now(), last = S.activity[S.activity.length - 1];
+      if (last && last.who === who.who && !!last.own === !!who.own && now - last.at < 60000) { keys.forEach(k => last.keys.add(k)); last.at = now; }
+      else S.activity.push({ ...who, keys: new Set(keys), at: now });
+      if (S.activity.length > 300) S.activity.shift();
+      activityListeners.forEach(f => { try { f(); } catch { /* ignore */ } });
     }
 
     function onMessage(e) {
@@ -151,8 +223,10 @@
           else apply[k] = k in server ? server[k] : null;
         }
         S.known = new Map(Object.entries(server).map(([k, v]) => [k, enc(v)]));
+        S.held = new Map(S.known); S.lastFrom.clear();
+        S.seq = m.seq || 0;
         resend.forEach(k => S.known.delete(k));
-        S.pending.clear();
+        S.pending.clear(); S.base.clear(); S.sent.clear(); S.hist.clear();
         S.first = false;
         applyRemote(apply);
         if (resend.length) flush();
@@ -162,10 +236,7 @@
         return;
       }
       if (m.t === 'op') {
-        if (m.from === S.id) {
-          for (const [k, n] of [...S.pending]) if (n <= m.n) S.pending.delete(k);
-          return;
-        }
+        // Ours (acknowledged) and others' changes are handled in the server's order.
         S.queue.push(m);
         deliver();
         return;
@@ -236,11 +307,13 @@
       get id() { return S.id; },
       get invite() { return S.room ? inviteFor(S.inviteServer || S.server, S.room, adapter.app) : null; },
       onChange(f) { listeners.add(f); },
+      onActivity(f) { activityListeners.add(f); },
+      get activity() { return S.activity; },
       /** Starts a session for this document on a server, or joins one. */
       open({ server, inviteServer, room, create, name, color }) {
         if (S.wantOpen) stop();
         Object.assign(S, { server, inviteServer: inviteServer || null, room: room || newRoom(), creating: !!create, name, color, wantOpen: true, first: !create, retry: 0, error: null, n: 0 });
-        S.pending.clear(); S.known.clear(); S.queue = []; S.remoteLog = []; S.remoteCount = 0; S.undo = []; S.redo = [];
+        S.pending.clear(); S.base.clear(); S.sent.clear(); S.hist.clear(); S.held.clear(); S.lastFrom.clear(); S.seq = 0; S.activity = []; S.known.clear(); S.queue = []; S.remoteLog = []; S.remoteCount = 0; S.undo = []; S.redo = [];
         connect();
       },
       close: stop,
@@ -272,7 +345,8 @@
 
   /**
    * attach(adapter): adds the Live button and people to the title bar of an app.
-   * adapter: { app, doc (the app's docState), state() -> {key: value}, apply(changes), busy?(), presence?(), showPeers?(peers), joined?(), left?() }
+   * adapter: { app, doc (the app's docState), state() -> {key: value}, apply(changes), busy?(), presence?(), showPeers?(peers), joined?(), left?(),
+   *            describe?(key) -> label for the Activity list, reveal?(key), follow?(presence, peer) }
    */
   function attach(adapter) {
     const session = Session(adapter);
@@ -299,21 +373,87 @@
     btn.addEventListener('mousedown', e => e.preventDefault());
     btn.addEventListener('click', () => dialog());
 
+    // Following someone: your view goes where they are (their slide, their paragraph).
+    let following = null;
+    const follow = p => {
+      following = following === p.id ? null : p.id;
+      UI.toast(following ? `Following ${p.name}` : `Stopped following ${p.name}`);
+      session.moved();
+      paint(session);
+      if (following && p.presence) adapter.follow(p.presence, p);
+    };
     session.onChange(S => {
+      if (following) {
+        const p = S.peers.find(x => x.id === following);
+        if (!p || S.status !== 'live') following = null;
+        else if (p.presence) adapter.follow(p.presence, p);
+      }
+      paint(S);
+    });
+    function paint(S) {
       btn.classList.toggle('on', S.status !== 'off');
       label.textContent = S.status === 'live' ? `Live · ${S.peers.length}` : S.status === 'off' ? 'Live' : 'Live…';
       btn.title = S.status === 'live' ? 'In a live session — click for the invite link' : S.status === 'off' ? 'Edit together in real time' : 'Connecting…';
       people.innerHTML = '';
       if (S.status !== 'off') S.peers.filter(p => p.id !== S.id).forEach(p => {
         const a = document.createElement('span');
-        a.className = 'live-avatar';
+        a.className = 'live-avatar' + (following === p.id ? ' following' : '');
         a.style.background = p.color;
         a.textContent = initials(p.name);
         a.title = p.name;
+        if (adapter.follow) {
+          a.setAttribute('role', 'button');
+          a.tabIndex = 0;
+          a.title = following === p.id ? `${p.name} — following (click to stop)` : `${p.name} — click to follow`;
+          a.setAttribute('aria-pressed', String(following === p.id));
+          a.addEventListener('click', () => follow(p));
+          a.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); follow(p); } });
+        }
         people.appendChild(a);
       });
       adapter.showPeers && adapter.showPeers(S.status === 'live' ? S.peers.filter(p => p.id !== S.id) : []);
-    });
+    }
+
+    // ---- Activity: who changed what in this session
+    let pane = null;
+    const ago = t => { const s = Math.round((Date.now() - t) / 1000); return s < 10 ? 'just now' : s < 60 ? `${s} s ago` : s < 3600 ? `${Math.floor(s / 60)} min ago` : new Date(t).toLocaleTimeString(); };
+    function renderActivity() {
+      if (!pane || pane.hidden) return;
+      const list = pane.querySelector('.list');
+      list.innerHTML = '';
+      const items = session.activity.slice().reverse();
+      if (!items.length) { const e = document.createElement('p'); e.className = 'empty'; e.textContent = 'Changes made in this session appear here.'; list.appendChild(e); return; }
+      for (const a of items) {
+        const row = document.createElement('div');
+        row.className = 'act';
+        const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = a.color || '#888';
+        const body = document.createElement('div'); body.className = 'what';
+        const who = document.createElement('b'); who.textContent = a.own ? `${a.who} (you)` : a.who;
+        const when = document.createElement('span'); when.className = 'when'; when.textContent = ago(a.at);
+        const keys = [...a.keys];
+        const labels = [...new Set(keys.map(k => (adapter.describe ? adapter.describe(k) : null)).filter(Boolean))];
+        const what = document.createElement('div');
+        what.textContent = labels.length ? labels.slice(0, 3).join(' · ') + (labels.length > 3 ? ` and ${labels.length - 3} more` : '') : `${keys.length} change${keys.length === 1 ? '' : 's'}`;
+        body.append(who, ' ', when, what);
+        row.append(dot, body);
+        if (adapter.reveal) { row.tabIndex = 0; row.addEventListener('click', () => adapter.reveal(keys[keys.length - 1])); }
+        list.appendChild(row);
+      }
+    }
+    function showActivity() {
+      if (!pane) {
+        pane = document.createElement('aside');
+        pane.className = 'activity-pane';
+        pane.setAttribute('aria-label', 'Activity');
+        pane.innerHTML = '<header><b>Activity</b><span class="sp"></span><button class="x" title="Close"><span class="ico" data-icon="x"></span></button></header><div class="list" aria-live="polite"></div>';
+        pane.querySelector('.x').addEventListener('click', () => { pane.hidden = true; });
+        document.body.appendChild(pane);
+        session.onActivity(() => renderActivity());
+        setInterval(renderActivity, 30000);
+      }
+      pane.hidden = false;
+      renderActivity();
+    }
 
     async function askName() {
       let name = userName();
@@ -326,14 +466,15 @@
     }
     async function dialog() {
       if (session.status !== 'off') {
-        const i = await UI.choose('Live session', `Send this link to people you want to edit with:\n\n${session.invite}\n\n${session.peers.length} ${session.peers.length === 1 ? 'person' : 'people'} connected.`, ['Copy link', 'Leave session', 'Close'], '👥');
+        const i = await UI.choose('Live session', `Send this link to people you want to edit with:\n\n${session.invite}\n\n${session.peers.length} ${session.peers.length === 1 ? 'person' : 'people'} connected.` + (adapter.follow ? ' Click someone\'s picture to follow them.' : ''), ['Copy link', 'Activity', 'Leave session', 'Close']);
         if (i === 0) { try { await navigator.clipboard.writeText(session.invite); UI.toast('Link copied'); } catch { UI.toast('Copy the link from the dialog'); } }
-        if (i === 1) { session.close(); UI.toast('Left the live session'); }
+        if (i === 1) showActivity();
+        if (i === 2) { session.close(); UI.toast('Left the live session'); }
         return;
       }
       const opts = Platform.desktop ? ['Start on this computer', 'Start on a server…', 'Join…', 'Cancel'] : ['Start on a server…', 'Join…', 'Cancel'];
       const i = await UI.choose('Edit together', 'Start a live session for this document and invite others, or join one with the link you were sent.' +
-        (Platform.desktop ? '\n\n“This computer” lets people on the same network join.' : ''), opts, '👥');
+        (Platform.desktop ? '\n\n“This computer” lets people on the same network join.' : ''), opts);
       const pick = opts[i];
       if (!pick || pick === 'Cancel') return;
       const name = await askName();
@@ -395,6 +536,16 @@
       if (name) join(link, name);
     })();
     window.addEventListener('pagehide', () => session.close());
+    session.showActivity = showActivity;
+    // Who made the next saved version: you, and everyone who changed something since the last one.
+    let since = 0;
+    Platform.contributors = () => {
+      const me = userName() || (() => { try { return localStorage.getItem('atlas-author') || ''; } catch { return ''; } })();
+      const names = [me, ...session.activity.filter(a => a.at >= since && !a.own).map(a => a.who)].filter(Boolean);
+      since = Date.now();
+      return [...new Set(names)];
+    };
+    session.follow = id => { const p = session.peers.find(x => x.id === id || x.name === id); if (p) follow(p); };
     return session;
   }
 

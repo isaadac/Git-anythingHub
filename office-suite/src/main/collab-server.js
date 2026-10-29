@@ -139,7 +139,8 @@ function createCollabServer(opts = {}) {
       if (room.bytes + size > limits.roomBytes) return c.send({ t: 'error', error: 'The document is too large for this server' });
       for (const o of ops) set(room, o.k, o.v === undefined ? null : o.v);
       room.seq++;
-      broadcast(room, { t: 'op', from: c.id, n: m.n, seq: room.seq, ops });
+      // seen: the last change the sender had when it made this one (so others can merge with it).
+      broadcast(room, { t: 'op', from: c.id, n: m.n, seq: room.seq, seen: Number.isInteger(m.seen) ? m.seen : undefined, ops });
       return;
     }
     if (m.t === 'presence') {

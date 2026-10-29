@@ -167,16 +167,50 @@
       const sel = getSelection();
       if (!sel.rangeCount || sel.isCollapsed || !doc.contains(sel.anchorNode)) { UI.toast('Select some text to comment on'); return; }
       const range = sel.getRangeAt(0).cloneRange();
-      const text = await UI.form('New Comment', [{ name: 't', label: `Comment by ${cleanAuthor(o.author())}`, type: 'textarea' }], 'Post');
+      const text = await UI.form('New Comment', [{ name: 't', label: `Comment by ${cleanAuthor(o.author())} (type @ to mention someone)`, type: 'textarea', mentions: people }], 'Post');
       if (!text || !text.t.trim()) return;
       const span = document.createElement('span');
       span.className = 'comment';
       span.title = text.t.trim();
       span.dataset.author = cleanAuthor(o.author());
       span.dataset.date = new Date().toISOString();
+      rememberPeople(UI.mentioned(span.title, people()));
       try { range.surroundContents(span); } catch { span.appendChild(range.extractContents()); range.insertNode(span); }
       o.changed();
       showPane(true);
+    }
+    // ---------------- @mentions ----------------
+    // People to suggest: whoever is in the live session, everyone who has commented, and names
+    // mentioned before. A comment that mentions you is marked, and arriving in a live session it
+    // tells you so.
+    const store = (k, v) => { try { if (v === undefined) return JSON.parse(localStorage.getItem(k) || '[]'); localStorage.setItem(k, JSON.stringify(v)); } catch { return []; } return v; };
+    const myName = () => { let n = ''; try { n = localStorage.getItem('atlas-user-name') || ''; } catch { /* none */ } return n || cleanAuthor(o.author()); };
+    function people() {
+      const names = [...(o.peers ? o.peers() : []), ...comments().map(c => c.dataset.author), ...store('atlas-people')];
+      return [...new Set(names.filter(n => n && n !== 'Author' && n !== myName()))];
+    }
+    function rememberPeople(names) { if (names.length) store('atlas-people', [...new Set([...names, ...store('atlas-people')])].slice(0, 200)); }
+    const mentionsMe = c => { const me = myName(); return !!me && me !== 'Author' && (' ' + (c.title || '').toLowerCase()).includes('@' + me.toLowerCase()); };
+    function showMentions(el, text) {
+      const names = [...UI.mentioned(text, [...people(), myName()])].sort((a, b) => b.length - a.length);
+      el.textContent = '';
+      if (!names.length) { el.textContent = text; return; }
+      const re = new RegExp('(@(?:' + names.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + '))', 'gi');
+      String(text).split(re).forEach((part, i) => {
+        if (i % 2) { const m = document.createElement('span'); m.className = 'mention'; m.textContent = part; el.appendChild(m); } else if (part) el.appendChild(document.createTextNode(part));
+      });
+    }
+    /** Tells you about comments that mention you which you haven't been told about. */
+    function checkMentions() {
+      const seen = new Set(store('atlas-seen-mentions'));
+      const fresh = comments().filter(c => mentionsMe(c) && !seen.has((c.dataset.date || '') + '|' + c.dataset.author));
+      if (!fresh.length) return [];
+      fresh.forEach(c => seen.add((c.dataset.date || '') + '|' + c.dataset.author));
+      store('atlas-seen-mentions', [...seen].slice(-500));
+      const c = fresh[fresh.length - 1];
+      UI.toast(`${c.dataset.author || 'Someone'} mentioned you: “${c.title.slice(0, 80)}”`, 5000);
+      showPane(true);
+      return fresh;
     }
     function renderPane() {
       const list = comments();
@@ -189,7 +223,8 @@
         card.querySelector('b').textContent = c.dataset.author || 'Author';
         card.querySelector('.when').textContent = c.dataset.date ? new Date(c.dataset.date).toLocaleString() : '';
         card.querySelector('.quote').textContent = '“' + c.textContent.slice(0, 80) + (c.textContent.length > 80 ? '…' : '') + '”';
-        card.querySelector('.text').textContent = c.title;
+        showMentions(card.querySelector('.text'), c.title);
+        if (mentionsMe(c)) card.classList.add('mentions-me');
         card.addEventListener('click', e => {
           const a = e.target.dataset.a;
           if (a === 'edit') { editComment(c); return; }
@@ -202,7 +237,7 @@
       });
     }
     async function editComment(c) {
-      const r = await UI.form('Edit Comment', [{ name: 't', label: 'Comment', type: 'textarea', value: c.title }], 'Save');
+      const r = await UI.form('Edit Comment', [{ name: 't', label: 'Comment', type: 'textarea', value: c.title, mentions: people }], 'Save');
       if (!r) return;
       if (!r.t.trim()) c.replaceWith(...c.childNodes); else c.title = r.t.trim();
       o.changed();
@@ -545,7 +580,7 @@
       acceptAll: () => act(accept, true), rejectAll: () => act(reject, true),
       next: () => next(false), previous: () => next(true),
       count: () => changes().length,
-      addComment, renderPane, showPane, comments,
+      addComment, renderPane, showPane, comments, checkMentions, people,
       markCommentsForDocx, patchDocx, preprocessDocx, postprocessHtml
     };
   }

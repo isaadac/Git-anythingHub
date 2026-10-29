@@ -3376,6 +3376,26 @@
       if (structural) state.markDirty();
     },
     presence: () => ({ sheet: sheetUid(sheet()), ...selRange() }),
+    describe(k) {
+      const m = /^c:([^:]+):([A-Z]+\d+)$/.exec(k);
+      if (m) { const sh = book.sheets.find(x => x.uid === m[1]); return (sh && book.sheets.length > 1 ? sh.name + '!' : '') + m[2]; }
+      if (k.startsWith('sh:')) { const sh = book.sheets.find(x => x.uid === k.slice(3)); return sh ? `sheet “${sh.name}”` : 'a sheet'; }
+      return k.startsWith('book:') ? 'workbook settings' : null;
+    },
+    reveal(k) {
+      const m = /^c:([^:]+):([A-Z]+\d+)$/.exec(k);
+      if (!m) return;
+      const i = book.sheets.findIndex(x => x.uid === m[1]);
+      if (i < 0) return;
+      if (i !== book.active) { commitEdit(); book.active = i; buildGrid(); }
+      const p = parseRef(m[2]); select(p.row, p.col);
+    },
+    follow(g) {
+      const i = book.sheets.findIndex(x => x.uid === g.sheet);
+      if (i < 0 || !Number.isInteger(g.r1) || !Number.isInteger(g.c1)) return;
+      if (i !== book.active) { commitEdit(); book.active = i; buildGrid(); }
+      scrollIntoView(g.r1, g.c1);
+    },
     showPeers(list) { peers = list; drawPeers(); }
   });
 

@@ -47,7 +47,8 @@
     async save(opts) {
       const r = await saveNow(opts);
       // Each save also keeps a version of the document (File → Version History).
-      if (r && opts.data && !opts.noVersion) Versions.add(r.path || opts.path || r.name || opts.name, r.name || opts.name, opts.data).catch(() => {});
+      // …with who made it: you, and anyone who edited with you in a live session since the last one.
+      if (r && opts.data && !opts.noVersion) Versions.add(r.path || opts.path || r.name || opts.name, r.name || opts.name, opts.data, Platform.contributors ? Platform.contributors() : []).catch(() => {});
       if (r && opts.data && !opts.noVersion && !opts.saveAs) Thumbs.capture(r.path || opts.path || r.name || opts.name);
       return r;
     },
@@ -224,6 +225,63 @@
       requestAnimationFrame(fit);
       return box;
     },
+    /**
+     * @mentions in a text box: typing @ and a few letters suggests people (people() gives their
+     * names); arrows and Enter or Tab pick one, Escape closes the list.
+     */
+    mentions(input, people) {
+      const list = document.createElement('div');
+      list.className = 'mention-list';
+      list.setAttribute('role', 'listbox');
+      list.hidden = true;
+      let items = [], at = -1, on = 0;
+      const close = () => { list.hidden = true; items = []; };
+      const pick = name => {
+        const v = input.value, pos = input.selectionStart;
+        input.value = v.slice(0, at) + '@' + name + ' ' + v.slice(pos);
+        const c = at + name.length + 2;
+        input.setSelectionRange(c, c);
+        close();
+        input.focus();
+      };
+      const draw = () => {
+        list.innerHTML = '';
+        items.forEach((n, i) => {
+          const o = document.createElement('div');
+          o.className = 'opt' + (i === on ? ' on' : '');
+          o.setAttribute('role', 'option');
+          o.setAttribute('aria-selected', String(i === on));
+          o.textContent = n;
+          o.addEventListener('mousedown', e => { e.preventDefault(); pick(n); });
+          list.appendChild(o);
+        });
+      };
+      input.addEventListener('input', () => {
+        const before = input.value.slice(0, input.selectionStart);
+        const m = /(^|\s)@([^\s@]{0,30})$/.exec(before);
+        if (!m) return close();
+        at = before.length - m[2].length - 1;
+        const q = m[2].toLowerCase();
+        items = [...new Set((people() || []).filter(Boolean))].filter(n => n.toLowerCase().split(/\s+/).some(w => w.startsWith(q)) || n.toLowerCase().startsWith(q)).slice(0, 6);
+        on = 0;
+        if (!items.length) return close();
+        draw();
+        list.hidden = false;
+        if (!list.isConnected) input.insertAdjacentElement('afterend', list);
+      });
+      input.addEventListener('keydown', e => {
+        if (list.hidden || !items.length) return;
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); on = (on + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length; draw(); }
+        else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); e.stopPropagation(); pick(items[on]); }
+        else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+      }, true);
+      input.addEventListener('blur', () => setTimeout(close, 150));
+    },
+    /** The names mentioned in a text ("@Ann Lee"), among the people given. */
+    mentioned(text, people) {
+      const t = ' ' + String(text).toLowerCase();
+      return [...new Set(people)].filter(n => n && t.includes('@' + n.toLowerCase()));
+    },
     toast(msg, ms = 2200) {
       let el = document.querySelector('.toast');
       if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); }
@@ -262,6 +320,7 @@
           }
           if (f.value !== undefined) input.value = f.value;
           if (f.placeholder) input.placeholder = f.placeholder;
+          if (f.mentions) UI.mentions(input, f.mentions);
           label.appendChild(input);
           box.appendChild(label);
           inputs[f.name] = input;
@@ -660,7 +719,7 @@
   // Desktop: the main process keeps copies in the app's data folder (src/main/versions.js).
   // Web: IndexedDB, with the same rules (one copy per 10 minutes, the latest 30 per document).
   const Versions = (() => {
-    if (desktop) return { add: (k, n, d) => window.atlas.versionsAdd(String(k), n, toU8(d)), list: k => window.atlas.versionsList(String(k)), read: (k, id) => window.atlas.versionsRead(String(k), id) };
+    if (desktop) return { add: (k, n, d, by) => window.atlas.versionsAdd(String(k), n, toU8(d), by), list: k => window.atlas.versionsList(String(k)), read: (k, id) => window.atlas.versionsRead(String(k), id) };
     let dbp = null;
     const db = () => dbp || (dbp = new Promise((res, rej) => {
       const r = indexedDB.open('atlas-versions', 1);
@@ -671,7 +730,7 @@
     const all = async key => { const d = await db(); return new Promise((res, rej) => { const q = d.transaction('v').objectStore('v').index('key').getAll(key); q.onsuccess = () => res(q.result.sort((a, b) => a.saved - b.saved)); q.onerror = () => rej(q.error); }); };
     const hashOf = async bytes => { try { return [...new Uint8Array(await crypto.subtle.digest('SHA-1', bytes))].map(b => b.toString(16).padStart(2, '0')).join(''); } catch { return String(bytes.length); } };
     return {
-      async add(key, name, data) {
+      async add(key, name, data, by) {
         key = String(key);
         const bytes = toU8(data);
         if (bytes.length > 60e6) return false;
@@ -681,11 +740,11 @@
         const t = d.transaction('v', 'readwrite'), st = t.objectStore('v');
         let created = now;
         if (last && now - last.created < 600000) { st.delete([key, last.id]); list.pop(); created = last.created; }
-        st.put({ key, id: String(now), name: String(name || '').slice(0, 255), size: bytes.length, hash, created, saved: now, data: bytes });
+        st.put({ key, id: String(now), name: String(name || '').slice(0, 255), by: (Array.isArray(by) ? by : []).filter(x => typeof x === 'string').map(x => x.replace(/[^\w .@'-]/g, '').slice(0, 60)).filter(Boolean).slice(0, 10), size: bytes.length, hash, created, saved: now, data: bytes });
         list.slice(0, Math.max(0, list.length + 1 - 30)).forEach(v => st.delete([key, v.id]));
         return new Promise(res => { t.oncomplete = () => res(true); t.onerror = () => res(false); });
       },
-      async list(key) { return (await all(String(key))).map(v => ({ id: v.id, name: v.name, size: v.size, saved: v.saved })).reverse(); },
+      async list(key) { return (await all(String(key))).map(v => ({ id: v.id, name: v.name, by: v.by || [], size: v.size, saved: v.saved })).reverse(); },
       async read(key, id) { const d = await db(); return new Promise(res => { const q = d.transaction('v').objectStore('v').get([String(key), String(id)]); q.onsuccess = () => res(q.result ? q.result.data : null); q.onerror = () => res(null); }); }
     };
   })();
@@ -712,7 +771,9 @@
       row.className = 'v-row';
       row.setAttribute('role', 'listitem');
       const when = new Date(+v.saved);
-      row.innerHTML = '<span class="when"></span><span class="size"></span><button data-a="open">Open a copy</button><button data-a="restore">Restore</button>';
+      row.innerHTML = '<span class="when"></span><span class="by"></span><span class="size"></span><button data-a="open">Open a copy</button><button data-a="restore">Restore</button>';
+      const by = v.by || [];
+      row.querySelector('.by').textContent = by.length ? by[0] + (by.length > 1 ? ' with ' + by.slice(1).join(', ') : '') : '';
       row.querySelector('.when').textContent = when.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' }) + (i === 0 ? ' (latest)' : '');
       row.querySelector('.size').textContent = fmtSize(v.size);
       row.querySelectorAll('button').forEach(b => b.addEventListener('click', async () => {
