@@ -493,9 +493,16 @@
       if (!bar.children.length) return;
       bar.hidden = true;
       document.body.appendChild(bar);
+      // Pressed state: asked of the editor for formatting commands (the ribbon updates its own a
+      // moment later), else copied from the ribbon button.
+      const TOGGLES = ['bold', 'italic', 'underline', 'strikeThrough', 'insertUnorderedList', 'insertOrderedList'];
       const sync = () => bar.querySelectorAll('.btn').forEach(b => {
-        const t = b._target.closest('.btn') || b._target;
-        b.classList.toggle('on', t.classList.contains('on') || t.getAttribute('aria-pressed') === 'true');
+        const t = b._target.closest('.btn') || b._target, cmd = t.dataset && t.dataset.exec;
+        let on;
+        if (TOGGLES.includes(cmd)) { try { on = document.queryCommandState(cmd); } catch { on = false; } }
+        else on = t.classList.contains('on') || t.getAttribute('aria-pressed') === 'true';
+        b.classList.toggle('on', !!on);
+        if (TOGGLES.includes(cmd)) b.setAttribute('aria-pressed', String(!!on));
       });
       const hide = () => { bar.classList.remove('show'); bar.hidden = true; };
       const selectionRect = () => {
