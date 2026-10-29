@@ -46,7 +46,7 @@
     const str = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
     const color = v => (/^#[0-9a-fA-F]{6}$/.test(v) ? v : COLORS[0]);
     const num = v => (Number.isFinite(v) ? v : Date.now());
-    const stroke = s => (s && typeof s.d === 'string' && /^[MLQ0-9 .,-]{1,200000}$/.test(s.d) ? { c: color(s.c), w: Math.max(0.5, Math.min(40, +s.w || 2)), o: Math.max(0.1, Math.min(1, +s.o || 1)), d: s.d } : null);
+    const stroke = Ink.clean;
     return {
       format: 'atlas-notes', version: 1,
       id: /^[\w-]{1,40}$/.test(x.id) ? x.id : newId('n'),
@@ -308,26 +308,17 @@
   $('fullPage').addEventListener('click', () => document.body.classList.toggle('full-page'));
   $('ruled').addEventListener('click', e => { document.body.classList.toggle('ruled'); e.currentTarget.classList.toggle('on'); });
 
-  // ---------- Ink ----------
+  // ---------- Ink (ink.js) ----------
   let pen = null, erasing = false;
   function drawInk() {
     ink.innerHTML = '';
-    page.ink.forEach((s, i) => ink.appendChild(strokeEl(s, i)));
-  }
-  function strokeEl(s, i) {
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    p.setAttribute('d', s.d);
-    p.setAttribute('stroke', s.c);
-    p.setAttribute('stroke-width', s.w);
-    if (s.o < 1) p.setAttribute('stroke-opacity', s.o);
-    p.dataset.i = i;
-    return p;
+    page.ink.forEach(s => ink.appendChild(Ink.pathEl(s)));
   }
   function setTool(tool) {
     document.querySelectorAll('.ribbon .pen, #eraser, #drawOff').forEach(b => b.classList.remove('on'));
     pen = null; erasing = false;
     if (tool === 'eraser') { erasing = true; $('eraser').classList.add('on'); }
-    else if (tool) { pen = { c: tool.dataset.pen, w: +tool.dataset.w, o: tool.dataset.hl ? 0.45 : 1 }; tool.classList.add('on'); }
+    else if (tool) { pen = { c: tool.dataset.pen, w: +tool.dataset.w, o: tool.dataset.hl ? 0.45 : 1, hl: !!tool.dataset.hl }; tool.classList.add('on'); }
     else $('drawOff').classList.add('on');
     document.body.classList.toggle('drawing', !!(pen || erasing));
     document.body.classList.toggle('erasing', erasing);
@@ -336,65 +327,19 @@
   document.querySelectorAll('.ribbon .pen').forEach(b => b.addEventListener('click', () => setTool(b)));
   $('eraser').addEventListener('click', () => setTool('eraser'));
   $('drawOff').addEventListener('click', () => setTool(null));
+  $('touchDraw').addEventListener('click', e => { Ink.touchDraws = !Ink.touchDraws; e.currentTarget.classList.toggle('on', Ink.touchDraws); });
   $('clearInk').addEventListener('click', async () => {
     if (!page.ink.length || !(await UI.confirm('Clear drawing', 'Remove all drawing from this page?'))) return;
     page.ink = []; drawInk(); markChanged();
   });
   const at = e => { const r = pageEl.getBoundingClientRect(); return [Math.round((e.clientX - r.left) * 10) / 10, Math.round((e.clientY - r.top) * 10) / 10]; };
-  ink.addEventListener('pointerdown', e => {
-    if (!pen && !erasing) return;
-    e.preventDefault();
-    ink.setPointerCapture(e.pointerId);
-    if (erasing) { erase(e); return; }
-    const [x, y] = at(e);
-    const s = { ...pen, d: `M${x} ${y}` };
-    const el = strokeEl(s, page.ink.length);
-    ink.appendChild(el);
-    let last = [x, y];
-    const move = ev => {
-      const [nx, ny] = at(ev);
-      if (Math.hypot(nx - last[0], ny - last[1]) < 1.5) return;
-      s.d += ` L${nx} ${ny}`;
-      last = [nx, ny];
-      el.setAttribute('d', s.d);
-    };
-    const up = () => {
-      ink.removeEventListener('pointermove', move);
-      ink.removeEventListener('pointerup', up);
-      ink.removeEventListener('pointercancel', up);
-      if (!/L/.test(s.d)) s.d += ` L${x + 0.1} ${y + 0.1}`; // a dot
-      el.setAttribute('d', s.d);
-      page.ink.push(s);
-      page.modified = Date.now();
-      markChanged();
-    };
-    ink.addEventListener('pointermove', move);
-    ink.addEventListener('pointerup', up);
-    ink.addEventListener('pointercancel', up);
+  Ink.attach(ink, {
+    tool: () => (erasing ? 'eraser' : pen),
+    at,
+    strokes: () => page.ink,
+    add: st => { page.ink.push(st); ink.appendChild(Ink.pathEl(st)); page.modified = Date.now(); markChanged(); },
+    erase: i => { page.ink.splice(i, 1); page.modified = Date.now(); drawInk(); markChanged(); }
   });
-  function erase(e) {
-    const hit = () => {
-      const [x, y] = at(e);
-      // A stroke is hit when the eraser passes near any of its points.
-      const near = page.ink.findIndex(s => {
-        const pts = (s.d.match(/-?[\d.]+ -?[\d.]+/g) || []).map(pt => pt.split(' ').map(Number));
-        const r = 8 + s.w / 2;
-        // Distance to each segment of the stroke (fast strokes have points far apart).
-        return pts.some((a, i) => {
-          const b = pts[i + 1] || a;
-          const dx = b[0] - a[0], dy = b[1] - a[1], len = dx * dx + dy * dy;
-          const t = len ? Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / len)) : 0;
-          return Math.hypot(a[0] + t * dx - x, a[1] + t * dy - y) < r;
-        });
-      });
-      if (near >= 0) { page.ink.splice(near, 1); page.modified = Date.now(); drawInk(); markChanged(); }
-    };
-    hit();
-    const move = ev => { e = ev; hit(); };
-    const up = () => { ink.removeEventListener('pointermove', move); ink.removeEventListener('pointerup', up); };
-    ink.addEventListener('pointermove', move);
-    ink.addEventListener('pointerup', up);
-  }
 
   // ---------- Sections and pages ----------
   async function renameSection(s) {
@@ -728,7 +673,7 @@
     return d.innerHTML;
   }
   function pageHtmlDoc(p) {
-    const inkSvg = p.ink.length ? `<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none">${p.ink.map(s => `<path d="${s.d}" stroke="${s.c}" stroke-width="${s.w}"${s.o < 1 ? ` stroke-opacity="${s.o}"` : ''} fill="none" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}</svg>` : '';
+    const inkSvg = p.ink.length ? `<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;left:0;top:0;width:100%;height:100%;overflow:visible;pointer-events:none">${p.ink.map(s => (s.f ? `<path d="${s.d}" fill="${s.c}"${s.o < 1 ? ` fill-opacity="${s.o}"` : ''}/>` : `<path d="${s.d}" stroke="${s.c}" stroke-width="${s.w}"${s.o < 1 ? ` stroke-opacity="${s.o}"` : ''} fill="none" stroke-linecap="round" stroke-linejoin="round"/>`)).join('')}</svg>` : '';
     return `<!doctype html><html><head><meta charset="utf-8"><title>${esc(p.title || 'Untitled page')}</title>
 <style>body{font:14px/1.6 Calibri,Arial,sans-serif;max-width:860px;margin:auto;padding:28px 48px;position:relative}.todo{list-style:none}.todo::before{content:'☐ '}.todo.done::before{content:'☑ '}.todo.done{text-decoration:line-through;color:#777}.tag-important::before{content:'★ ';color:#e3a400}.tag-question::before{content:'? '}.tag-idea::before{content:'💡 '}table{border-collapse:collapse}td,th{border:1px solid #ccc;padding:4px 8px}</style></head>
 <body><h1 style="font-weight:300">${esc(p.title || 'Untitled page')}</h1><p style="color:#777;font-size:12px">${esc(fmtDate(p.created))}</p>${withFiles(p.html)}${inkSvg}</body></html>`;

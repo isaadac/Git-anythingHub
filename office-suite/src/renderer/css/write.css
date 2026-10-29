@@ -191,3 +191,13 @@ body.dark .doc .section-break::after, body.dark .doc .page-break::after { backgr
 .compare-view del.tc { color: #a4262c; background: #fde7e9; text-decoration: line-through; }
 .compare-view ins.tc { color: #0b6a0b; background: #dff6dd; text-decoration: none; border-bottom: 1px solid #0b6a0b; }
 @media (max-width: 760px) { .compare-view .cmp-cell { padding: 2px 12px; } .compare-view header { flex-wrap: wrap; } .compare-view .cmp-body { padding: 0 var(--sp-4) var(--sp-6); } }
+
+/* Drawing */
+.ink-dialog { width: min(720px, 96vw); }
+.ink-dialog .ink-tools { display: flex; gap: 4px; align-items: center; margin: var(--sp-4) 0; }
+.ink-dialog .ink-tools .sp { flex: 1; }
+.ink-dialog .ink-tools .btn { width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); cursor: pointer; }
+.ink-dialog .ink-tools .btn.on { background: var(--accent-soft); border-color: var(--accent); }
+.ink-dialog .ink-paper { background: #fff; border: 1px solid var(--border); border-radius: var(--r-md); overflow: auto; max-height: 60vh; }
+.ink-dialog .ink-svg { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; }
+.doc img.ink-drawing { max-width: 100%; height: auto; cursor: pointer; }

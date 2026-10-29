@@ -5,6 +5,7 @@
   "Clean & Transform": "Limpiar y transformar", "Applied steps": "Pasos aplicados",
   "Waterfall": "Cascada", "Funnel": "Embudo", "Map": "Mapa", "Run Python": "Ejecutar Python",
   "Cameo": "Cameo", "Rehearse with Coach": "Ensayar con el entrenador", "Live Captions": "Subtítulos en directo", "Speaking": "Hablar",
+  "Select": "Seleccionar", "Draw with Touch": "Dibujar con la función táctil", "Touch": "Táctil", "Touch mode": "Modo táctil",
   // Live editing: activity and following
   "Activity": "Actividad", "Changes made in this session appear here.": "Los cambios de esta sesión aparecen aquí.", "Watch": "Ver", "Copy link": "Copiar vínculo", "Leave session": "Salir de la sesión",
   // Assistant and dictation

@@ -28,6 +28,7 @@
   <button class="file-tab">File</button>
   <button data-tab="home" class="active">Home</button>
   <button data-tab="insert">Insert</button>
+  <button data-tab="draw">Draw</button>
   <button data-tab="layout">Layout</button>
   <button data-tab="mailings">Mailings</button>
   <button data-tab="review">Review</button>
@@ -193,6 +194,11 @@
   </div>
 
   <!-- LAYOUT -->
+  <div class="ribbon-panel" data-panel="draw">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insDrawing" title="Draw with a pen, your finger or the mouse; the drawing goes in at the cursor (double-click it to draw on it again)"><span class="ico" data-icon="signature"></span>Drawing</button>
+    </div><div class="label">Ink</div></div>
+  </div>
   <div class="ribbon-panel" data-panel="layout">
     <div class="group"><div class="controls col">
       <label class="row">Margins <select class="ctl" id="margins"><option value="1in">Normal (1")</option><option value="0.5in">Narrow (0.5")</option><option value="0.75in">Moderate (0.75")</option><option value="1.5in">Wide (1.5")</option></select></label>
@@ -393,6 +399,7 @@
 <script src="js/write-math.js"></script>
 <script src="js/write-extras.js"></script>
 <script src="js/templates.js"></script>
+<script src="js/ink.js"></script>
 <script src="js/write.js"></script>
 </body>
 </html>

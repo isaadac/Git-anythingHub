@@ -472,6 +472,13 @@
         window.dispatchEvent(new Event('resize'));
       };
       apply(mode);
+      // Touch mode: more room around commands for fingers. On by default where touch is the main
+      // way in (tablets), off where a mouse is.
+      // icons: hand
+      const touchDefault = () => !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
+      let touchMode = (v => (v === '1' ? true : v === '0' ? false : touchDefault()))(localStorageGet('atlas-touch'));
+      const applyTouch = on => { touchMode = on; document.documentElement.classList.toggle('touch-mode', on); window.dispatchEvent(new Event('resize')); };
+      applyTouch(touchMode);
       // Tabs only: a tab shows the ribbon over the document until a command is used or you click away.
       tabsBar.querySelectorAll('button[data-tab]').forEach(t => {
         t.addEventListener('click', () => { if (mode === 'tabs') { document.body.classList.add('ribbon-peek'); openTab = true; } });
@@ -499,6 +506,17 @@
           b.addEventListener('click', () => { apply(m); menu.remove(); btn.focus(); });
           menu.appendChild(b);
         });
+        const sep = document.createElement('div');
+        sep.className = 'sep';
+        menu.appendChild(sep);
+        const t = document.createElement('button');
+        t.setAttribute('role', 'menuitemcheckbox');
+        t.setAttribute('aria-checked', String(touchMode));
+        t.className = 'touch-toggle';
+        t.innerHTML = '<span class="ico" data-icon="hand"></span><span>Touch mode</span><span class="ico check" data-icon="check"></span>';
+        t.title = 'More space between commands, for fingers';
+        t.addEventListener('click', () => { applyTouch(!touchMode); localStorageSet('atlas-touch', touchMode ? '1' : '0'); menu.remove(); btn.focus(); });
+        menu.appendChild(t);
         const r = btn.getBoundingClientRect();
         menu.style.top = Math.round(r.bottom + 6) + 'px';
         menu.style.right = Math.round(window.innerWidth - r.right) + 'px';
@@ -513,6 +531,7 @@
         setTimeout(() => document.addEventListener('mousedown', function off(e) { if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) { menu.remove(); } document.removeEventListener('mousedown', off); }), 0);
       });
       Platform.ribbonMode = { get: () => mode, set: apply };
+      Platform.touchMode = { get: () => touchMode, set: on => { applyTouch(on); localStorageSet('atlas-touch', on ? '1' : '0'); } };
     },
     /**
      * The mini toolbar: the formatting commands most used on a selection, floating just above it.
@@ -857,7 +876,7 @@
    */
   const DROP_TAGS = 'script,style,iframe,object,embed,link,meta,form,input,button,textarea,select,option,base,frame,frameset,noscript,template,svg,math,canvas,audio,video,source,track,portal,applet,dialog,slot,title,head';
   const ALLOWED_ATTRS = new Set(['href', 'src', 'alt', 'title', 'style', 'class', 'id', 'colspan', 'rowspan', 'width', 'height', 'align', 'valign', 'color', 'face', 'size', 'start', 'type', 'dir', 'lang', 'reversed', 'value', 'border', 'cellpadding', 'cellspacing', 'bgcolor', 'span', 'headers', 'scope']);
-  const ALLOWED_CLASSES = new Set(['title', 'page-break', 'textbox', 'comment', 'toc', 'toc-title', 'toc-l1', 'toc-l2', 'toc-l3', 'toc-pg', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry', 'mergefield', 'decorative', 'todo', 'done', 'tag-important', 'tag-question', 'tag-idea', 'section-break', 'equation', 'eq-block', 'float-left', 'float-right', 'wrap-block', 'attachment', 'audio-note']);
+  const ALLOWED_CLASSES = new Set(['title', 'ink-drawing', 'page-break', 'textbox', 'comment', 'toc', 'toc-title', 'toc-l1', 'toc-l2', 'toc-l3', 'toc-pg', 'fld', 'pgnum', 'tc', 'note', 'citation', 'bibliography', 'bib-entry', 'mergefield', 'decorative', 'todo', 'done', 'tag-important', 'tag-question', 'tag-idea', 'section-break', 'equation', 'eq-block', 'float-left', 'float-right', 'wrap-block', 'attachment', 'audio-note']);
   Platform.sanitizeHtml = function (html) {
     const d = new DOMParser().parseFromString(String(html || ''), 'text/html');
     d.querySelectorAll(DROP_TAGS).forEach(n => n.remove());
@@ -879,6 +898,7 @@
         if (n === 'data-src' && /^s[a-z0-9]{4,24}$/.test(a.value)) return;    // citation source id
         if (n === 'data-pages' && /^[\w .,–-]{1,40}$/.test(a.value)) return;
         if (n === 'data-field' && /^[\w .'-]{1,64}$/.test(a.value)) return; // mail-merge field name
+        if (n === 'data-ink' && el.tagName === 'IMG' && a.value.length <= 400000 && /^[[\]{}",:#0-9a-fA-FMLQZcdfhosw .-]*$/.test(a.value)) return; // a drawing's strokes
         if (!ALLOWED_ATTRS.has(n)) { el.removeAttribute(a.name); return; }
         if (n === 'href' && !/^(https?:|mailto:|#)/i.test(clean(a.value))) el.removeAttribute(a.name);
         if (n === 'src' && !/^data:image\/(png|jpe?g|gif|webp|bmp|svg\+xml)[;,]/i.test(clean(a.value))) el.removeAttribute(a.name);

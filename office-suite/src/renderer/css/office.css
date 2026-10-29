@@ -458,3 +458,18 @@ html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame
 .modal label:has(> .mention-list) { position: relative; }
 .mention { color: var(--accent-fg); background: var(--accent-soft); border-radius: var(--r-xs); padding: 0 2px; font-weight: var(--fw-medium); }
 .comments-pane .card.mentions-me { border-left: 3px solid var(--accent); }
+
+/* Touch mode (ribbon display options): room for fingers */
+.ribbon-menu .sep { height: 1px; background: var(--border); margin: var(--sp-2) 0; }
+.ribbon-menu button[aria-checked="true"] .check { visibility: visible; }
+html.touch-mode { --ctl-h: 36px; }
+html.touch-mode .ribbon-tabs button { padding: 0 var(--sp-6); min-height: 40px; }
+html.touch-mode .ribbon .controls { gap: var(--sp-3); }
+html.touch-mode .btn.big { height: 78px; min-width: 64px; }
+html.touch-mode .minibar .btn { width: 40px; height: 40px; }
+html.touch-mode .ribbon-menu button, html.touch-mode .modal .actions button { min-height: 44px; }
+html.touch-mode .modal input, html.touch-mode .modal select { min-height: 40px; }
+html.touch-mode .statusbar button { min-width: 36px; min-height: 30px; }
+html.touch-mode .thumbs .thumb, html.touch-mode .sheet-tabs .tab { min-height: 36px; }
+/* Tablets held upright: no group labels, leaving the page more room. */
+@media (max-width: 900px) and (orientation: portrait) { html.touch-mode .ribbon .group > .label { display: none; } }

@@ -504,6 +504,79 @@
     if (name === null) return;
     try { localStorage.setItem('atlas-author', name.replace(/[^\w .@'-]/g, '').slice(0, 64) || 'Author'); } catch { /* ignore */ }
   }
+  // ---------- Draw: a drawing made with a pen, finger or mouse (ink.js) ----------
+  // It goes into the document as a picture (so Word and PDFs show it) that keeps its strokes:
+  // double-click it to draw on it again.
+  const INK_W = 624, INK_H = 360;
+  async function drawingDialog(img) {
+    let data = null;
+    try { data = img && JSON.parse(img.dataset.ink); } catch { data = null; }
+    const strokes = ((data && data.s) || []).map(Ink.clean).filter(Boolean);
+    const w = Math.max(INK_W, (data && data.w) || 0), h = Math.max(INK_H, (data && data.h) || 0);
+    const back = document.createElement('div');
+    back.className = 'modal-backdrop';
+    back.innerHTML = `<div class="modal ink-dialog" role="dialog" aria-label="Drawing"><h2>${img ? 'Edit Drawing' : 'Drawing'}</h2>
+      <div class="ink-tools" role="toolbar" aria-label="Pens">
+        <button class="btn pen on" data-pen="#1f1f1f" data-w="3" title="Black pen"><span class="ico" style="color:#1f1f1f" data-icon="pen-line"></span></button>
+        <button class="btn pen" data-pen="#1565c0" data-w="3" title="Blue pen"><span class="ico" style="color:#1565c0" data-icon="pen-line"></span></button>
+        <button class="btn pen" data-pen="#c62828" data-w="3" title="Red pen"><span class="ico" style="color:#c62828" data-icon="pen-line"></span></button>
+        <button class="btn pen" data-pen="#2e7d32" data-w="3" title="Green pen"><span class="ico" style="color:#2e7d32" data-icon="pen-line"></span></button>
+        <button class="btn pen" data-pen="#ffe600" data-w="18" data-hl="1" title="Highlighter"><span class="ico" style="color:#e0c000" data-icon="highlighter"></span></button>
+        <button class="btn eraser" title="Eraser"><span class="ico" data-icon="eraser"></span></button>
+        <span class="sp"></span>
+        <button class="btn undo" title="Undo stroke"><span class="ico" data-icon="undo-2"></span></button>
+        <button class="btn clear" title="Clear"><span class="ico" data-icon="trash-2"></span></button>
+      </div>
+      <div class="ink-paper"><svg class="ink-svg" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}"></svg></div>
+      <div class="actions"><button class="cancel">Cancel</button><button class="primary ok">${img ? 'Update' : 'Insert'}</button></div></div>`;
+    const q = sel => back.querySelector(sel);
+    const svg = q('.ink-svg');
+    const redraw = () => { svg.innerHTML = ''; strokes.forEach(st => svg.appendChild(Ink.pathEl(st))); };
+    // Strokes of a drawing being edited sit where they were (it was cropped to them, with a margin).
+    redraw();
+    let tool = { c: '#1f1f1f', w: 3, o: 1 };
+    back.querySelectorAll('.ink-tools .pen, .ink-tools .eraser').forEach(b => b.addEventListener('click', () => {
+      back.querySelectorAll('.ink-tools .on').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      tool = b.classList.contains('eraser') ? 'eraser' : { c: b.dataset.pen, w: +b.dataset.w, o: b.dataset.hl ? 0.45 : 1, hl: !!b.dataset.hl };
+    }));
+    q('.undo').addEventListener('click', () => { strokes.pop(); redraw(); });
+    q('.clear').addEventListener('click', () => { strokes.length = 0; redraw(); });
+    Ink.attach(svg, {
+      tool: () => tool,
+      at: e => { const r = svg.getBoundingClientRect(); return [Math.round((e.clientX - r.left) * w / r.width * 10) / 10, Math.round((e.clientY - r.top) * h / r.height * 10) / 10]; },
+      strokes: () => strokes,
+      add: st => { strokes.push(st); svg.appendChild(Ink.pathEl(st)); },
+      erase: i => { strokes.splice(i, 1); redraw(); }
+    });
+    document.body.appendChild(back);
+    if (window.Icons) Icons.fill(back);
+    return new Promise(resolve => {
+      const close = v => { back.remove(); resolve(v); };
+      q('.cancel').addEventListener('click', () => close(null));
+      back.addEventListener('keydown', e => { if (e.key === 'Escape') close(null); });
+      q('.ok').addEventListener('click', () => {
+        if (!strokes.length) { close(null); if (img) appEdit(() => img.remove()); changed(); return; }
+        // Cropped to the strokes, with a margin.
+        const b = Ink.bounds(strokes), pad = 12;
+        const cw = Math.ceil(b.w + 2 * pad), ch = Math.ceil(b.h + 2 * pad);
+        const kept = Ink.moved(strokes, pad - b.x, pad - b.y);
+        const c = document.createElement('canvas');
+        c.width = cw * 2; c.height = ch * 2;
+        const g = c.getContext('2d');
+        g.scale(2, 2);
+        Ink.paint(g, kept);
+        const html = `<img class="ink-drawing" alt="Drawing" width="${cw}" height="${ch}" src="${c.toDataURL('image/png')}" data-ink='${JSON.stringify({ w: cw, h: ch, s: kept })}'>`;
+        close(true);
+        if (img) appEdit(() => { const t = document.createElement('div'); t.innerHTML = html; img.replaceWith(t.firstChild); });
+        else { restoreSelection(); document.execCommand('insertHTML', false, html); }
+        changed();
+      });
+    });
+  }
+  document.getElementById('insDrawing').addEventListener('click', () => { captureSelection(); drawingDialog(null); });
+  doc.addEventListener('dblclick', e => { const img = e.target.closest && e.target.closest('img.ink-drawing'); if (img && doc.contains(img)) { e.preventDefault(); drawingDialog(img); } });
+
   // ---------- Undo for changes the app makes (not typed) ----------
   // The browser's undo knows typing and execCommand only. Changes the app makes to whole
   // paragraphs (the Assistant's rewrites) are kept here as before/after copies: Ctrl+Z takes the

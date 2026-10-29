@@ -146,7 +146,7 @@
   function cleanElement(el, phs, depth, ids) {
     {
       if (!el || typeof el !== 'object') return null;
-      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector', 'cameo'], null);
+      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector', 'cameo', 'ink'], null);
       if (!type) return null;
       const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
       if (typeof el.id === 'string') ids.set(el.id, out.id);
@@ -173,6 +173,15 @@
         out.width = num(el.width, 2, 0.5, 20);
         ['x1', 'y1', 'x2', 'y2'].forEach(k => { out[k] = num(el[k], 0); });
         ['from', 'to'].forEach(k => { const e = el[k]; if (e && typeof e === 'object' && typeof e.id === 'string') out[k] = { id: e.id, site: oneOf(e.site, ['n', 's', 'e', 'w', 'auto'], 'auto') }; });
+        return out;
+      }
+      if (type === 'ink') {
+        out.strokes = (Array.isArray(el.strokes) ? el.strokes : []).slice(0, 5000).map(Ink.clean).filter(Boolean);
+        if (!out.strokes.length) return null;
+        out.vw = num(el.vw, out.w, 1); out.vh = num(el.vh, out.h, 1);
+        if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+        const anim = SlidesAnim.clean(el.anim);
+        if (anim) out.anim = anim;
         return out;
       }
       if (type === 'cameo') {
@@ -349,6 +358,16 @@
     Object.assign(div.style, { left: el.x + 'px', top: el.y + 'px', width: el.w + 'px', height: el.h + 'px', transform: el.rot ? `rotate(${el.rot}deg)` : '' });
     if (el.type === 'group') {
       (el.children || []).forEach(ch => div.appendChild(buildEl(ch, s, false)));
+      return div;
+    }
+    if (el.type === 'ink') {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', `0 0 ${el.vw || el.w} ${el.vh || el.h}`);
+      svg.setAttribute('preserveAspectRatio', 'none');
+      svg.setAttribute('width', '100%'); svg.setAttribute('height', '100%');
+      svg.setAttribute('overflow', 'visible');
+      (el.strokes || []).forEach(st => svg.appendChild(Ink.pathEl(st)));
+      div.appendChild(svg);
       return div;
     }
     if (el.type === 'cameo') {
@@ -712,7 +731,7 @@
     const el = elDiv && elById(elDiv.dataset.id);
     if (el && el.type === 'group' && el.smart) { smartArtDialog(el); return; }
     if (el && el.type === 'cameo') { cameoDialog(el); return; }
-    if (!el || ['group', 'connector', 'image', 'media'].includes(el.type)) return;
+    if (!el || ['group', 'connector', 'image', 'media', 'ink'].includes(el.type)) return;
     if (elDiv.dataset.id !== editingId) startEditing(elDiv.dataset.id);
   });
 
@@ -868,7 +887,7 @@
     else if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); wholeBox('bold'); }
     else if (mod && e.key.toLowerCase() === 'i') { e.preventDefault(); wholeBox('italic'); }
     else if (mod && e.key.toLowerCase() === 'u') { e.preventDefault(); wholeBox('underline'); }
-    else if (e.key.length === 1 && !mod && !e.altKey && !['image', 'media', 'group', 'connector', 'cameo'].includes(el.type)) {
+    else if (e.key.length === 1 && !mod && !e.altKey && !['image', 'media', 'group', 'connector', 'cameo', 'ink'].includes(el.type)) {
       // Typing on a selected box replaces its text, like PowerPoint.
       e.preventDefault();
       snapshot();
@@ -1086,6 +1105,71 @@
     renderStage(); refreshThumbSoon(); state.markDirty();
   }
   document.getElementById('insVideo').addEventListener('click', () => insertMedia('video'));
+  // ---------- Draw: pen, highlighter and eraser on the slide (ink.js) ----------
+  // Strokes drawn close together in time become one drawing object; it moves and resizes like a
+  // picture. Undo takes back one stroke at a time.
+  let inkTool = null, lastInk = null, lastInkAt = 0, inkList = [];
+  const inkLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  inkLayer.id = 'inkLayer';
+  inkLayer.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  inkLayer.setAttribute('preserveAspectRatio', 'none');
+  stageWrap.appendChild(inkLayer);
+  function placeInkLayer() {
+    if (!inkTool) return;
+    const r = stage.getBoundingClientRect(), w = stageWrap.getBoundingClientRect();
+    Object.assign(inkLayer.style, { left: (r.left - w.left) + 'px', top: (r.top - w.top) + 'px', width: r.width + 'px', height: r.height + 'px' });
+  }
+  new ResizeObserver(placeInkLayer).observe(stageWrap);
+  function setInkTool(btn) {
+    commitEditing();
+    document.querySelectorAll('[data-panel="draw"] .pen, #inkEraser, #inkSelect').forEach(b => b.classList.remove('on'));
+    if (!btn || btn.id === 'inkSelect') inkTool = null;
+    else if (btn.id === 'inkEraser') inkTool = 'eraser';
+    else inkTool = { c: btn.dataset.pen, w: +btn.dataset.w, o: btn.dataset.hl ? 0.45 : 1, hl: !!btn.dataset.hl };
+    (btn || document.getElementById('inkSelect')).classList.add('on');
+    document.body.classList.toggle('inking', !!inkTool);
+    document.body.classList.toggle('ink-erasing', inkTool === 'eraser');
+    if (inkTool) { selectedId = null; renderStage(); placeInkLayer(); }
+  }
+  document.querySelectorAll('[data-panel="draw"] .pen, #inkEraser, #inkSelect').forEach(b => b.addEventListener('click', () => setInkTool(b)));
+  document.getElementById('inkTouch').addEventListener('click', e => { Ink.touchDraws = !Ink.touchDraws; e.currentTarget.classList.toggle('on', Ink.touchDraws); });
+  // Leaving the Draw tab puts the pen down.
+  document.querySelectorAll('.ribbon-tabs button[data-tab]').forEach(t => t.addEventListener('click', () => { if (t.dataset.tab !== 'draw' && inkTool) setInkTool(null); }));
+  /** An ink object's strokes in slide coordinates. */
+  const inkToSlide = el => {
+    const fx = el.w / (el.vw || el.w), fy = el.h / (el.vh || el.h);
+    return el.strokes.map(st => ({ ...st, w: st.w * fx, d: st.d.replace(/(-?[\d.]+) (-?[\d.]+)/g, (m, x, y) => `${Math.round((el.x + x * fx) * 10) / 10} ${Math.round((el.y + y * fy) * 10) / 10}`) }));
+  };
+  function addInkStroke(st) {
+    const sl = slide();
+    const join = lastInk && sl.elements.includes(lastInk) && Date.now() - lastInkAt < 3000 && lastInk.w === lastInk.vw && lastInk.h === lastInk.vh && !lastInk.rot ? lastInk : null;
+    snapshot();
+    const all = join ? [...inkToSlide(join), st] : [st];
+    const b = Ink.bounds(all), pad = 2;
+    const box = { x: Math.round(b.x - pad), y: Math.round(b.y - pad) };
+    box.w = Math.max(1, Math.round(b.w + 2 * pad)); box.h = Math.max(1, Math.round(b.h + 2 * pad));
+    const el = join || { id: newId(), type: 'ink' };
+    Object.assign(el, box, { vw: box.w, vh: box.h, strokes: Ink.moved(all, -box.x, -box.y) });
+    if (!join) sl.elements.push(el);
+    lastInk = el; lastInkAt = Date.now();
+    renderStage(); refreshThumbSoon(); state.markDirty();
+  }
+  Ink.attach(inkLayer, {
+    tool: () => inkTool,
+    at: e => { const r = inkLayer.getBoundingClientRect(); return [Math.round((e.clientX - r.left) * W / r.width * 10) / 10, Math.round((e.clientY - r.top) * H / r.height * 10) / 10]; },
+    strokes: () => { inkList = slide().elements.filter(e => e.type === 'ink').flatMap(el => inkToSlide(el).map((st, k) => ({ ...st, el, k }))); return inkList; },
+    add: addInkStroke,
+    erase: i => {
+      const hitOne = inkList[i];
+      if (!hitOne) return;
+      snapshot();
+      const el = hitOne.el;
+      el.strokes.splice(hitOne.k, 1);
+      if (!el.strokes.length) slide().elements.splice(slide().elements.indexOf(el), 1);
+      renderStage(); refreshThumbSoon(); state.markDirty();
+    }
+  });
+
   // ---------- Cameo: the presenter's camera, live, in the slide ----------
   document.getElementById('insCameo').addEventListener('click', () => {
     commitEditing();
@@ -1119,6 +1203,8 @@
     }
     let stream;
     try { stream = await camera; } catch { return; }
+    // The show may have ended while the camera started.
+    if (container === presentSlide && presenter.hidden) { stopCamera(); return; }
     for (const b of boxes) {
       if (!b.isConnected || b.querySelector('video')) continue;
       const v = document.createElement('video');
@@ -1390,7 +1476,7 @@
   // ---------- Slide show ----------
   const presenter = document.getElementById('presenter');
   const presentSlide = document.getElementById('presentSlide');
-  let showIndex = 0, cursorTimer;
+  let showIndex = 0, cursorTimer, shownAt = 0;
   function present(from) {
     commitEditing();
     if (masterTarget) setMasterView(false);
@@ -1399,7 +1485,8 @@
     presenter.classList.remove('black');
     Platform.fullscreen(true);
     showSlide(showIndex, false);
-    setTimeout(() => showSlide(showIndex, false), 300); // refit after going full screen
+    shownAt = Date.now();
+    setTimeout(() => { if (!presenter.hidden) showSlide(showIndex, false); }, 300); // refit after going full screen
     document.getElementById('presentHint').textContent = '→ / Space: next   ← : previous   B: black   C: captions   Esc: end';
     if (captions.pref && !AUDIENCE) setCaptions(true, true);
     setTimeout(() => { document.getElementById('presentHint').textContent = ''; }, 3000);
@@ -1517,7 +1604,8 @@
     else if (k === 'Escape') endShow();
   }, true);
   window.addEventListener('resize', () => { if (!presenter.hidden) showSlide(showIndex, false); });
-  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !presenter.hidden && !Platform.desktop) endShow(); });
+  // Leaving full screen (Esc in the browser) ends the show; not the late notice from the show before.
+  document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement && !presenter.hidden && !Platform.desktop && Date.now() - shownAt > 800) endShow(); });
 
   // ---------- Live captions and Rehearse with Coach ----------
   // One listener serves both: captions show what is said at the foot of the slide; the coach
@@ -1895,6 +1983,16 @@
         }
         const box = { x: inch(el.x), y: inch(el.y), w: inch(el.w), h: inch(el.h), rotate: el.rot || 0, objectName: (el.master ? 'atlas-master-' : 'atlas-') + el.id, ...(el.flipH ? { flipH: true } : {}), ...(el.flipV ? { flipV: true } : {}) };
         if (el.type === 'image') { ps.addImage({ data: el.src, ...box, ...(el.alt && !el.decorative ? { altText: el.alt } : {}) }); continue; }
+        if (el.type === 'ink') {
+          // A picture of the drawing; the strokes themselves go in the metadata for Isadek.
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(el.w * 2)); c.height = Math.max(1, Math.round(el.h * 2));
+          const g = c.getContext('2d');
+          g.scale(c.width / (el.vw || el.w), c.height / (el.vh || el.h));
+          Ink.paint(g, el.strokes);
+          ps.addImage({ data: c.toDataURL('image/png'), ...box, altText: 'Drawing' });
+          continue;
+        }
         if (el.type === 'cameo') {
           // PowerPoint has no camera object it can read from here: a framed placeholder.
           ps.addText('Cameo', { ...box, shape: el.shape === 'circle' ? pptx.ShapeType.ellipse : el.shape === 'rounded' ? pptx.ShapeType.roundRect : pptx.ShapeType.rect, fill: { color: '2B2B2B' }, color: 'FFFFFF', fontSize: 14, align: 'center', valign: 'middle', altText: 'Camera (Cameo)' });
@@ -1951,6 +2049,7 @@
       morph: Object.fromEntries((morphNames.get(pres.slides.indexOf(sl)) || []).map(([elId, key]) => [key, elId])),
       media: Object.fromEntries(sl.elements.flatMap(e => flattenGroup(e)).filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])),
       cameos: Object.fromEntries(sl.elements.filter(e => e.type === 'cameo').map(e => [e.id, { shape: e.shape, mirror: e.mirror !== false }])),
+      inks: Object.fromEntries(sl.elements.filter(e => e.type === 'ink').map(e => [e.id, { vw: e.vw, vh: e.vh, strokes: e.strokes }])),
       groups: sl.elements.filter(e => e.type === 'group').map(groupMeta),
       connectors: Object.fromEntries(sl.elements.filter(e => e.type === 'connector').map(c => [c.id, { kind: c.kind, arrow: c.arrow, color: c.color || null, width: c.width, from: c.from || null, to: c.to || null }]))
     })) });
@@ -2476,6 +2575,11 @@
         if (m.morph && typeof m.morph === 'object') slides[i].elements.forEach(e => { if (e.morphName && Object.hasOwn(m.morph, e.morphName)) e.atlasName = String(m.morph[e.morphName]); });
         slides[i].layout = m.layout; slides[i].hideMaster = m.hideMaster === true;
         // Playback options, matched by the shape names Isadek wrote.
+        // Drawings were written as pictures: they become ink again.
+        if (m.inks && typeof m.inks === 'object') slides[i].elements = slides[i].elements.map(e => {
+          const o = e.atlasName && Object.hasOwn(m.inks, e.atlasName) ? m.inks[e.atlasName] : null;
+          return o && Array.isArray(o.strokes) ? { id: e.id, type: 'ink', x: e.x, y: e.y, w: e.w, h: e.h, atlasName: e.atlasName, vw: o.vw, vh: o.vh, strokes: o.strokes, ...(e.rot ? { rot: e.rot } : {}), ...(e.anim ? { anim: e.anim } : {}) } : e;
+        });
         // Cameos were written as framed placeholders: they become cameos again.
         if (m.cameos && typeof m.cameos === 'object') slides[i].elements = slides[i].elements.map(e => {
           const o = e.atlasName && Object.hasOwn(m.cameos, e.atlasName) ? m.cameos[e.atlasName] : null;

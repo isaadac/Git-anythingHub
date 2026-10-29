@@ -205,3 +205,10 @@ body.connecting #stage, body.connecting #stage .el { cursor: crosshair !importan
 .coach-bar.reading .bar i { background: var(--warn); }
 .coach-bar .s { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 @media (max-width: 560px) { .coach-stats { grid-template-columns: repeat(2, 1fr); } }
+
+/* Draw */
+#inkLayer { position: absolute; display: none; z-index: 5; touch-action: none; cursor: crosshair; overflow: visible; }
+body.inking #inkLayer { display: block; }
+body.ink-erasing #inkLayer { cursor: cell; }
+.el.ink svg { display: block; pointer-events: none; }
+.el.ink { pointer-events: auto; }

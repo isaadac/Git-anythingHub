@@ -29,6 +29,7 @@
   <button class="file-tab">File</button>
   <button data-tab="home" class="active">Home</button>
   <button data-tab="insert">Insert</button>
+  <button data-tab="draw">Draw</button>
   <button data-tab="design">Design</button>
   <button data-tab="transitions">Transitions</button>
   <button data-tab="animations">Animations</button>
@@ -128,6 +129,19 @@
     </div><div class="label">Shapes</div></div>
   </div>
 
+  <div class="ribbon-panel" data-panel="draw">
+    <div class="group"><div class="controls">
+      <button class="btn big on" id="inkSelect" title="Select and edit"><span class="ico" data-icon="mouse-pointer-2"></span>Select</button>
+      <button class="btn big pen" data-pen="#1f1f1f" data-w="3" title="Black pen"><span class="ico" style="color:#1f1f1f" data-icon="pen-line"></span>Black</button>
+      <button class="btn big pen" data-pen="#1565c0" data-w="3" title="Blue pen"><span class="ico" style="color:#1565c0" data-icon="pen-line"></span>Blue</button>
+      <button class="btn big pen" data-pen="#c62828" data-w="3" title="Red pen"><span class="ico" style="color:#c62828" data-icon="pen-line"></span>Red</button>
+      <button class="btn big pen" data-pen="#ffe600" data-w="18" data-hl="1" title="Highlighter"><span class="ico" style="color:#e0c000" data-icon="highlighter"></span>Highlighter</button>
+      <button class="btn big" id="inkEraser" title="Eraser: touch a stroke to remove it"><span class="ico" data-icon="eraser"></span>Eraser</button>
+    </div><div class="label">Pens</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="inkTouch" title="Draw with your finger even after using a pen (normally, once a pen is used, a finger scrolls)"><span class="ico" data-icon="hand"></span>Draw with<br>Touch</button>
+    </div><div class="label">Touch</div></div>
+  </div>
   <div class="ribbon-panel" data-panel="design">
     <div class="group"><div class="controls themes" id="themes"></div><div class="label">Themes</div></div>
     <div class="group"><div class="controls">
@@ -338,6 +352,7 @@
 <script src="js/slides-anim.js"></script>
 <script src="js/slides-extras.js"></script>
 <script src="js/slides-coach.js"></script>
+<script src="js/ink.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/slides.js"></script>
 </body>
