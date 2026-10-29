@@ -112,6 +112,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await p.waitForFunction(() => AtlasSheets.valueOf('E1') === 600, null, { timeout: 30000 }).catch(() => {});
   check('…and runs once it is', (await val('E1')) === 600 && !(await p.isVisible('#pyBar')), String(await val('E1')));
 
+  // ---- Web queries in a workbook from someone else wait for permission
+  let hits = 0;
+  await p.route('https://data.example.test/**', r => { hits++; r.fulfill({ status: 200, contentType: 'text/csv', body: 'a,b\n1,2\n', headers: { 'Access-Control-Allow-Origin': '*' } }); });
+  await p.evaluate(() => { AtlasSheets.book.sheets[0].queries = [{ url: 'https://data.example.test/q.csv', table: 0, r: 30, c: 0, h: 0, w: 0 }]; });
+  await p.click('[data-tab="data"]');
+  await p.click('#refreshAll');
+  await p.waitForSelector('.modal');
+  const ask = await p.textContent('.modal');
+  await p.click('.modal .actions button:not(.primary)');
+  await sleep(300);
+  check('web data from someone else\'s workbook is fetched only once allowed', /data\.example\.test/.test(ask) && hits === 0, ask);
+  await p.click('#refreshAll');
+  await p.waitForSelector('.modal');
+  await p.click('.modal .actions .primary');
+  await sleep(800);
+  check('…and is fetched once it is', hits === 1, String(hits));
+
   await p.evaluate(() => { window.__atlasDirty = false; });
   check('no page errors', !errors.length, errors.slice(0, 3).join(' | '));
   await browser.close();

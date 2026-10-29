@@ -94,6 +94,10 @@ const BASE = process.env.E2E_BASE + '/src/renderer/';
   });
   check('sheets: hostile cell data is reduced to plain values and known styles', sh.a1 && sh.a1.v === 'ok' && sh.a1.s && sh.a1.s.color === '#ff0000' && !sh.a1.s.bg && !sh.a1.s.evil && !('f' in sh.a1) && sh.a2 && sh.a2.v === '' && !sh.b1 && !sh.polluted, JSON.stringify([sh.a1, sh.a2, sh.b1]));
   check('sheets: bad sheet settings are checked like a file\'s', sh.name === '.._evil__x__' && sh.charts.join() === 'bar' && sh.merges.length === 1 && !(0 in sh.widths) && sh.widths[1] === 80 && sh.cf && sh.freeze !== 'yes', JSON.stringify(sh));
+  // Python from someone else waits for permission, as from a file.
+  m2.send([{ k: `c:${u}:D1`, v: { v: '=PY("2+2")' } }]);
+  await sleep(500);
+  check('sheets: Python sent by someone else waits until allowed', (await h.p.evaluate(() => { const v = AtlasSheets.valueOf('D1'); return v && v.error; })) === '#BLOCKED!' && await h.p.isVisible('#pyBar'));
   await h.p.evaluate(() => AtlasSheets.setCell('C3', '=1+1'));
   await sleep(300);
   check('sheets: the session keeps working', (await h.p.evaluate(() => AtlasSheets.valueOf('C3'))) === 2 && m2.got.some(m => m.t === 'op' && m.ops.some(o => /C3$/.test(o.k))));

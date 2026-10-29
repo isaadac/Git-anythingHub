@@ -71,6 +71,8 @@
       get busy() { return running.size > 0; },
       get blocked() { return blocked; },
       set blocked(v) { blocked = !!v; },
+      /** The person allowed Python for this workbook (so more of it, from anyone, runs too). */
+      allowed: false,
       onChange(f) { onChange = f; },
       /** Whether any cell of the book has a Python formula. */
       hasPython: book => book.sheets.some(s => Object.values(s.cells).some(c => typeof c.v === 'string' && c.v[0] === '=' && /\bPY\s*\(/i.test(c.v))),

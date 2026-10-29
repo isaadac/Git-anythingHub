@@ -45,6 +45,7 @@
       const p = Cloud.parsePath(path);
       await tx('outbox', 'readwrite', st => st.put({ path, name, data: new Uint8Array(data), savedAt: Date.now(), base: Cloud.revisionSeen(path), service: p.acct }));
       await Offline.keep(path, name, data);
+      refused.delete(path); // a new save is worth trying again
       await refresh();
       return { name, path, queued: true };
     },
@@ -70,14 +71,28 @@
     /** Forgets a waiting save (a newer one went straight up). */
     async drop(path) { try { await tx('outbox', 'readwrite', st => st.delete(path)); await refresh(); } catch { /* nothing waiting */ } },
     /** Uploads what is waiting. Returns how many went up. */
-    async flush() {
+    /** Uploads what is waiting. Returns how many went up. retry: also try saves refused earlier. */
+    async flush(retry) {
       if (state.busy || !navigator.onLine) return 0;
-      const list = await all('outbox');
+      if (retry) refused.clear();
+      // One window or tab at a time (each would otherwise send the same save).
+      if (navigator.locks && navigator.locks.request) return navigator.locks.request('isadek-outbox', () => flushNow());
+      return flushNow();
+    }
+  };
+  // Saves the cloud refused this session (signed out, no room…): reported once, tried again when
+  // the connection comes back or the app starts, not every minute.
+  const refused = new Map();
+  async function flushNow() {
+      const list = (await all('outbox')).filter(w => !refused.has(w.path));
       if (!list.length) return 0;
       state = { ...state, busy: true }; tell();
       let sent = 0, conflicts = 0;
       try {
         for (const w of list.sort((a, b) => a.savedAt - b.savedAt)) {
+          // Still waiting, and the same save (another window may have sent it meanwhile)?
+          const now = await tx('outbox', 'readonly', async (st, done) => done(await req(st.get(w.path))));
+          if (!now || now.savedAt !== w.savedAt) continue;
           try {
             let current = '';
             try { current = await Cloud.stat(w.path); } catch (err) { if (unreachable(err)) break; }
@@ -92,13 +107,14 @@
             } else {
               await Cloud.saveTo(w.path, w.name, w.data);
             }
-            await tx('outbox', 'readwrite', st => st.delete(w.path));
+            // Only if no newer save was made meanwhile.
+            await tx('outbox', 'readwrite', async st => { const cur = await req(st.get(w.path)); if (cur && cur.savedAt === w.savedAt) st.delete(w.path); });
             sent++;
           } catch (err) {
             if (unreachable(err)) break;
-            // The service refused it (signed out, no space…): say so, and keep it for later.
+            // The service refused it (signed out, no space…): say so once, keep it, go on with the rest.
+            refused.set(w.path, err.message);
             UI.toast(`Couldn't upload “${w.name}”: ${err.message}. It is still saved on this device.`, 6000);
-            break;
           }
         }
       } finally {
@@ -107,12 +123,11 @@
       }
       if (sent && !conflicts) UI.toast(`${sent} document${sent === 1 ? '' : 's'} saved on this device went up to the cloud`, 4000);
       return sent;
-    }
-  };
+  }
 
   // Try again whenever the connection comes back, now and then while something waits, and when the
   // app starts.
-  addEventListener('online', () => { refresh(); Offline.flush(); });
+  addEventListener('online', () => { refresh(); Offline.flush(true); });
   addEventListener('offline', refresh);
   setInterval(() => { if (state.waiting && navigator.onLine) Offline.flush(); }, 60000);
   if (window.indexedDB) setTimeout(() => refresh().then(() => Offline.flush()).catch(() => {}), 1500);

@@ -56,7 +56,6 @@ if (platform === 'android') {
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="content" />
                 <data android:scheme="file" />
 ${MIME.map(m => `                <data android:mimeType="${m}" />`).join('\n')}
@@ -68,6 +67,13 @@ ${MIME.map(m => `                <data android:mimeType="${m}" />`).join('\n')}
     }
     fs.writeFileSync(manifest, xml);
     console.log('AndroidManifest.xml: added "Open with" for office documents');
+  }
+  // The app's data (cloud sign-ins, notebooks, drafts) stays on the device: not in device backups
+  // or `adb backup`. Files people save are in their Documents folder and backed up as usual.
+  xml = fs.readFileSync(manifest, 'utf8');
+  if (/android:allowBackup="true"/.test(xml)) {
+    fs.writeFileSync(manifest, xml.replace(/android:allowBackup="true"/, 'android:allowBackup="false"'));
+    console.log('AndroidManifest.xml: app data left out of backups');
   }
 }
 if (platform === 'ios') {

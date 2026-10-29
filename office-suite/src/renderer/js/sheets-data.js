@@ -822,6 +822,7 @@ function main(workbook) {
       const q = { url: r.url.trim(), table: index, r: at.r, c: at.c, h: 0, w: 0 };
       writeRows(s, q, rows);
       s.queries = [...(s.queries || []).filter(x => !(x.r === q.r && x.c === q.c)), q];
+      trustedUrls.add(q.url);
       if (r.dest === 'new') ctx.buildGrid(); else ctx.changed();
       UI.toast(`${rows.length} row${rows.length === 1 ? '' : 's'} loaded. Data → Refresh All gets the latest.`, 4000);
     }
@@ -842,9 +843,19 @@ function main(workbook) {
       for (let j = 0; j < w; j++) ctx.setCell(q.r, q.c + j, { s: { b: true } }, s);
       q.h = rows.length; q.w = w;
     }
+    // Web addresses set up here, or already allowed: a workbook from someone else (a file, or a
+    // live session) doesn't fetch from the web until its addresses are allowed, as in Excel.
+    const trustedUrls = new Set();
     async function refreshQueries() {
       const list = book().sheets.flatMap(s => (s.queries || []).map(q => [s, q]));
       if (!list.length) return 0;
+      const unknown = [...new Set(list.map(([, q]) => q.url).filter(u => !trustedUrls.has(u)))];
+      if (unknown.length) {
+        const hosts = [...new Set(unknown.map(u => { try { return new URL(u).host; } catch { return u; } }))];
+        const ok = await UI.confirm('Data from the Web', `This workbook gets data from ${hosts.slice(0, 5).join(', ')}${hosts.length > 5 ? ` and ${hosts.length - 5} more` : ''}. Refresh it only if you trust where the workbook came from.`);
+        if (!ok) return 0;
+        unknown.forEach(u => trustedUrls.add(u));
+      }
       let n = 0, failed = 0;
       for (const [s, q] of list) {
         try {

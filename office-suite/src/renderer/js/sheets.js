@@ -108,9 +108,16 @@
   python.onChange(() => { renderVisibleCells(); drawSelection(); });
   /** A workbook from a file runs no Python until the person allows it. */
   function guardPython() {
+    python.allowed = false;
     python.blocked = python.hasPython(book);
-    const bar = document.getElementById('pyBar');
-    bar.hidden = !python.blocked;
+    document.getElementById('pyBar').hidden = !python.blocked;
+  }
+  /** Python that arrives from someone else in a live session waits for permission too. */
+  const PY_CELL = /^=.*\bPY\s*\(/i;
+  function guardPythonFrom(cell) {
+    if (python.blocked || python.allowed || !cell || typeof cell.v !== 'string' || !PY_CELL.test(cell.v)) return;
+    python.blocked = true;
+    document.getElementById('pyBar').hidden = false;
   }
 
   function setCell(r, c, props, s = sheet()) {
@@ -2853,7 +2860,7 @@
   on('solverBtn', () => data.solver());
   on('fromWeb', () => data.fromWeb());
   on('cleanData', () => data.cleanData());
-  document.getElementById('pyAllow').addEventListener('click', () => { python.blocked = false; document.getElementById('pyBar').hidden = true; renderVisibleCells(); drawSelection(); });
+  document.getElementById('pyAllow').addEventListener('click', () => { python.blocked = false; python.allowed = true; document.getElementById('pyBar').hidden = true; renderVisibleCells(); drawSelection(); });
   on('scriptsBtn', () => data.scriptsPane());
   on('newScript', () => data.newScript());
 
@@ -3536,6 +3543,7 @@
           let cells = s && s.cells;
           if (!cells) { if (!orphanCells.has(u)) orphanCells.set(u, {}); cells = orphanCells.get(u); }
           const cell = v === null ? null : cleanLiveCell(v);
+          guardPythonFrom(cell);
           if (!cell) delete cells[ref]; else { cells[ref] = cell; if (s) growFor(s, ref); }
           if (s) touched(s);
         }
