@@ -149,12 +149,13 @@
 <li><b>Live editing.</b> When you start or join a live session, changes to that document go through the live-editing server the session uses, to the other people in it. The server keeps the session in memory only, and forgets it an hour after everyone has left.</li>
 <li><b>Assistant.</b> When you use ✨ Assistant, your request and the content you include are sent to Anthropic (directly with your own API key, or through the web server you use) to produce an answer. Anthropic's privacy policy applies to that data.</li>
 <li><b>Data from the web.</b> Sheets → From Web downloads the address you enter.</li>
+<li><b>Speech model.</b> Choosing speech recognition on this device downloads the model from Hugging Face (huggingface.co) once.</li>
 <li><b>Looking up a DOI.</b> Write → Sources → DOI asks Crossref (api.crossref.org) for that DOI's details.</li>
 <li><b>Updates.</b> The desktop app asks the release server whether a newer version exists. That request includes the app's version and your operating system, as any download does.</li>
 <li><b>Crash reports</b> are sent only if you turn them on (Help → Send Crash Reports; off by default). A report holds the error message and where in the program it happened, the app and system versions, and for a native crash a memory snapshot of the program that stopped. File paths are shortened so they don't include your user name. Reports are used only to fix problems and are deleted after 90 days.</li>
 </ul>
 <h3>Microphone and camera</h3>
-<p>The microphone is used only while you record narration in Slides or an audio note in Notes (the recording is stored in your file), or while you dictate, show live captions or rehearse with Coach. Dictation, captions and Coach use your system's or browser's speech recognition, which may send the audio to its provider (Google for Chrome, Apple for Safari, Microsoft for Edge); nothing said is kept. The camera is used only to show you in a Cameo while you present in Slides; nothing is recorded or sent. Your screen is never used.</p>
+<p>The microphone is used only while you record narration in Slides or an audio note in Notes (the recording is stored in your file), or while you dictate, show live captions or rehearse with Coach. Dictation, captions and Coach can recognize speech on this device (File → Speech): the speech model (OpenAI's Whisper) is downloaded from Hugging Face once, when you choose it, and after that nothing you say leaves your computer, even without a connection. Or they can use your browser's own speech recognition, which sends the audio to its provider (Google for Chrome, Apple for Safari, Microsoft for Edge); nothing said is kept. The camera is used only to show you in a Cameo while you present in Slides; nothing is recorded or sent. Your screen is never used.</p>
 <h3>Children</h3>
 <p>Isadek Office does not knowingly collect any personal information, from children or anyone else.</p>
 <h3>Changes and contact</h3>

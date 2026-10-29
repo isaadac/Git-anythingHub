@@ -5,6 +5,7 @@
   "Clean & Transform": "Bereinigen und transformieren", "Applied steps": "Angewendete Schritte",
   "Waterfall": "Wasserfall", "Funnel": "Trichter", "Map": "Karte", "Run Python": "Python ausführen",
   "Cameo": "Cameo", "Rehearse with Coach": "Mit Coach üben", "Live Captions": "Liveuntertitel", "Speaking": "Sprechen",
+  "Speech": "Sprache",
   "Protect with Password": "Mit Kennwort schützen", "Password": "Kennwort",
   "Select": "Auswählen", "Draw with Touch": "Mit Fingereingabe zeichnen", "Touch": "Touch", "Touch mode": "Fingereingabemodus",
   // Live editing: activity and following

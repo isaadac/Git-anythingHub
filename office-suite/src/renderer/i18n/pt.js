@@ -5,6 +5,7 @@
   "Clean & Transform": "Limpar e transformar", "Applied steps": "Etapas aplicadas",
   "Waterfall": "Cascata", "Funnel": "Funil", "Map": "Mapa", "Run Python": "Executar Python",
   "Cameo": "Cameo", "Rehearse with Coach": "Ensaiar com o Treinador", "Live Captions": "Legendas ao vivo", "Speaking": "Fala",
+  "Speech": "Voz",
   "Protect with Password": "Proteger com senha", "Password": "Senha",
   "Select": "Selecionar", "Draw with Touch": "Desenhar com Toque", "Touch": "Toque", "Touch mode": "Modo de toque",
   // Live editing: activity and following

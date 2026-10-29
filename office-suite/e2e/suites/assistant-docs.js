@@ -189,14 +189,16 @@ const KEY = 'sk-ant-test-key-docs-0001';
   await w.waitForFunction(() => /hello from my voice/.test(document.querySelector('.ai-input textarea').value), null, { timeout: 3000 }).catch(() => {});
   check('the Assistant\'s microphone dictates the question', /hello from my voice/.test(await w.inputValue('.ai-input textarea')));
   await w.click('.ai-input .mic');
-  // Without a speech recognizer, it says so.
+  // Without a browser speech recognizer, it offers the on-device one.
   const ns = await ctx.newPage(); watch(ns);
   await ns.addInitScript(() => { window.__noSpeech = true; delete window.webkitSpeechRecognition; });
   await ns.goto(BASE + 'write.html');
   await ns.waitForFunction(() => window.Assistant);
   await ns.evaluate(() => { delete window.SpeechRecognition; delete window.webkitSpeechRecognition; });
   await ns.click('#dictate');
-  check('…and explains when the browser can\'t listen', /isn.t available here/.test(await ns.textContent('.toast')));
+  await ns.waitForSelector('.modal', { timeout: 5000 }).catch(() => {});
+  check('…and without a browser recognizer, offers speech recognition on this device', /On this device/.test(await ns.textContent('.modal').catch(() => '')));
+  await ns.click('.modal .actions button:has-text("Cancel")').catch(() => {});
 
   for (const pg of [w, n, ns]) await pg.evaluate(() => { window.__atlasDirty = false; }).catch(() => {});
   check('no page errors', !errors.length, errors.slice(0, 3).join(' | '));

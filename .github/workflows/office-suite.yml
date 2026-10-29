@@ -52,6 +52,7 @@ jobs:
         run: |
           npx playwright install --with-deps chromium
           pip install openpyxl python-pptx python-docx
+          sudo apt-get install -y espeak-ng
       - name: End-to-end tests (web pages and the desktop app)
         run: xvfb-run -a npm run e2e
       - name: Pictures of what changed (visual regression)

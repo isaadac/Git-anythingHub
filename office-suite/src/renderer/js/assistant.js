@@ -41,6 +41,8 @@
    * uses the system's where it can). onText(text, final) gets words as they are heard; returns stop().
    */
   function dictate(onText, onEnd) {
+    // On-device or the browser's recognizer, as the person chose (speech.js).
+    if (window.Speech) return Speech.start(onText, msg => UI.toast(msg.replace(/^Listening stopped/, 'Dictation stopped'), 5000), undefined, onEnd);
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) { UI.toast('Dictation needs speech recognition, which isn\'t available here. Try Chrome, Edge or Safari.', 5000); return null; }
     const rec = new SR();

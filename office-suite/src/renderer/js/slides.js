@@ -1649,7 +1649,7 @@
   document.getElementById('captionsToggle').addEventListener('click', () => { captions.pref = !captions.pref; try { localStorage.setItem('atlas-captions', captions.pref ? '1' : '0'); } catch { /* ignore */ } document.getElementById('captionsToggle').classList.toggle('on', captions.pref); UI.toast(captions.pref ? 'Captions will show when you present' : 'Captions off'); });
 
   document.getElementById('rehearse').addEventListener('click', () => {
-    if (!(window.SpeechRecognition || window.webkitSpeechRecognition)) return UI.toast('Rehearse with Coach listens to you, which needs speech recognition. Try Chrome, Edge or Safari.', 5000);
+    if (!window.Speech && !(window.SpeechRecognition || window.webkitSpeechRecognition)) return UI.toast('Rehearse with Coach listens to you, which needs speech recognition.', 5000);
     coach = { heard: [], times: pres.slides.map(() => 0), at: Date.now(), slide: 0, started: Date.now(), recent: [] };
     present(0);
     coachEl.hidden = false;

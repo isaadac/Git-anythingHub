@@ -68,6 +68,8 @@
    * there's no recognizer here (onError says why).
    */
   function listen(onText, onError, lang) {
+    // On-device or the browser's recognizer, as the person chose (speech.js).
+    if (root.Speech) return root.Speech.start(onText, onError, lang);
     const SR = root.SpeechRecognition || root.webkitSpeechRecognition;
     if (!SR) { onError && onError('Speech recognition isn\'t available here. Try Chrome, Edge or Safari.'); return null; }
     let stopped = false, rec = null, fails = 0;
