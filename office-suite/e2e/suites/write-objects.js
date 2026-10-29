@@ -102,6 +102,8 @@ const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAoAAAAKCAIAAAACUFjqA
     Platform.openData = async (app, name, b) => { window.__compared = { app, name, html: new TextDecoder().decode(b) }; return true; };
   });
   await p.evaluate(() => document.getElementById('compareDocs').click());
+  await p.waitForSelector('.compare-view');
+  await p.click('.compare-view .tracked');
   await p.waitForFunction(() => window.__compared, null, { timeout: 5000 });
   const cmp = await p.evaluate(() => { const d = new DOMParser().parseFromString(window.__compared.html, 'text/html'); const t = sel => [...d.querySelectorAll(sel)].map(n => n.textContent.trim()).filter(Boolean); return { ins: t('ins.tc'), del: t('del.tc'), author: d.querySelector('ins.tc')?.dataset.author, app: window.__compared.app }; });
   check('compare: changed words marked as insertions and deletions', cmp.ins.includes('red') && cmp.ins.includes('leaps') && cmp.del.includes('brown') && cmp.del.includes('jumps'), JSON.stringify(cmp));

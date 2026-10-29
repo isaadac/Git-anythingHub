@@ -30,7 +30,7 @@
     if (Platform.isColor(v.color)) out.color = v.color;
     out.differentFirst = v.differentFirst === true;
     out.trackChanges = v.trackChanges === true;
-    if (['apa', 'mla', 'chicago'].includes(v.citeStyle)) out.citeStyle = v.citeStyle;
+    if (['apa', 'mla', 'chicago', 'harvard', 'ieee'].includes(v.citeStyle)) out.citeStyle = v.citeStyle;
     out.styles = WriteExtras.cleanStyles(v.styles);
     return out;
   }
@@ -237,7 +237,7 @@
   });
   document.getElementById('modifyStyle').addEventListener('click', () => { restoreSelection(); extras.modifyStyle(currentBlock()); });
   document.getElementById('compareDocs').addEventListener('click', () => compareWith());
-  /** Compare: an earlier version (chosen file) against this document, as tracked changes in a new window. */
+  /** Compare: an earlier version (chosen file) against this document, side by side or as tracked changes in a new window. */
   async function compareWith() {
     const f = await Platform.open(OPEN_FILTERS);
     if (!f) return;
@@ -252,9 +252,15 @@
     [original, revised].forEach(r => r.querySelectorAll('span.equation, span.fld').forEach(x => { x.textContent = ''; }));
     const n = extras.compare(original, revised, 'Compare');
     if (!n) return UI.toast('No differences in the text');
-    const html = toHtml(() => revised.innerHTML);
-    await Platform.openData('write', `Compared — ${Platform.baseName(state.name)}.html`, new TextEncoder().encode(html));
-    UI.toast(`${n} change${n === 1 ? '' : 's'} marked. Accept or reject them on the Review tab.`, 5000);
+    // Side by side first; from there, the same changes can open as tracked changes.
+    extras.compareView(revised, {
+      leftName: f.name, rightName: state.name,
+      onTracked: async () => {
+        const html = toHtml(() => revised.innerHTML);
+        await Platform.openData('write', `Compared — ${Platform.baseName(state.name)}.html`, new TextEncoder().encode(html));
+        UI.toast(`${n} change${n === 1 ? '' : 's'} marked. Accept or reject them on the Review tab.`, 5000);
+      }
+    });
   }
   document.getElementById('insTable').addEventListener('click', async () => {
     const r = await UI.form('Insert Table', [
@@ -736,7 +742,7 @@
     zoom: () => parseFloat(page.style.zoom) || 1, pageAt: y => layout.pageAt(y)
   });
   // ---------- References: notes, citations, bibliography ----------
-  const notes = WriteNotes({ doc, setup: () => setup, restoreSelection, changed: () => changed() });
+  const notes = WriteNotes({ doc, setup: () => setup, restoreSelection, captureSelection, changed: () => changed() });
   extras = WriteExtras({
     doc, setup: () => setup, setStyles: st => { setup.styles = st; }, captureSelection, restoreSelection, changed: () => changed(),
     author: () => getAuthor(), fileName: () => state.name, pages: () => layout.pages,

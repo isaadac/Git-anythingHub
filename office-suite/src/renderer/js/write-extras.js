@@ -185,15 +185,20 @@
     const out = [];
     let dels = [], adds = [];
     const flush = () => {
-      // In each changed stretch: removed blocks first (as Word shows them), then the new
-      // blocks in their order, edited ones marked word by word.
+      // In each changed stretch, edited blocks (marked word by word), removed blocks and new blocks
+      // keep their places: a removed block comes before the edit that followed it.
       const pairOf = new Map(), paired = new Set();
       for (const d of dels) {
         const k = adds.findIndex((x, i) => !pairOf.has(i) && similarity(norm(A[d]), norm(B[x])) >= 0.5);
         if (k >= 0) { pairOf.set(k, d); paired.add(d); }
       }
-      dels.forEach(d => { if (!paired.has(d)) out.push({ k: 'del', a: A[d] }); });
-      adds.forEach((x, i) => out.push(pairOf.has(i) ? { k: 'mod', a: A[pairOf.get(i)], b: B[x] } : { k: 'add', b: B[x] }));
+      let next = 0; // the next removed block not yet placed
+      const removedUpTo = d => { for (; next < dels.length && dels[next] <= d; next++) if (!paired.has(dels[next])) out.push({ k: 'del', a: A[dels[next]] }); };
+      adds.forEach((x, i) => {
+        if (pairOf.has(i)) { removedUpTo(pairOf.get(i)); out.push({ k: 'mod', a: A[pairOf.get(i)], b: B[x] }); }
+        else out.push({ k: 'add', b: B[x] });
+      });
+      removedUpTo(Infinity);
       dels = []; adds = [];
     };
     for (const op of ops) {
@@ -642,11 +647,84 @@
       if (sb && doc.contains(sb)) { e.preventDefault(); insertSectionBreak(sb); }
     });
 
+    /**
+     * Compare side by side: the earlier document on the left with what was taken out marked, this
+     * one on the right with what was added marked, paragraph against paragraph in one scroll.
+     * marked is compare()'s result; onTracked opens it as tracked changes instead.
+     */
+    function compareView(marked, { leftName, rightName, onTracked }) {
+      const back = document.createElement('div');
+      back.className = 'compare-view';
+      back.setAttribute('role', 'dialog');
+      back.setAttribute('aria-label', 'Compare documents');
+      back.innerHTML = `<header><span class="ico" data-icon="git-compare"></span><b>Compare</b><span class="sum"></span><span class="sp"></span>
+        <button class="btn prev" title="Previous change (Alt+Up)"><span class="ico" data-icon="chevron-up"></span>Previous</button>
+        <button class="btn next" title="Next change (Alt+Down)"><span class="ico" data-icon="chevron-down"></span>Next</button>
+        <button class="btn tracked"><span class="ico" data-icon="file-diff"></span>Open as tracked changes</button>
+        <button class="btn close" title="Close (Esc)" aria-label="Close"><span class="ico" data-icon="x"></span></button></header>
+        <div class="cmp-heads"><div class="l"></div><div class="r"></div></div>
+        <div class="cmp-body" tabindex="0"></div>`;
+      const q = sel => back.querySelector(sel);
+      q('.cmp-heads .l').textContent = leftName;
+      q('.cmp-heads .r').textContent = rightName;
+      const body = q('.cmp-body');
+      const css = document.createElement('style');
+      css.textContent = styleCss(o.setup().styles, '.compare-view .cmp-cell');
+      back.appendChild(css);
+      const empty = el => !el.textContent.trim() && !el.querySelector('img, table, hr, svg, math');
+      const rows = [];
+      let ins = 0, del = 0;
+      for (const block of marked.children) {
+        const a = block.cloneNode(true), b = block.cloneNode(true);
+        a.querySelectorAll('ins.tc').forEach(n => n.remove());
+        b.querySelectorAll('del.tc').forEach(n => n.remove());
+        const row = document.createElement('div');
+        row.className = 'cmp-row';
+        const cell = (el, side) => {
+          const c = document.createElement('div');
+          c.className = 'cmp-cell ' + side;
+          if (empty(el) && !empty(block)) c.classList.add('gap'); else c.appendChild(el);
+          return c;
+        };
+        row.append(cell(a, 'l'), cell(b, 'r'));
+        const nIns = block.querySelectorAll('ins.tc').length, nDel = block.querySelectorAll('del.tc').length;
+        if (nIns || nDel) { row.classList.add('changed'); rows.push(row); ins += nIns; del += nDel; }
+        body.appendChild(row);
+      }
+      q('.sum').textContent = `${rows.length} changed paragraph${rows.length === 1 ? '' : 's'} · ${ins} insertion${ins === 1 ? '' : 's'} · ${del} deletion${del === 1 ? '' : 's'}`;
+      let at = -1;
+      const go = d => {
+        if (!rows.length) return;
+        at = (at + d + rows.length) % rows.length;
+        rows.forEach(r => r.classList.remove('current'));
+        const r = rows[at];
+        r.classList.add('current');
+        r.scrollIntoView({ block: 'center', behavior: window.Theme && Theme.calm ? 'auto' : 'smooth' });
+      };
+      const close = () => { back.remove(); document.removeEventListener('keydown', key, true); };
+      const key = e => {
+        if (e.key === 'Escape' && !document.querySelector('.modal-backdrop')) { e.preventDefault(); close(); }
+        else if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); go(1); }
+        else if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); go(-1); }
+      };
+      document.addEventListener('keydown', key, true);
+      q('.prev').addEventListener('click', () => go(-1));
+      q('.next').addEventListener('click', () => go(1));
+      q('.close').addEventListener('click', close);
+      q('.tracked').addEventListener('click', async () => { close(); await onTracked(); });
+      document.body.appendChild(back);
+      if (window.Icons) Icons.fill(back);
+      body.focus();
+      go(1);
+      return { close, get changes() { return rows.length; } };
+    }
+
     return {
       renderEquations, editEquation, updateFields, insertField, insertSectionBreak, splitSections,
       setWrap, wrapOf, applyStyles, modifyStyle, docxStyles, styleCss: scope => styleCss(o.setup().styles, scope),
       prepareForDocx, patchDocx, preprocessDocx, postprocessHtml, prepareForText,
-      compare: (original, revised, author) => compareInto(original, revised, author)
+      compare: (original, revised, author) => compareInto(original, revised, author),
+      compareView
     };
   }
 
