@@ -8,6 +8,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings');
+const { readCapped, writeAtomic } = require('./safe-io');
 
 // Hosts the storage services use; WebDAV accounts and endpoint overrides add their own.
 const BASE_HOSTS = ['accounts.google.com', 'oauth2.googleapis.com', 'www.googleapis.com', 'login.microsoftonline.com', 'graph.microsoft.com',
@@ -88,14 +89,18 @@ ipcMain.handle('cloud:fetch', async (_e, req) => {
   const headers = {};
   for (const [k, v] of Object.entries(req.headers || {})) if (/^[\w-]{1,60}$/.test(k) && typeof v === 'string' && v.length < 10000) headers[k] = v;
   const body = req.body instanceof Uint8Array ? req.body : typeof req.body === 'string' ? req.body : undefined;
+  // A service that stops answering can't hang the app: big uploads and downloads get 10 minutes.
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), 10 * 60 * 1000);
   try {
-    const r = await fetch(u, { method, headers, body, redirect: 'follow' });
-    const buf = new Uint8Array(await r.arrayBuffer());
-    if (buf.length > MAX_BYTES) return { status: 0, error: 'response too large' };
+    const r = await fetch(u, { method, headers, body, redirect: 'follow', signal: ctl.signal });
+    // Redirects stay among the services' own hosts.
+    if (r.url && !allowedHosts().has(new URL(r.url).host)) { try { await r.body.cancel(); } catch { /* gone */ } return { status: 0, error: 'The service redirected somewhere unexpected' }; }
+    const buf = await readCapped(r, MAX_BYTES);
     return { status: r.status, headers: Object.fromEntries(r.headers.entries()), body: buf };
   } catch (err) {
-    return { status: 0, error: String(err.message || err) };
-  }
+    return { status: 0, error: ctl.signal.aborted ? 'The service took too long to answer' : String(err.message || err) };
+  } finally { clearTimeout(timer); }
 });
 
 // ---------- Settings and tokens ----------
@@ -121,7 +126,7 @@ ipcMain.handle('cloud:accounts-set', (_e, t) => {
   if (text.length > 1e6) return false;
   fs.mkdirSync(path.dirname(tokenFile()), { recursive: true });
   // Encrypted with the OS keychain where there is one (macOS Keychain, Windows DPAPI, libsecret).
-  fs.writeFileSync(tokenFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(text) : Buffer.from(text, 'utf8'), { mode: 0o600 });
+  writeAtomic(tokenFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(text) : Buffer.from(text, 'utf8'), { mode: 0o600 });
   return true;
 });
 

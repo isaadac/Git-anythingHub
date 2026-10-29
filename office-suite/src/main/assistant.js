@@ -6,6 +6,7 @@ const { app, ipcMain, safeStorage, BrowserWindow } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const settings = require('./settings');
+const { writeAtomic } = require('./safe-io');
 const { Anthropic, MODELS, validModel, cleanMessages, ask } = require('./assistant-core');
 
 const keyFile = () => path.join(app.getPath('userData'), 'assistant-key.bin');
@@ -30,7 +31,7 @@ ipcMain.handle('ai:set-key', (_e, key) => {
   if (key && !/^sk-ant-[\w-]{10,300}$/.test(key)) return { error: 'That does not look like an Anthropic API key (sk-ant-…)' };
   fs.mkdirSync(path.dirname(keyFile()), { recursive: true });
   if (!key) { try { fs.unlinkSync(keyFile()); } catch { /* none */ } return { ok: true }; }
-  fs.writeFileSync(keyFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(key) : Buffer.from(key, 'utf8'), { mode: 0o600 });
+  writeAtomic(keyFile(), safeStorage.isEncryptionAvailable() ? safeStorage.encryptString(key) : Buffer.from(key, 'utf8'), { mode: 0o600 });
   return { ok: true };
 });
 ipcMain.handle('ai:set-model', (_e, m) => { if (MODELS.some(x => x.id === m)) settings.set('assistantModel', m); return model(); });

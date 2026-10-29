@@ -8,6 +8,8 @@ const path = require('path');
 const crypto = require('crypto');
 
 const KEEP = 30, WINDOW_MS = 10 * 60 * 1000, MAX_BYTES = 150e6;
+// All versions of all documents together: past this, the oldest versions go first.
+const TOTAL_BYTES = 2e9;
 const root = () => path.join(app.getPath('userData'), 'versions');
 const validKey = k => typeof k === 'string' && k.length > 0 && k.length <= 4000;
 const dirOf = key => path.join(root(), crypto.createHash('sha1').update(key).digest('hex'));
@@ -37,8 +39,35 @@ ipcMain.handle('versions:add', (_e, key, name, data, by) => {
   while (idx.versions.length > KEEP) { const old = idx.versions.shift(); try { fs.unlinkSync(path.join(dir, old.id + '.bin')); } catch { /* gone */ } }
   idx.key = key;
   writeIndex(dir, idx);
+  pruneSoon();
   return true;
 });
+
+/** Keeps the whole version store under TOTAL_BYTES, removing the oldest versions of any document. */
+let pruneTimer = null;
+function pruneSoon() { if (!pruneTimer) pruneTimer = setTimeout(() => { pruneTimer = null; try { prune(); } catch { /* next time */ } }, 5000); }
+function prune(limit = TOTAL_BYTES) {
+  let dirs = [];
+  try { dirs = fs.readdirSync(root()).map(d => path.join(root(), d)); } catch { return; }
+  const all = [];
+  for (const d of dirs) for (const v of readIndex(d).versions) all.push({ dir: d, v });
+  let total = all.reduce((n, x) => n + (x.v.size || 0), 0);
+  if (total <= limit) return;
+  all.sort((a, b) => a.v.saved - b.v.saved);
+  const drop = new Map();
+  for (const x of all) {
+    if (total <= limit) break;
+    total -= x.v.size || 0;
+    if (!drop.has(x.dir)) drop.set(x.dir, new Set());
+    drop.get(x.dir).add(x.v.id);
+  }
+  for (const [d, ids] of drop) {
+    const idx = readIndex(d);
+    ids.forEach(id => { try { fs.unlinkSync(path.join(d, id + '.bin')); } catch { /* gone */ } });
+    idx.versions = idx.versions.filter(v => !ids.has(v.id));
+    if (idx.versions.length) writeIndex(d, idx); else fs.rmSync(d, { recursive: true, force: true });
+  }
+}
 ipcMain.handle('versions:list', (_e, key) => {
   if (!validKey(key)) return [];
   return readIndex(dirOf(key)).versions.map(v => ({ id: v.id, name: v.name, by: v.by || [], size: v.size, saved: v.saved })).reverse();
@@ -48,4 +77,4 @@ ipcMain.handle('versions:read', (_e, key, id) => {
   try { return new Uint8Array(fs.readFileSync(path.join(dirOf(key), id + '.bin'))); } catch { return null; }
 });
 
-module.exports = { KEEP };
+module.exports = { KEEP, prune };

@@ -3,6 +3,7 @@
 const { app } = require('electron');
 const fs = require('fs');
 const path = require('path');
+const { writeAtomic } = require('./safe-io');
 
 const DEFAULTS = {
   autoUpdate: true
@@ -13,7 +14,10 @@ const file = () => path.join(app.getPath('userData'), 'settings.json');
 
 function load() {
   if (cache) return cache;
-  try { cache = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) }; } catch { cache = { ...DEFAULTS }; }
+  try {
+    const saved = JSON.parse(fs.readFileSync(file(), 'utf8'));
+    cache = { ...DEFAULTS, ...(saved && typeof saved === 'object' && !Array.isArray(saved) ? saved : {}) };
+  } catch { cache = { ...DEFAULTS }; }
   return cache;
 }
 
@@ -23,7 +27,7 @@ function set(key, value) {
   load()[key] = value;
   try {
     fs.mkdirSync(path.dirname(file()), { recursive: true });
-    fs.writeFileSync(file(), JSON.stringify(cache, null, 2));
+    writeAtomic(file(), JSON.stringify(cache, null, 2));
   } catch { /* non-fatal: settings just won't persist */ }
 }
 

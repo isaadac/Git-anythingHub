@@ -2,6 +2,8 @@
 // Isadek Office — Electron main process.
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, screen, session, shell } = require('electron');
+require('./ipc-guard'); // before any handler: only the app's own pages may call the main process
+const { writeAtomic, readJson, safeGet } = require('./safe-io');
 const { LANGS, menuText } = require('./menu-i18n');
 const path = require('path');
 const fs = require('fs');
@@ -39,17 +41,20 @@ const approvedPaths = new Set();
 const approve = p => { const abs = path.resolve(p); approvedPaths.add(abs); return abs; };
 const isApproved = p => typeof p === 'string' && approvedPaths.has(path.resolve(p));
 const SAFE_EXTERNAL = /^(https?:|mailto:)/i;
+/** Opens a web or mail link in the user's own browser or mail app (never anything else). */
+const openExternal = url => { if (typeof url === 'string' && url.length <= 8000 && SAFE_EXTERNAL.test(url)) shell.openExternal(url).catch(() => {}); };
 const recentPath = () => path.join(app.getPath('userData'), 'recent.json');
 
 function readRecent() {
-  try { return JSON.parse(fs.readFileSync(recentPath(), 'utf8')); } catch { return []; }
+  const list = readJson(recentPath(), Array.isArray, []);
+  return list.filter(r => r && typeof r.path === 'string' && path.isAbsolute(r.path) && typeof r.name === 'string');
 }
 
 function addRecent(filePath) {
   const ext = path.extname(filePath).toLowerCase();
   const entry = { path: filePath, name: path.basename(filePath), app: EXT_TO_APP[ext] || 'write', opened: Date.now() };
   const list = [entry, ...readRecent().filter(r => r.path !== filePath)].slice(0, 20);
-  try { fs.writeFileSync(recentPath(), JSON.stringify(list, null, 2)); } catch { /* non-fatal */ }
+  try { writeAtomic(recentPath(), JSON.stringify(list, null, 2)); } catch { /* non-fatal */ }
   app.addRecentDocument(filePath);
 }
 
@@ -100,14 +105,15 @@ function createWindow(appName = 'home', filePath = null) {
 
   // Open external links in the user's browser, never inside the app.
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (SAFE_EXTERNAL.test(url)) shell.openExternal(url);
+    openExternal(url);
     return { action: 'deny' };
   });
   // The app's pages never navigate; links in documents open in the browser instead.
   win.webContents.on('will-navigate', (e, url) => {
     e.preventDefault();
-    if (SAFE_EXTERNAL.test(url)) shell.openExternal(url);
+    openExternal(url);
   });
+  win.webContents.on('will-redirect', e => e.preventDefault());
   win.webContents.on('will-attach-webview', e => e.preventDefault());
   // Right-click in text: spelling suggestions, Add to Dictionary, and the usual editing commands.
   win.webContents.on('context-menu', (_e, p) => {
@@ -183,7 +189,8 @@ ipcMain.handle('file:save', async (e, { data, filePath, defaultName, filters, sa
     target = approve(res.filePath);
   }
   const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
-  fs.writeFileSync(target, buf);
+  // Through a temporary file: a crash or a full disk mid-save never leaves half a document.
+  writeAtomic(target, buf);
   addRecent(target);
   // macOS: the file's icon in the title bar (drag it, or Cmd-click it for its folder).
   if (process.platform === 'darwin' && win) win.setRepresentedFilename(target);
@@ -235,7 +242,7 @@ ipcMain.handle('file:export-pdf', async (e, { defaultName, landscape }) => {
   if (res.canceled || !res.filePath) return null;
   const target = /\.pdf$/i.test(res.filePath) ? res.filePath : res.filePath + '.pdf';
   const pdf = await e.sender.printToPDF({ printBackground: true, landscape: !!landscape, pageSize: 'Letter', preferCSSPageSize: true, generateTaggedPDF: true, generateDocumentOutline: true });
-  fs.writeFileSync(target, pdf);
+  writeAtomic(target, pdf);
   shell.openPath(target);
   return target;
 });
@@ -307,22 +314,14 @@ ipcMain.handle('app:set-theme', (_e, mode) => {
 
 // ---------- Sheets: Get Data from the Web ----------
 // A plain GET (no cookies or custom headers), size- and time-limited; the page only parses the result.
+// Never from this computer or a cloud metadata address (checked after every redirect and DNS lookup).
 ipcMain.handle('net:fetch-data', async (_e, url) => {
-  let u;
-  try { u = new URL(String(url)); } catch { return { error: 'Enter a web address such as https://example.com/data.csv' }; }
-  if (!/^https?:$/.test(u.protocol)) return { error: 'Only http and https addresses can be used' };
-  const ctl = new AbortController();
-  const timer = setTimeout(() => ctl.abort(), 30000);
+  try { new URL(String(url)); } catch { return { error: 'Enter a web address such as https://example.com/data.csv' }; }
   try {
-    const r = await fetch(u, { redirect: 'follow', signal: ctl.signal, headers: { 'User-Agent': 'IsadekOffice/' + app.getVersion() } });
-    if (!r.ok) return { error: `The site answered ${r.status}` };
-    if (+r.headers.get('content-length') > 50e6) return { error: 'That file is too large (over 50 MB)' };
-    const buf = new Uint8Array(await r.arrayBuffer());
-    if (buf.length > 50e6) return { error: 'That file is too large (over 50 MB)' };
-    return { bytes: buf, contentType: r.headers.get('content-type') || '' };
+    return await safeGet(String(url), { maxBytes: 50e6, timeoutMs: 30000, headers: { 'User-Agent': 'IsadekOffice/' + app.getVersion() } });
   } catch (err) {
-    return { error: ctl.signal.aborted ? 'The site took too long to answer' : 'Could not reach the site: ' + (err.message || err) };
-  } finally { clearTimeout(timer); }
+    return { error: String(err.message || err) };
+  }
 });
 
 // ---------- Proofing languages ----------
@@ -350,7 +349,7 @@ ipcMain.handle('app:open-path', (_e, p) => {
   openPath(p);
   return true;
 });
-ipcMain.handle('app:set-title', (e, title) => { BrowserWindow.fromWebContents(e.sender)?.setTitle(title); return true; });
+ipcMain.handle('app:set-title', (e, title) => { if (typeof title === 'string') BrowserWindow.fromWebContents(e.sender)?.setTitle(title.slice(0, 300)); return true; });
 ipcMain.handle('app:close-now', e => {
   const win = BrowserWindow.fromWebContents(e.sender);
   if (win) { recovery.closedCleanly(e.sender); win.removeAllListeners('close'); win.close(); }
@@ -371,6 +370,8 @@ function showWindowFor(presenter) {
   audience.setMenuBarVisibility(false);
   audience.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   audience.webContents.on('will-navigate', e => e.preventDefault());
+  audience.webContents.on('will-redirect', e => e.preventDefault());
+  audience.webContents.on('will-attach-webview', e => e.preventDefault());
   const pid = presenter.webContents.id, aid = audience.webContents.id;
   showPairs.set(pid, audience); showPairs.set(aid, presenter);
   audience.on('closed', () => {

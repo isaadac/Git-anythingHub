@@ -18,7 +18,8 @@ function updater() {
   autoUpdater.autoInstallOnAppQuit = true;
   autoUpdater.logger = process.env.ATLAS_UPDATE_DEBUG ? console : null;
   // Self-hosted update server (and testing): ATLAS_UPDATE_URL=https://example.com/atlas
-  if (process.env.ATLAS_UPDATE_URL) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.ATLAS_UPDATE_URL });
+  // Only over https, so updates can't be swapped on the way.
+  if (/^https:\/\//i.test(process.env.ATLAS_UPDATE_URL || '')) autoUpdater.setFeedURL({ provider: 'generic', url: process.env.ATLAS_UPDATE_URL });
 
   autoUpdater.on('update-available', info => {
     if (manual) dialog.showMessageBox({ type: 'info', message: `Isadek Office ${info.version} is available`, detail: 'It is downloading in the background. You will be asked to restart when it is ready.' });
