@@ -2476,7 +2476,7 @@
     current = 0; selectedId = editingId = null;
     undoStack.length = redoStack.length = undoMarks.length = redoMarks.length = 0;
     state.set({ name: f.name, path: f.path, dirty: false });
-    Platform.rememberRecent(f.name, 'slides');
+    Platform.rememberRecent(f.name, 'slides', f.path);
     renderAll();
   }
   async function serialize(ext) {
@@ -2869,6 +2869,34 @@
       } }
     ]
   });
+
+  // The start screen's thumbnail of this presentation: the first slide's boxes, colours and words.
+  Platform.preview = () => {
+    const box = document.createElement('div');
+    box.className = 'slide';
+    box.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + W + 'px;height:' + H + 'px';
+    document.body.appendChild(box);
+    try {
+      renderSlide(pres.slides[0], box, false);
+      const root = box;
+      const at = root.getBoundingClientRect();
+      const css = getComputedStyle(root);
+      const els = [];
+      for (const el of root.querySelectorAll('.el')) {
+        if (els.length >= 24 || el.closest('.el') !== el) continue;
+        const r = el.getBoundingClientRect(), c = el.querySelector('.content');
+        const st = getComputedStyle(c || el);
+        const item = { x: Math.round(r.left - at.left), y: Math.round(r.top - at.top), w: Math.round(r.width), h: Math.round(r.height) };
+        if (el.classList.contains('image') || el.classList.contains('media')) item.img = 1;
+        const fill = getComputedStyle(el).backgroundColor;
+        if (fill && fill !== 'rgba(0, 0, 0, 0)' && fill !== 'transparent') item.fill = fill;
+        const text = c ? c.textContent.replace(/\s+/g, ' ').trim().slice(0, 140) : '';
+        if (text) Object.assign(item, { s: text, size: Math.round(parseFloat(st.fontSize)), color: st.color, bold: parseInt(st.fontWeight, 10) >= 600 ? 1 : undefined, a: st.textAlign === 'center' || st.textAlign === 'right' ? st.textAlign : undefined });
+        if (item.s || item.img || item.fill) els.push(item);
+      }
+      return { kind: 'slides', w: W, h: H, bg: css.backgroundColor, els };
+    } finally { box.remove(); }
+  };
 
   window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide, get live() { return live; } };
 })();

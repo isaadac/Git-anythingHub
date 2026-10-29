@@ -8,7 +8,7 @@ const SP = process.env.E2E_WORK;
   const check = (n, c, x = '') => console.log((c ? 'PASS ' : 'FAIL ') + n + (x !== '' ? ' :: ' + x : ''));
   // Home → template
   await p.goto(process.env.E2E_BASE + '/src/renderer/index.html');
-  const cards = await p.$$eval('#templates .tpl b', bs => bs.map(b => b.textContent));
+  const cards = await p.$$eval('#templates .tpl > b', bs => bs.map(b => b.textContent));
   check('Home shows Write templates', cards.length === 6 && cards.includes('Resume'), cards.join(', '));
   await p.click('#templates .tpl >> text=Resume');
   await p.waitForURL('**/write.html'); await p.waitForTimeout(500);

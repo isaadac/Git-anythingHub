@@ -386,3 +386,31 @@ html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame
 @keyframes panel-in { from { opacity: 0; transform: translateX(-10px); } }
 @keyframes panel-in-right { from { opacity: 0; transform: translateX(10px); } }
 @keyframes marker-grow { from { width: 0; } }
+
+/* Miniatures of documents (start screen, template galleries): drawn at full size, then scaled. */
+.thumbnail { position: relative; overflow: hidden; background: var(--canvas); width: 100%; aspect-ratio: 4 / 3; flex: none; }
+.thumbnail .paper { position: absolute; left: 0; top: 0; transform-origin: 0 0; background: #fff; color: #222; pointer-events: none; }
+.thumbnail .paper-write { min-height: 1056px; padding: 72px 80px; font: 15px/1.45 Calibri, Carlito, sans-serif; }
+.thumbnail .paper-write h1 { font: 36px/1.15 "Calibri Light", Carlito, sans-serif; color: #1f3864; margin: 0 0 12px; }
+.thumbnail .paper-write h2 { font-size: 22px; color: #2f5496; margin: 18px 0 6px; }
+.thumbnail .paper-write h3 { font-size: 18px; color: #1f3763; margin: 14px 0 4px; }
+.thumbnail .paper-write p { margin: 0 0 10px; }
+.thumbnail .paper-write .li { margin: 0 0 6px 24px; display: list-item; list-style: disc; }
+.thumbnail .paper-write ul, .thumbnail .paper-write ol { margin: 0 0 10px; padding-left: 24px; }
+.thumbnail .paper-write table { border-collapse: collapse; width: 100%; margin: 0 0 12px; }
+.thumbnail .paper-write :is(td, th) { border: 1px solid #bfbfbf; padding: 4px 6px; height: 22px; }
+.thumbnail .paper-write th { background: #f2f2f2; }
+.thumbnail .paper-write hr { border: 0; border-top: 1px solid #bfbfbf; margin: 12px 0; }
+.thumbnail .paper-write .img { height: 180px; background: #e8ebf0; border-radius: 4px; margin: 0 0 12px; }
+.thumbnail[data-kind="write"] .paper { left: 50%; margin-left: -408px; transform-origin: 50% 0; top: 8%; box-shadow: 0 2px 10px rgb(0 0 0 / .15); }
+.thumbnail[data-kind="write"] { background: var(--canvas); }
+.thumbnail .paper-sheets table { border-collapse: collapse; font: 13px Calibri, Carlito, sans-serif; table-layout: fixed; }
+.thumbnail .paper-sheets :is(td, th) { border: 1px solid #e1e3e6; height: 22px; width: 72px; padding: 0 4px; white-space: nowrap; overflow: hidden; text-overflow: clip; }
+.thumbnail .paper-sheets th { background: #f3f4f6; color: #6b7280; font-weight: 400; text-align: center; }
+.thumbnail .paper-sheets th:first-child { width: 30px; }
+.thumbnail .paper-slides { overflow: hidden; font-family: Calibri, Carlito, sans-serif; }
+.thumbnail[data-kind="slides"] { aspect-ratio: 16 / 9; }
+.thumbnail .paper-slides .box { position: absolute; overflow: hidden; line-height: 1.15; padding: 6px 10px; box-sizing: border-box; }
+.thumbnail .paper-slides .box.img { background: #dfe3e9; }
+.thumbnail .paper-notes { width: 816px; height: 612px; background: linear-gradient(90deg, #ede5fd 0 220px, #fff 220px); }
+.tpl .thumbnail { aspect-ratio: 3 / 2.6; border-radius: var(--r-md); border: 1px solid var(--border); margin-bottom: var(--sp-3); }

@@ -18,13 +18,45 @@
   main { max-width: 1040px; margin: 0 auto; padding: 32px 24px 48px; }
   h1 { font: var(--fw-semibold) var(--fs-3xl)/var(--lh-tight) var(--font-display); letter-spacing: var(--tracking-display); margin: var(--sp-5) 0 var(--sp-7); }
   h2 { font-weight: var(--fw-semibold); font-size: var(--fs-lg); margin: 32px 0 12px; display: flex; justify-content: space-between; align-items: center; }
-  .apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; }
-  .app-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: var(--sp-6) var(--sp-6); cursor: pointer; text-align: left; display: flex; gap: var(--sp-5); align-items: center; box-shadow: var(--sh-1); transition: box-shadow var(--dur-2), transform var(--dur-2) var(--ease-out), border-color var(--dur-2); }
-  .app-card:hover { box-shadow: var(--sh-3); transform: translateY(-2px); border-color: var(--border-strong); }
-  .app-card .tile { width: 46px; height: 46px; border-radius: var(--r-lg); box-shadow: inset 0 -3px 0 rgb(0 0 0 / .12), var(--sh-1); color: #fff; display: grid; place-items: center; font-size: 22px; font-weight: 700; flex: none; }
-  .app-card strong { display: block; font-size: 15px; }
-  .app-card span { color: var(--muted); font-size: 12px; }
+  .hero { margin: var(--sp-5) 0 var(--sp-6); }
+  .hero h1 { margin: 0; }
+  .hero .today { margin: var(--sp-3) 0 0; color: var(--muted); font-size: var(--fs-lg); }
+  .apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .app-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 0; cursor: pointer; text-align: left; display: flex; flex-direction: column; box-shadow: var(--sh-1); overflow: hidden; color: var(--text); transition: box-shadow var(--dur-2), transform var(--dur-2) var(--ease-out), border-color var(--dur-2); }
+  .app-card:hover, .app-card:focus-visible { box-shadow: var(--sh-3); transform: translateY(-2px); border-color: var(--border-strong); }
+  .app-card .lbl { display: flex; gap: var(--sp-5); align-items: center; padding: var(--sp-5) var(--sp-6); }
+  .app-card .tile { width: 36px; height: 36px; border-radius: var(--r-md); box-shadow: inset 0 -3px 0 rgb(0 0 0 / .12), var(--sh-1); color: #fff; display: grid; place-items: center; font-size: 17px; font-weight: 700; flex: none; }
+  .app-card strong { display: block; font-size: 14px; }
   .t-write { background: #1f5fcf; } .t-sheets { background: #13834a; } .t-slides { background: #c4401f; } .t-notes { background: #7c3aed; }
+  .art { height: 112px; background: var(--canvas); position: relative; border-bottom: 1px solid var(--border); overflow: hidden; }
+  .art-write::before { content: ''; position: absolute; left: 50%; top: 14px; width: 104px; bottom: -8px; transform: translateX(-50%); background: #fff; box-shadow: var(--page-shadow); border-radius: 2px; }
+  .art-write i { position: absolute; left: calc(50% - 38px); height: 4px; border-radius: 2px; background: #dfe3ea; width: 76px; z-index: 1; }
+  .art-write i:nth-child(1) { top: 30px; width: 46px; height: 7px; background: #1f5fcf; opacity: .75; } .art-write i:nth-child(2) { top: 48px; } .art-write i:nth-child(3) { top: 58px; width: 64px; } .art-write i:nth-child(4) { top: 68px; } .art-write i:nth-child(5) { top: 78px; width: 52px; }
+  .art-sheets { background-color: #fff; background-image: linear-gradient(#e2e5ea 1px, transparent 1px), linear-gradient(90deg, #e2e5ea 1px, transparent 1px); background-size: 44px 18px; background-position: 22px 17px; }
+  .art-sheets::before { content: ''; position: absolute; left: 66px; top: 53px; width: 44px; height: 18px; border: 2px solid #13834a; box-sizing: border-box; }
+  .art-sheets::after { content: ''; position: absolute; inset: 0 0 auto 0; height: 17px; background: #f3f4f6; border-bottom: 1px solid #d7dbe1; }
+  .art-slides::before { content: ''; position: absolute; left: 50%; top: 50%; width: 150px; height: 84px; transform: translate(-50%, -50%); background: #fff; box-shadow: var(--page-shadow); border-radius: 3px; }
+  .art-slides i { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 2px; z-index: 1; }
+  .art-slides i:nth-child(1) { top: 46px; width: 92px; height: 9px; background: #c4401f; opacity: .7; } .art-slides i:nth-child(2) { top: 62px; width: 60px; height: 5px; background: #dfe3ea; }
+  .art-notes { background: linear-gradient(90deg, #ede5fd 0 46px, transparent 46px), #fff; }
+  .art-notes i { position: absolute; left: 62px; height: 4px; border-radius: 2px; background: #dfe3ea; width: 110px; }
+  .art-notes i:nth-child(1) { top: 24px; height: 8px; width: 80px; background: #7c3aed; opacity: .7; } .art-notes i:nth-child(2) { top: 44px; } .art-notes i:nth-child(3) { top: 54px; width: 84px; }
+  :root[data-theme="dark"] .art { filter: brightness(.92); }
+  .files { display: grid; grid-template-columns: repeat(auto-fill, minmax(176px, 1fr)); gap: 16px; }
+  .files > .empty { grid-column: 1 / -1; background: var(--surface); border: 1px dashed var(--border-strong); border-radius: var(--r-lg); }
+  .file-card { position: relative; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--sh-1); cursor: pointer; transition: box-shadow var(--dur-2), transform var(--dur-2) var(--ease-out), border-color var(--dur-2); text-align: left; padding: 0; color: var(--text); display: flex; flex-direction: column; font: inherit; }
+  .file-card:hover, .file-card:focus-visible { box-shadow: var(--sh-3); transform: translateY(-2px); border-color: var(--border-strong); }
+  .file-card .thumbnail { aspect-ratio: 4 / 3; border-bottom: 1px solid var(--border); }
+  .file-card .info { display: flex; gap: var(--sp-4); align-items: center; padding: var(--sp-4) var(--sp-5); min-width: 0; }
+  .file-card .badge { width: 22px; height: 22px; font-size: 11px; }
+  .file-card .meta { flex: 1; min-width: 0; }
+  .file-card .n { font-weight: var(--fw-medium); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-md); }
+  .file-card .when { color: var(--muted); font-size: var(--fs-xs); }
+  .file-card .pin { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface); color: var(--muted); display: grid; place-items: center; cursor: pointer; opacity: 0; transition: opacity var(--dur-1); box-shadow: var(--sh-1); }
+  .file-card:hover .pin, .file-card:focus-within .pin, .file-card .pin.on { opacity: 1; }
+  .file-card .pin.on { color: var(--accent-fg); }
+  .recent-tools { display: flex; gap: var(--sp-4); align-items: center; }
+  .recent-tools input { height: 28px; border: 1px solid var(--border); border-radius: var(--r-pill); padding: 0 12px; background: var(--surface); color: var(--text); font: inherit; font-size: var(--fs-sm); font-weight: 400; width: 200px; }
   .recent { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--sh-1); }
   .recent .row { display: flex; align-items: center; gap: 12px; padding: 10px 16px; border-top: 1px solid var(--border); cursor: pointer; }
   .recent .row:first-child { border-top: 0; }
@@ -36,6 +68,7 @@
   .recent .when { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .empty { padding: 24px; text-align: center; color: var(--muted); }
   .linkbtn { background: none; border: 0; color: var(--accent-fg); cursor: pointer; font-size: 12px; font-weight: 400; }
+  .badge { border-radius: 4px; color: #fff; display: grid; place-items: center; font-weight: 700; flex: none; }
   .open-btn { margin-top: var(--sp-6); height: 34px; padding: 0 var(--sp-6); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); cursor: pointer; font-weight: var(--fw-medium); box-shadow: var(--sh-1); }
   .open-btn:hover { background: var(--surface-2); }
   .home-templates { max-height: none; margin: 0; }
@@ -48,26 +81,32 @@
 <body>
 <header><div class="logo">I</div> Isadek Office<span style="flex:1"></span><button class="theme-btn" id="helpBtn" title="Help (F1)"><span class="ico" data-icon="circle-help"></span>Help</button> <button class="theme-btn" id="langBtn" title="Language"><span class="ico" data-icon="languages"></span>Language</button> <button class="theme-btn" id="themeBtn" title="Light or dark theme"><span class="ico" data-icon="palette"></span>Theme</button></header>
 <main>
-  <h1 id="greeting">Good day</h1>
+  <section class="hero">
+    <h1 id="greeting">Good day</h1>
+    <p class="today" id="today"></p>
+  </section>
   <h2>Start new</h2>
   <div class="apps">
-    <button class="app-card" data-app="write"><div class="tile t-write">W</div><div><strong>Isadek Write</strong><span>Blank document · .docx</span></div></button>
-    <button class="app-card" data-app="sheets"><div class="tile t-sheets">S</div><div><strong>Isadek Sheets</strong><span>Blank workbook · .xlsx</span></div></button>
-    <button class="app-card" data-app="slides"><div class="tile t-slides">P</div><div><strong>Isadek Slides</strong><span>Blank presentation · .pptx</span></div></button>
-    <button class="app-card" data-app="notes"><div class="tile t-notes">N</div><div><strong>Isadek Notes</strong><span>Notebooks · saved as you type</span></div></button>
+    <button class="app-card" data-app="write"><div class="art art-write" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div><div class="lbl"><div class="tile t-write">W</div><div><strong>Isadek Write</strong><span>Blank document · .docx</span></div></div></button>
+    <button class="app-card" data-app="sheets"><div class="art art-sheets" aria-hidden="true"></div><div class="lbl"><div class="tile t-sheets">S</div><div><strong>Isadek Sheets</strong><span>Blank workbook · .xlsx</span></div></div></button>
+    <button class="app-card" data-app="slides"><div class="art art-slides" aria-hidden="true"><i></i><i></i></div><div class="lbl"><div class="tile t-slides">P</div><div><strong>Isadek Slides</strong><span>Blank presentation · .pptx</span></div></div></button>
+    <button class="app-card" data-app="notes"><div class="art art-notes" aria-hidden="true"><i></i><i></i><i></i></div><div class="lbl"><div class="tile t-notes">N</div><div><strong>Isadek Notes</strong><span>Notebooks · saved as you type</span></div></div></button>
   </div>
   <h2>Templates <button class="linkbtn" id="moreTemplates">More templates</button></h2>
   <div class="tpl-grid home-templates" id="templates"></div>
-  <button class="open-btn" id="open">Open a file…</button>
-  <h2>Cloud <span><button class="linkbtn" id="cloudSettings">Settings</button> <button class="linkbtn" id="cloudAdd">Add a place</button></span></h2>
-  <div class="recent" id="cloud"><div class="empty">Connect Google Drive, OneDrive, Dropbox or a WebDAV server (Nextcloud, ownCloud) to open and save documents there.</div></div>
+  <section id="pinnedBox" hidden>
+    <h2>Pinned</h2>
+    <div class="files" id="pinned"></div>
+  </section>
+  <h2>Recent <span class="recent-tools"><input type="search" id="findRecent" placeholder="Search recent files" aria-label="Search recent files"><button class="linkbtn" id="open">Open a file…</button><button class="linkbtn" id="clear">Clear list</button></span></h2>
+  <div class="files" id="recent"><div class="empty">Files you open will show up here.</div></div>
   <section id="recoveredBox" hidden>
     <h2>Recovered documents</h2>
     <p class="hint">These had unsaved changes when Isadek Office last closed unexpectedly.</p>
     <div class="recent" id="recovered"></div>
   </section>
-  <h2>Recent <button class="linkbtn" id="clear">Clear list</button></h2>
-  <div class="recent" id="recent"><div class="empty">Files you open will show up here.</div></div>
+  <h2>Cloud <span><button class="linkbtn" id="cloudSettings">Settings</button> <button class="linkbtn" id="cloudAdd">Add a place</button></span></h2>
+  <div class="recent" id="cloud"><div class="empty">Connect Google Drive, OneDrive, Dropbox or a WebDAV server (Nextcloud, ownCloud) to open and save documents there.</div></div>
 </main>
 <script src="js/platform.js"></script>
 <script src="js/a11y.js"></script>

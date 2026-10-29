@@ -48,6 +48,7 @@
       const r = await saveNow(opts);
       // Each save also keeps a version of the document (File → Version History).
       if (r && opts.data && !opts.noVersion) Versions.add(r.path || opts.path || r.name || opts.name, r.name || opts.name, opts.data).catch(() => {});
+      if (r && opts.data && !opts.noVersion && !opts.saveAs) Thumbs.capture(r.path || opts.path || r.name || opts.name);
       return r;
     },
     async pending() {
@@ -152,6 +153,77 @@
 
   // ---------- UI helpers ----------
   const UI = {
+    /**
+     * A miniature of a document for the start screen and template galleries. `preview` is the plain
+     * data an app's Platform.preview gave (or { kind: 'write', html } for a built-in template, which
+     * is trusted); file contents are only ever set as text. Scales itself to the box it is put in.
+     */
+    thumbnail(preview, app) {
+      const box = document.createElement('div');
+      box.className = 'thumbnail';
+      box.setAttribute('aria-hidden', 'true'); // a picture: the card's own label names the file
+      const kind = (preview && preview.kind) || app || 'write';
+      box.dataset.kind = kind;
+      const paper = document.createElement('div');
+      paper.className = 'paper paper-' + kind;
+      box.appendChild(paper);
+      const add = (parent, tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text) e.textContent = text; parent.appendChild(e); return e; };
+      let width = 816;
+      if (kind === 'write') {
+        if (preview && preview.html) paper.innerHTML = preview.html; // a built-in template
+        else (preview && preview.blocks || []).forEach(b => {
+          if (b.t === 'table') {
+            const t = add(paper, 'table');
+            for (let r = 0; r < b.r; r++) { const tr = add(t, 'tr'); for (let c = 0; c < b.c; c++) add(tr, r ? 'td' : 'th', '', '\u00a0'); }
+          } else if (b.t === 'hr') add(paper, 'hr');
+          else if (b.t === 'img') add(paper, 'div', 'img');
+          else {
+            const e = add(paper, b.t === 'li' ? 'div' : b.t === 'title' ? 'h1' : /^h[1-3]$/.test(b.t) ? b.t : 'p', b.t === 'li' ? 'li' : '', b.s || '\u00a0');
+            if (b.a) e.style.textAlign = b.a;
+          }
+        });
+      } else if (kind === 'sheets') {
+        width = 8 * 72 + 30;
+        const t = add(paper, 'table');
+        const head = add(t, 'tr');
+        add(head, 'th', 'corner');
+        for (let c = 0; c < 8; c++) add(head, 'th', '', 'ABCDEFGH'[c]);
+        const rows = (preview && preview.rows) || [];
+        for (let r = 0; r < 24; r++) {
+          const tr = add(t, 'tr');
+          add(tr, 'th', '', String(r + 1));
+          for (let c = 0; c < 8; c++) { const td = add(tr, 'td', '', (rows[r] && rows[r][c]) || ''); if (preview && preview.bold && preview.bold[r] && preview.bold[r][c]) td.style.fontWeight = '700'; }
+        }
+      } else if (kind === 'slides') {
+        width = (preview && preview.w) || 960;
+        paper.style.height = ((preview && preview.h) || 540) + 'px';
+        const safeColor = v => (typeof v === 'string' && /^(#[0-9a-f]{3,8}|rgba?\([\d.,\s%]+\))$/i.test(v) ? v : '');
+        paper.style.background = safeColor(preview && preview.bg) || '#fff';
+        (preview && preview.els || []).forEach(e => {
+          const d = add(paper, 'div', 'box' + (e.img ? ' img' : ''), e.s || '');
+          Object.assign(d.style, { left: (+e.x || 0) + 'px', top: (+e.y || 0) + 'px', width: (+e.w || 0) + 'px', height: (+e.h || 0) + 'px' });
+          if (e.fill) d.style.background = safeColor(e.fill);
+          if (e.color) d.style.color = safeColor(e.color);
+          if (e.size) d.style.fontSize = Math.min(200, +e.size || 18) + 'px';
+          if (e.bold) d.style.fontWeight = '700';
+          if (e.a) d.style.textAlign = e.a === 'right' ? 'right' : 'center';
+        });
+      } else {
+        add(paper, 'div', 'notebook');
+      }
+      paper.style.width = width + 'px';
+      // A page sits on the canvas with a margin around it; a sheet or slide fills the box.
+      const fit = () => {
+        if (!box.clientWidth) return;
+        const k = box.clientWidth / width * (kind === 'write' ? 0.84 : 1);
+        paper.style.transform = `scale(${k})`;
+        // A slide shorter than the box sits in the middle of it.
+        if (kind === 'slides') paper.style.top = Math.max(0, (box.clientHeight - paper.offsetHeight * k) / 2) + 'px';
+      };
+      if (window.ResizeObserver) new ResizeObserver(fit).observe(box);
+      requestAnimationFrame(fit);
+      return box;
+    },
     toast(msg, ms = 2200) {
       let el = document.querySelector('.toast');
       if (!el) { el = document.createElement('div'); el.className = 'toast'; el.setAttribute('role', 'status'); el.setAttribute('aria-live', 'polite'); document.body.appendChild(el); }
@@ -658,12 +730,54 @@
     back.querySelector('.cancel').focus();
   };
 
-  /** Records a file in the browser's recent list (desktop keeps its own list in the main process). */
-  Platform.rememberRecent = function (name, app) {
+  /**
+   * Records a file in the browser's recent list (desktop keeps its own list in the main process),
+   * and takes a thumbnail of it for the start screen once it has been drawn.
+   */
+  Platform.rememberRecent = function (name, app, filePath) {
+    setTimeout(() => Thumbs.capture(filePath || name), 600);
     if (desktop) return;
     const list = JSON.parse(localStorageGet('atlas-recent') || '[]').filter(r => r.name !== name);
     list.unshift({ name, app, opened: Date.now() });
     localStorageSet('atlas-recent', JSON.stringify(list.slice(0, 20)));
+  };
+
+  /**
+   * Thumbnails of recent files for the start screen. Each app sets Platform.preview to a function
+   * that describes what is on screen as plain data (headings and lines of text, the first cells,
+   * the first slide's boxes), never HTML, so the start screen draws it without running anything
+   * from the file. Kept for the 24 most recent files, by path (or name on the web).
+   */
+  const Thumbs = {
+    KEY: 'atlas-thumbs', MAX: 24,
+    all() { try { return JSON.parse(localStorageGet(Thumbs.KEY) || '{}'); } catch { return {}; } },
+    get(key) { return key ? Thumbs.all()[key] || null : null; },
+    capture(key) {
+      if (!key || typeof Platform.preview !== 'function') return;
+      let data;
+      try { data = Platform.preview(); } catch { return; }
+      if (!data) return;
+      const map = Thumbs.all();
+      delete map[key];
+      map[key] = Object.assign(data, { at: Date.now() });
+      const keys = Object.keys(map).sort((a, b) => map[b].at - map[a].at);
+      const out = {};
+      keys.slice(0, Thumbs.MAX).forEach(k => { out[k] = map[k]; });
+      localStorageSet(Thumbs.KEY, JSON.stringify(out));
+    }
+  };
+  Platform.thumbs = Thumbs;
+
+  /** Pinned files on the start screen (by path, or name on the web), most recently pinned first. */
+  Platform.pins = {
+    list() { try { return JSON.parse(localStorageGet('atlas-pins') || '[]'); } catch { return []; } },
+    has(key) { return Platform.pins.list().some(p => p.key === key); },
+    toggle(entry) {
+      const list = Platform.pins.list(), i = list.findIndex(p => p.key === entry.key);
+      if (i >= 0) list.splice(i, 1); else list.unshift({ key: entry.key, name: entry.name, app: entry.app, path: entry.path || null });
+      localStorageSet('atlas-pins', JSON.stringify(list.slice(0, 30)));
+      return i < 0;
+    }
   };
 
   /**

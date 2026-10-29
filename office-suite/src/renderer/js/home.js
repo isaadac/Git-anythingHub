@@ -1,5 +1,6 @@
 'use strict';
-// Start screen: launch an app or reopen a recent file.
+// Start screen: launch an app, start from a template, or reopen a pinned or recent file (each shown
+// as a miniature of its first page, sheet or slide).
 (function () {
   const APP_INFO = {
     write: { label: 'W', cls: 't-write', page: 'write.html' },
@@ -10,8 +11,16 @@
   const EXT_APP = { docx: 'write', html: 'write', htm: 'write', txt: 'write', md: 'write',
     xlsx: 'sheets', xls: 'sheets', csv: 'sheets', ods: 'sheets', tsv: 'sheets', pptx: 'slides', aslides: 'slides', anote: 'notes' };
 
-  const h = new Date().getHours();
-  document.getElementById('greeting').textContent = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  // Greeting: the time of day, and the person's first name once they have given it (Live, comments).
+  const now = new Date(), h = now.getHours();
+  let who = '';
+  try { who = (localStorage.getItem('atlas-user-name') || '').trim().split(/\s+/)[0].slice(0, 40); } catch { /* none */ }
+  const part = h < 5 ? 'Good evening' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  // The phrase in its own element, so it is translated like the rest of the page.
+  const greet = document.getElementById('greeting'), phrase = document.createElement('span');
+  phrase.textContent = part;
+  greet.replaceChildren(phrase, who ? ', ' + who : '');
+  document.getElementById('today').textContent = now.toLocaleDateString(document.documentElement.lang || undefined, { weekday: 'long', day: 'numeric', month: 'long' });
 
   function launch(app) {
     if (Platform.desktop) Platform.newWindow(app);
@@ -46,26 +55,66 @@
     return new Date(ts).toLocaleDateString();
   }
 
+  const keyOf = r => r.path || r.name;
+  function openEntry(r) {
+    if (Platform.desktop && r.path) Platform.openPath(r.path);
+    else UI.toast('Open it with “Open a file…”');
+  }
+  // icons: pin pin-off
+  /** A file as a card: its miniature, name, when it was opened, and a pin. */
+  function fileCard(r, onChange) {
+    const info = APP_INFO[r.app] || APP_INFO.write;
+    const card = document.createElement('div');
+    card.className = 'file-card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    card.appendChild(UI.thumbnail(Platform.thumbs.get(keyOf(r)), r.app));
+    const row = document.createElement('div');
+    row.className = 'info';
+    row.innerHTML = `<div class="badge ${info.cls}">${info.label}</div><div class="meta"><div class="n"></div><div class="when"></div></div>`;
+    row.querySelector('.n').textContent = r.name;
+    row.querySelector('.n').title = r.path || r.name;
+    row.querySelector('.when').textContent = r.opened ? ago(r.opened) : (r.path || '');
+    card.appendChild(row);
+    card.setAttribute('aria-label', r.name);
+    const pinned = Platform.pins.has(keyOf(r));
+    const pin = document.createElement('button');
+    pin.className = 'pin' + (pinned ? ' on' : '');
+    pin.title = pinned ? 'Unpin' : 'Pin to the top';
+    pin.setAttribute('aria-label', pin.title + ': ' + r.name);
+    pin.setAttribute('aria-pressed', String(pinned));
+    pin.innerHTML = `<span class="ico" data-icon="${pinned ? 'pin-off' : 'pin'}"></span>`;
+    pin.addEventListener('click', e => { e.stopPropagation(); Platform.pins.toggle({ key: keyOf(r), name: r.name, app: r.app, path: r.path }); onChange(); });
+    card.appendChild(pin);
+    card.addEventListener('click', () => openEntry(r));
+    card.addEventListener('keydown', e => { if ((e.key === 'Enter' || e.key === ' ') && e.target === card) { e.preventDefault(); openEntry(r); } });
+    return card;
+  }
+
+  const findBox = document.getElementById('findRecent');
   async function render() {
     const list = await Platform.recent();
+    const byKey = new Map(list.map(r => [keyOf(r), r]));
+    // Pinned files: the latest details if the file is still in the recent list.
+    const pins = Platform.pins.list().map(p => byKey.get(p.key) || { name: p.name, app: p.app, path: p.path });
+    const pinBox = document.getElementById('pinned');
+    document.getElementById('pinnedBox').hidden = !pins.length;
+    pinBox.innerHTML = '';
+    pins.forEach(r => pinBox.appendChild(fileCard(r, render)));
+    const q = findBox.value.trim().toLowerCase();
+    const shown = list.filter(r => !Platform.pins.has(keyOf(r)) && (!q || (r.name + ' ' + (r.path || '')).toLowerCase().includes(q)));
     const box = document.getElementById('recent');
     box.innerHTML = '';
-    if (!list.length) { box.innerHTML = '<div class="empty">Files you open will show up here.</div>'; return; }
-    list.forEach(r => {
-      const info = APP_INFO[r.app] || APP_INFO.write;
-      const row = document.createElement('div');
-      row.className = 'row';
-      row.innerHTML = `<div class="badge ${info.cls}">${info.label}</div><div class="meta"><div class="n"></div><div class="p"></div></div><div class="when"></div>`;
-      row.querySelector('.n').textContent = r.name;
-      row.querySelector('.p').textContent = r.path || '';
-      row.querySelector('.when').textContent = ago(r.opened);
-      row.addEventListener('click', () => {
-        if (Platform.desktop && r.path) Platform.openPath(r.path);
-        else UI.toast('Open it with “Open a file…”');
-      });
-      box.appendChild(row);
-    });
+    if (!shown.length) {
+      const e = document.createElement('div');
+      e.className = 'empty';
+      e.textContent = q ? 'No recent files match.' : list.length ? 'Every recent file is pinned.' : 'Files you open will show up here.';
+      box.appendChild(e);
+      return;
+    }
+    shown.forEach(r => box.appendChild(fileCard(r, render)));
   }
+  findBox.addEventListener('input', render);
   async function renderRecovered() {
     const list = await Platform.drafts.list();
     const box = document.getElementById('recovered');
@@ -89,18 +138,9 @@
     });
   }
 
-  // Write templates
+  // Write templates, each shown as a miniature of its first page
   const tplBox = document.getElementById('templates');
-  WriteTemplates.list.filter(t => t.id !== 'blank').slice(0, 6).forEach(t => {
-    const b = document.createElement('button');
-    b.className = 'tpl';
-    b.innerHTML = '<span class="tpl-icon"></span><b></b><small></small>';
-    b.querySelector('.tpl-icon').textContent = t.icon;
-    b.querySelector('b').textContent = t.name;
-    b.querySelector('small').textContent = t.desc;
-    b.addEventListener('click', () => WriteTemplates.open(t, !Platform.desktop));
-    tplBox.appendChild(b);
-  });
+  WriteTemplates.list.filter(t => t.id !== 'blank').slice(0, 6).forEach(t => tplBox.appendChild(WriteTemplates.card(t, () => WriteTemplates.open(t, !Platform.desktop))));
   document.getElementById('moreTemplates').addEventListener('click', async () => {
     const t = await WriteTemplates.pick('Write templates');
     if (t) WriteTemplates.open(t, !Platform.desktop);

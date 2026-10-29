@@ -976,7 +976,7 @@
     applySetup();
     syncSetupControls();
     state.set({ name: f.name, path: f.path, dirty: false });
-    if (!f.recovered) Platform.rememberRecent(f.name, 'write');
+    if (!f.recovered) Platform.rememberRecent(f.name, 'write', f.path);
     extras.updateFields();
     updateStatus();
     refreshNav();
@@ -1618,6 +1618,24 @@ ${rules}</style></head>
       { label: 'Insert', run: text => aiInsert(text, aiContext(), false) }
     ]
   });
+
+  // The start screen's thumbnail of this document: its first blocks as plain text.
+  Platform.preview = () => {
+    const blocks = [], MAX = 18, clip = t => t.replace(/\s+/g, ' ').trim().slice(0, 160);
+    for (const el of document.getElementById('doc').children) {
+      if (blocks.length >= MAX) break;
+      const tag = el.tagName.toLowerCase();
+      if (tag === 'ul' || tag === 'ol') { for (const li of el.children) if (blocks.length < MAX) blocks.push({ t: 'li', s: clip(li.textContent) }); continue; }
+      if (tag === 'table') { blocks.push({ t: 'table', r: Math.min(el.rows.length, 6), c: Math.min((el.rows[0] && el.rows[0].cells.length) || 1, 6) }); continue; }
+      if (tag === 'hr') { blocks.push({ t: 'hr' }); continue; }
+      const text = clip(el.textContent);
+      if (!text && el.querySelector('img, svg, canvas')) { blocks.push({ t: 'img' }); continue; }
+      const t = el.classList.contains('title') ? 'title' : /^h[1-3]$/.test(tag) ? tag : 'p';
+      const align = getComputedStyle(el).textAlign;
+      blocks.push({ t, s: text, a: align === 'center' || align === 'right' ? align : undefined });
+    }
+    return { kind: 'write', blocks };
+  };
 
   window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; }, get notes() { return notes; } };
 })();

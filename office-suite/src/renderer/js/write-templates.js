@@ -6,11 +6,11 @@
   const ph = t => `<span style="color:#767676">[${t}]</span>`;
   const T = [
     {
-      id: 'blank', name: 'Blank document', icon: '📄', desc: 'Start from scratch',
+      id: 'blank', name: 'Blank document', desc: 'Start from scratch',
       body: '<p><br></p>'
     },
     {
-      id: 'resume', name: 'Resume', icon: '👤', desc: 'Clean one-page CV',
+      id: 'resume', name: 'Resume', desc: 'Clean one-page CV',
       setup: { margin: '0.75in' },
       body: `<h1 class="title" style="text-align:center">${ph('Your Name')}</h1>
 <p style="text-align:center">${ph('City, Country')} · ${ph('phone')} · ${ph('email@example.com')} · ${ph('linkedin.com/in/you')}</p>
@@ -28,7 +28,7 @@
 <p>${ph('Skill')} · ${ph('Skill')} · ${ph('Skill')} · ${ph('Language')}</p>`
     },
     {
-      id: 'cover-letter', name: 'Cover letter', icon: '✉️', desc: 'Job application letter',
+      id: 'cover-letter', name: 'Cover letter', desc: 'Job application letter',
       body: `<p>${ph('Your Name')}<br>${ph('Address')}<br>${ph('email@example.com')}</p>
 <p>${ph('Date')}</p>
 <p>${ph('Hiring Manager')}<br>${ph('Company')}<br>${ph('Address')}</p>
@@ -41,7 +41,7 @@
 <p>${ph('Your Name')}</p>`
     },
     {
-      id: 'business-letter', name: 'Business letter', icon: '🏢', desc: 'Formal letter with letterhead',
+      id: 'business-letter', name: 'Business letter', desc: 'Formal letter with letterhead',
       header: `<p style="text-align:right"><b>${ph('Company Name')}</b><br>${ph('Street, City')} · ${ph('phone')}</p>`,
       body: `<p>${ph('Date')}</p>
 <p>${ph('Recipient Name')}<br>${ph('Title')}<br>${ph('Company')}<br>${ph('Address')}</p>
@@ -53,7 +53,7 @@
 <p>${ph('Your Name')}<br>${ph('Title')}</p>`
     },
     {
-      id: 'report', name: 'Report', icon: '📊', desc: 'Title page, contents and sections',
+      id: 'report', name: 'Report', desc: 'Title page, contents and sections',
       setup: { differentFirst: true },
       footer: '<p style="text-align:center">Page <span class="fld" data-fld="page">1</span> of <span class="fld" data-fld="numpages">1</span></p>',
       body: `<p><br></p><p><br></p><p><br></p>
@@ -76,7 +76,7 @@
 <p>${ph('Closing remarks.')}</p>`
     },
     {
-      id: 'memo', name: 'Memo', icon: '📝', desc: 'Internal memorandum',
+      id: 'memo', name: 'Memo', desc: 'Internal memorandum',
       body: `<h1 class="title">Memo</h1>
 <table><tbody>
 <tr><td style="width:20%"><b>To:</b></td><td>${ph('Recipients')}</td></tr>
@@ -88,7 +88,7 @@
 <p>${ph('Message.')}</p>`
     },
     {
-      id: 'minutes', name: 'Meeting minutes', icon: '🗓', desc: 'Agenda, decisions and actions',
+      id: 'minutes', name: 'Meeting minutes', desc: 'Agenda, decisions and actions',
       body: `<h1 class="title">${ph('Meeting Name')}</h1>
 <p><b>Date:</b> ${ph('Date')} · <b>Time:</b> ${ph('Time')} · <b>Location:</b> ${ph('Location')}</p>
 <p><b>Attendees:</b> ${ph('Names')}</p>
@@ -106,7 +106,7 @@
 <p><b>Next meeting:</b> ${ph('Date')}</p>`
     },
     {
-      id: 'essay', name: 'Essay (MLA)', icon: '🎓', desc: 'Double-spaced academic paper',
+      id: 'essay', name: 'Essay (MLA)', desc: 'Double-spaced academic paper',
       setup: { citeStyle: 'mla' },
       header: '<p style="text-align:right">' + ph('Last name') + ' <span class="fld" data-fld="page">1</span></p>',
       body: `<p style="line-height:2">${ph('Your Name')}</p>
@@ -119,7 +119,7 @@
 <p style="line-height:2;text-indent:0.5in">${ph('Conclusion.')}</p>`
     },
     {
-      id: 'newsletter', name: 'Newsletter', icon: '📰', desc: 'Two-column layout',
+      id: 'newsletter', name: 'Newsletter', desc: 'Two-column layout',
       setup: { columns: 2, margin: '0.75in' },
       body: `<h1 class="title">${ph('Newsletter Name')}</h1>
 <p><i>${ph('Issue')} · ${ph('Month Year')}</i></p>
@@ -133,7 +133,7 @@
 <p>${ph('Contact details.')}</p>`
     },
     {
-      id: 'invoice', name: 'Invoice', icon: '🧾', desc: 'Simple invoice',
+      id: 'invoice', name: 'Invoice', desc: 'Simple invoice',
       body: `<h1 class="title" style="text-align:right">INVOICE</h1>
 <p><b>${ph('Your Business')}</b><br>${ph('Address')}<br>${ph('email@example.com')}</p>
 <p><b>Bill to:</b><br>${ph('Client Name')}<br>${ph('Address')}</p>
@@ -158,6 +158,18 @@
       + '</body></html>';
   }
 
+  /** A template's button: a miniature of its first page, its name and what it is for. */
+  function card(t, onPick) {
+    const b = document.createElement('button');
+    b.className = 'tpl';
+    b.appendChild(UI.thumbnail({ kind: 'write', html: (t.header || '') + t.body }));
+    const name = document.createElement('b'), desc = document.createElement('small');
+    name.textContent = t.name; desc.textContent = t.desc;
+    b.append(name, desc);
+    b.addEventListener('click', () => onPick(t));
+    return b;
+  }
+
   /** Shows the gallery; resolves to a template or null. */
   function pick(title = 'New document') {
     return new Promise(resolve => {
@@ -166,16 +178,7 @@
       back.innerHTML = `<div class="modal template-gallery" role="dialog" aria-label="${title}"><h2></h2><div class="tpl-grid"></div><div class="actions"><button class="cancel">Cancel</button></div></div>`;
       back.querySelector('h2').textContent = title;
       const grid = back.querySelector('.tpl-grid');
-      T.forEach(t => {
-        const b = document.createElement('button');
-        b.className = 'tpl';
-        b.innerHTML = '<span class="tpl-icon"></span><b></b><small></small>';
-        b.querySelector('.tpl-icon').textContent = t.icon;
-        b.querySelector('b').textContent = t.name;
-        b.querySelector('small').textContent = t.desc;
-        b.addEventListener('click', () => { back.remove(); resolve(t); });
-        grid.appendChild(b);
-      });
+      T.forEach(t => grid.appendChild(card(t, () => { back.remove(); resolve(t); })));
       const close = () => { back.remove(); resolve(null); };
       back.querySelector('.cancel').addEventListener('click', close);
       back.addEventListener('mousedown', e => { if (e.target === back) close(); });
@@ -191,5 +194,5 @@
     return Platform.openData('write', (t.id === 'blank' ? 'Document' : t.name) + '.docx', bytes, sameTab);
   }
 
-  window.WriteTemplates = { list: T, toHtml, pick, open };
+  window.WriteTemplates = { list: T, toHtml, pick, open, card };
 })();

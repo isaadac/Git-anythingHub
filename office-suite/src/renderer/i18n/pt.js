@@ -1,6 +1,8 @@
 'use strict';
 // Isadek Office — Português. Keys are the English text as it appears in the interface.
 (window.ISADEK_I18N = window.ISADEK_I18N || {}).pt = {
+  // Start screen
+  "Good morning": "Bom dia", "Good afternoon": "Boa tarde", "Good evening": "Boa noite", "Pinned": "Fixados", "Search recent files": "Pesquisar arquivos recentes", "Pin to the top": "Fixar no topo", "Unpin": "Desafixar", "No recent files match.": "Nenhum arquivo recente corresponde.", "Every recent file is pinned.": "Todos os arquivos recentes estão fixados.",
   // Ribbon display and the mini toolbar
   'Reduce motion': 'Reduzir movimento',
   'Ribbon display options': 'Opções de exibição da faixa de opções', 'Full ribbon': 'Faixa completa', 'Single line': 'Uma única linha', 'Tabs only': 'Apenas guias', 'Bold': 'Negrito', 'Italic': 'Itálico', 'Underline': 'Sublinhado', 'Strikethrough': 'Tachado', 'Increase font size': 'Aumentar tamanho da fonte', 'Decrease font size': 'Diminuir tamanho da fonte', 'Highlight': 'Realçar', 'Font colour': 'Cor da fonte', 'Bullets': 'Marcadores', 'Numbering': 'Numeração', 'Formatting': 'Formatação',

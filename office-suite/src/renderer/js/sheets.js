@@ -2964,7 +2964,7 @@
     active = anchor = { r: 0, c: 0 };
     wrap.scrollTop = wrap.scrollLeft = 0;
     state.set({ name: f.name, path: f.path, dirty: false });
-    Platform.rememberRecent(f.name, 'sheets');
+    Platform.rememberRecent(f.name, 'sheets', f.path);
     // Size rows for wrapped text and big fonts on every sheet.
     const keep = book.active;
     book.sheets.forEach((s, i) => { book.active = i; rebuildCols(); fitRowsFor(s); });
@@ -3337,6 +3337,21 @@
     ],
     buttons: [{ label: 'Put in sheet', run: text => aiPut(text) }]
   });
+
+  // The start screen's thumbnail of this workbook: the top-left cells as they are shown.
+  Platform.preview = () => {
+    const rows = [], bold = [];
+    for (const tr of [...document.querySelectorAll('#grid tbody tr[data-r]')].slice(0, 14)) {
+      const cells = [], b = [];
+      for (let c = 0; c < 8; c++) {
+        const td = tr.querySelector(`td[data-c="${c}"]`);
+        cells.push(td ? td.textContent.replace(/\s+/g, ' ').trim().slice(0, 24) : '');
+        b.push(!!td && parseInt(getComputedStyle(td).fontWeight, 10) >= 600);
+      }
+      rows.push(cells); bold.push(b);
+    }
+    return { kind: 'sheets', rows, bold };
+  };
 
   window.AtlasSheets = {
     loadFile, serialize, select, refreshPivots, get live() { return live; },
