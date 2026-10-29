@@ -2789,6 +2789,9 @@
 
   // ---------- Files ----------
   async function loadFile(f) {
+    // A password-protected file asks for its password first.
+    try { f = await Platform.unlockFile(f); } catch (err) { UI.toast('Could not open file: ' + err.message, 5000); return; }
+    if (!f) return;
     try {
       const ext = Platform.extOf(f.name);
       const tpl = window.SuiteTemplates && SuiteTemplates.fromBytes(f.data, 'slides');

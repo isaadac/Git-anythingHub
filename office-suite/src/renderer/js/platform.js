@@ -45,12 +45,14 @@
     },
     /** Saves bytes or text. Returns {name, path} or null if cancelled. */
     async save(opts) {
-      if (opts.data && !opts.noVersion) opts = { ...opts, data: await withThumbnail(opts) };
+      // A password-protected document is saved encrypted (and without a thumbnail of its content).
+      if (Protect.applies(opts)) opts = { ...opts, data: await OfficeCrypto.encrypt(opts.data instanceof Uint8Array ? opts.data : new Uint8Array(opts.data), Protect.password) };
+      else if (opts.data && !opts.noVersion) opts = { ...opts, data: await withThumbnail(opts) };
       const r = await saveNow(opts);
       // Each save also keeps a version of the document (File → Version History).
       // …with who made it: you, and anyone who edited with you in a live session since the last one.
       if (r && opts.data && !opts.noVersion) Versions.add(r.path || opts.path || r.name || opts.name, r.name || opts.name, opts.data, Platform.contributors ? Platform.contributors() : []).catch(() => {});
-      if (r && opts.data && !opts.noVersion && !opts.saveAs) Thumbs.capture(r.path || opts.path || r.name || opts.name);
+      if (r && opts.data && !opts.noVersion && !opts.saveAs && !Protect.password) Thumbs.capture(r.path || opts.path || r.name || opts.name);
       // After the app's own "Saved".
       if (r && r.queued) setTimeout(() => UI.toast('Saved on this device. It will go up to the cloud when you\'re back online.', 5000), 60);
       return r;
@@ -151,6 +153,7 @@
 
   // File → Office Theme and File → Language in every app.
   Platform.onMenu(cmd => {
+    if (cmd === 'protect') Protect.dialog();
     if (cmd === 'theme' && window.Theme) Theme.choose();
     if (cmd === 'language' && window.I18n) I18n.choose();
     if (cmd === 'help') Platform.help();
@@ -724,6 +727,7 @@
           const saved = document.querySelector('.status-saved');
           if (saved) saved.textContent = state.dirty ? 'Unsaved changes' : (state.path ? 'Saved' : '');
           if (state.syncChip) state.syncChip();
+          Protect.badge();
           Platform.setTitle(`${state.dirty ? '• ' : ''}${state.name} — ${appLabel}`);
         }
       };
@@ -735,6 +739,7 @@
         // overwriting the old one under the old name.
         state.set({ name, path: null, dirty: true });
       });
+      Protect.doc = state;
       // Cloud documents: whether this device is offline, or has saves waiting to go up.
       const saved = document.querySelector('.status-saved');
       if (saved && window.Offline) {
@@ -917,7 +922,7 @@
    * and takes a thumbnail of it for the start screen once it has been drawn.
    */
   Platform.rememberRecent = function (name, app, filePath) {
-    setTimeout(() => Thumbs.capture(filePath || name), 600);
+    setTimeout(() => { if (!Protect.password) Thumbs.capture(filePath || name); }, 600);
     // Cloud documents are listed here in the desktop app too (its own list is of files on disk).
     const cloud = Platform.isCloudPath(filePath);
     if (desktop && !cloud) return;
@@ -932,6 +937,74 @@
    * the first slide's boxes), never HTML, so the start screen draws it without running anything
    * from the file. Kept for the 24 most recent files, by path (or name on the web).
    */
+  // ---------- Password protection (office-crypto.js) ----------
+  // The open document's password, when it has one: opening a protected .docx, .xlsx or .pptx asks
+  // for it, saving in those formats encrypts with it, and File → Protect with Password sets it.
+  const PROTECTABLE = /\.(docx|xlsx|pptx)$/i;
+  const Protect = {
+    password: null, doc: null,
+    applies: opts => !!(Protect.password && window.OfficeCrypto && opts.data && PROTECTABLE.test(String(opts.name || opts.path || ''))),
+    /** The file to load: as it is, or decrypted after asking for its password (null if cancelled). */
+    async unlock(f) {
+      const bytes = f && f.data && (f.data instanceof Uint8Array ? f.data : new Uint8Array(f.data));
+      // An unprotected file replaces the open document: no password from now on. (A protected one
+      // changes it only once it opens: cancelling leaves the open document as it was.)
+      if (!bytes || !window.OfficeCrypto || !OfficeCrypto.isEncrypted(bytes)) { Protect.password = null; Protect.badge(); return f; }
+      let note = `“${f.name}” is protected with a password.`;
+      for (;;) {
+        const r = await UI.form('Password', [{ name: 'pw', label: note + ' Enter the password to open it.', type: 'password' }], 'Open');
+        if (!r) return null;
+        try {
+          UI.toast('Opening…', 1500);
+          const data = await OfficeCrypto.decrypt(bytes, r.pw);
+          Protect.password = r.pw;
+          Protect.badge();
+          return { ...f, data };
+        } catch (err) {
+          if (err.name !== 'BadPassword') throw err;
+          note = 'That password isn’t right (passwords are case-sensitive).';
+        }
+      }
+    },
+    async dialog() {
+      const on = !!Protect.password;
+      const name = (Protect.doc && Protect.doc.name) || '';
+      const r = await UI.form(on ? 'Change or Remove Password' : 'Protect with Password', [
+        { name: 'a', label: on ? 'New password (leave both empty to remove protection)' : 'Password to open this document', type: 'password' },
+        { name: 'b', label: 'Type it again', type: 'password' }
+      ], 'OK');
+      if (!r) return;
+      if (r.a !== r.b) return UI.toast('The two passwords are different. Nothing was changed.', 4000);
+      if (!r.a && !on) return;
+      Protect.password = r.a || null;
+      if (Protect.doc) Protect.doc.markDirty();
+      Protect.badge();
+      if (!r.a) return UI.toast('Password removed. Save to keep the document unprotected.', 4000);
+      UI.toast(PROTECTABLE.test(name) || !name
+        ? 'Protected. When you save, the file is encrypted and opens only with this password. It can’t be recovered if you forget it.'
+        : 'Protected. Save as .docx, .xlsx or .pptx to encrypt the file; other formats can’t carry a password.', 7000);
+    },
+    // icons: lock
+    badge() {
+      const saved = document.querySelector('.status-saved');
+      if (!saved) return;
+      let b = document.querySelector('.protect-badge');
+      if (!b) {
+        b = document.createElement('span');
+        b.className = 'protect-badge';
+        b.innerHTML = '<span class="ico" data-icon="lock"></span>';
+        b.title = 'Protected with a password (File → Protect with Password)';
+        b.setAttribute('role', 'img');
+        b.setAttribute('aria-label', 'Protected with a password');
+        saved.before(b);
+        if (window.Icons) Icons.fill(b);
+      }
+      b.hidden = !Protect.password;
+    }
+  };
+  Platform.protection = Protect;
+  Platform.unlockFile = f => Protect.unlock(f);
+
   const Thumbs = {
     KEY: 'atlas-thumbs', MAX: 24,
     all() { try { return JSON.parse(localStorageGet(Thumbs.KEY) || '{}'); } catch { return {}; } },

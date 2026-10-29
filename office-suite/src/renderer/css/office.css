@@ -483,3 +483,8 @@ html.capturing ::selection { background: transparent; }
 .sync-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: var(--sp-4); padding: 2px 8px; border-radius: var(--r-pill); background: var(--warn-bg); color: var(--warn-fg); font-size: var(--fs-xs); white-space: nowrap; }
 .sync-chip[hidden] { display: none; }
 .sync-chip .ico svg { width: 14px; height: 14px; }
+
+/* A password-protected document */
+.protect-badge { display: inline-flex; align-items: center; color: var(--muted); margin-right: var(--sp-3); }
+.protect-badge[hidden] { display: none; }
+.protect-badge svg { width: 14px; height: 14px; }
