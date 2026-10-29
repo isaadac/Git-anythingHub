@@ -544,7 +544,7 @@
         b.setAttribute('aria-label', it[2]);
         b.innerHTML = `<span class="ico" data-icon="${it[1]}"></span>`;
         b.addEventListener('mousedown', e => e.preventDefault());
-        b.addEventListener('click', () => { target.click(); setTimeout(sync, 0); });
+        b.addEventListener('click', () => { target.click(); sync(); setTimeout(sync, 0); });
         b._target = target;
         bar.appendChild(b);
         lastSep = false;
