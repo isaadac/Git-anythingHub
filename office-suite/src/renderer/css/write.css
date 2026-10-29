@@ -9,7 +9,7 @@
 /* Paper sheets drawn behind the text; the layout pass moves text off page edges. */
 .page-bgs { position: absolute; inset: 0; pointer-events: none; }
 .page-bg { position: absolute; left: 0; width: 100%; height: var(--page-h); background: var(--paper, #fff);
-  box-shadow: 0 1px 3px rgba(0,0,0,.2), 0 4px 16px rgba(0,0,0,.06); }
+  box-shadow: var(--page-shadow); border-radius: 2px; }
 .page-bg .hf-clone { position: absolute; left: var(--margin); right: var(--margin); font-size: 9pt; color: #555; overflow: hidden; }
 .hf { position: absolute; left: var(--margin); right: var(--margin); z-index: 2; outline: none; font-size: 9pt; color: #555; min-height: 18px; border: 1px dashed transparent; }
 .hf:focus { border-color: #a19f9d; background: rgba(255,255,255,.6); }
@@ -71,7 +71,7 @@ body.markup-final .doc ins.tc, body.markup-original .doc del.tc { color: inherit
 .doc a { color: #0563c1; }
 .doc hr { border: 0; border-top: 1px solid #999; margin: 10pt 0; }
 .doc .section-break { break-after: page; page-break-after: always; border: 0; border-top: 3px double #a19f9d; margin: 16pt -1in; height: 0; position: relative; cursor: pointer; }
-.doc .section-break::after { content: "Section Break (Next Page) · " attr(data-orient) " · " attr(data-cols) " col."; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: #8a8886; background: var(--surface); padding: 0 6px; white-space: nowrap; }
+.doc .section-break::after { content: "Section Break (Next Page) · " attr(data-orient) " · " attr(data-cols) " col."; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: var(--subtle); background: var(--surface); padding: 0 6px; white-space: nowrap; }
 body.paged .doc .section-break { border: 0; margin: 0; height: 0; }
 body.paged .doc .section-break::after { top: -24px; }
 .doc img.float-left { float: left; margin: 4px 14px 6px 0; }
@@ -82,7 +82,7 @@ body.paged .doc .section-break::after { top: -24px; }
 .doc span.equation.eq-block { display: block; text-align: center; margin: 6pt 0; }
 .doc span.equation math { font-size: 1.1em; }
 .doc .page-break { break-after: page; page-break-after: always; border: 0; border-top: 1px dashed #a19f9d; margin: 16pt -1in; height: 0; position: relative; }
-.doc .page-break::after { content: "Page Break"; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: #8a8886; background: var(--surface); padding: 0 6px; }
+.doc .page-break::after { content: "Page Break"; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font: 10px var(--font); color: var(--subtle); background: var(--surface); padding: 0 6px; }
 .doc .textbox { border: 1px solid #555; padding: 6pt 8pt; margin: 6pt 0; display: inline-block; min-width: 120px; }
 .doc .toc { border: 1px solid var(--border); padding: 8pt 12pt; margin-bottom: 10pt; }
 .doc .toc p { margin: 0 0 3pt; display: flex; align-items: baseline; }
@@ -109,14 +109,14 @@ body.show-marks .doc p::after, body.show-marks .doc h1::after, body.show-marks .
 .navpane a:hover { background: var(--hover); }
 .navpane a.l2 { padding-left: 18px; } .navpane a.l3 { padding-left: 30px; font-size: 12px; }
 
-.img-tools { position: absolute; background: var(--surface); border: 1px solid var(--border); box-shadow: 0 4px 12px rgba(0,0,0,.15); padding: 3px; border-radius: 4px; display: flex; z-index: 10; }
+.img-tools { position: absolute; background: var(--raised); border: 1px solid var(--border); box-shadow: var(--sh-3); padding: 4px; border-radius: var(--r-md); display: flex; z-index: 10; }
 .img-tools[hidden] { display: none; }
 
 body.view-web .page { width: auto; min-height: 100%; padding: 24px 48px; height: auto !important; }
 body.view-web .page-bgs, body.view-web .hf { display: none; }
 body.view-web .canvas { background: #fff; padding: 0; }
 body.view-focus .titlebar, body.view-focus .ribbon-tabs, body.view-focus .ribbon { display: none; }
-body.dark .canvas { background: #1f1f1f; }
+body.dark .canvas { background: var(--canvas); }
 body.dark .page { --paper: #262626; }
 body.dark .doc, body.dark .doc h1.title { color: #e6e6e6; }
 body.dark .doc .section-break::after, body.dark .doc .page-break::after { background: #262626; }
@@ -138,5 +138,5 @@ body.dark .doc .section-break::after, body.dark .doc .page-break::after { backgr
 
 @media (max-width: 760px) {
   .canvas { padding: 12px 6px 40px; }
-  .comments-pane, .navpane { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: -4px 0 12px rgba(0,0,0,.2); }
+  .comments-pane, .navpane { position: absolute; right: 0; top: 0; bottom: 0; z-index: 20; box-shadow: var(--sh-3); }
 }

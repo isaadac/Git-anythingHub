@@ -15,7 +15,7 @@ const TIMEOUT = 6 * 60 * 1000;
 const PARALLEL = Math.max(1, Math.min(4, os.cpus().length - 1));
 
 // A static server for the pages (the suites load them over http, as the web version runs).
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.wasm': 'application/wasm' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.json': 'application/json', '.wasm': 'application/wasm', '.woff2': 'font/woff2' };
 const server = http.createServer((req, res) => {
   const p = path.normalize(path.join(ROOT, decodeURIComponent(new URL(req.url, 'http://x').pathname)));
   if (!p.startsWith(ROOT)) { res.writeHead(403); return res.end(); }

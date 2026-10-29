@@ -254,6 +254,13 @@
     },
     /** Wires ribbon tab buttons to their panels and the File tab to the backstage view. */
     initRibbon() {
+      // Panes that float beside the document start just below the ribbon, wherever that is.
+      const ribbon = document.querySelector('.ribbon');
+      if (ribbon && window.ResizeObserver) {
+        const sync = () => document.documentElement.style.setProperty('--chrome-h', Math.round(ribbon.getBoundingClientRect().bottom) + 'px');
+        new ResizeObserver(sync).observe(ribbon);
+        sync();
+      }
       const tabs = document.querySelectorAll('.ribbon-tabs button[data-tab]');
       tabs.forEach(btn => btn.addEventListener('click', () => {
         tabs.forEach(b => b.classList.toggle('active', b === btn));

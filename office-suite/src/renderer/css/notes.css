@@ -1,6 +1,4 @@
 /* Isadek Notes */
-body.app-notes { --accent: #7719aa; --accent-dark: #5c1385; --accent-light: #efe0f7; }
-:root[data-theme="dark"] body.app-notes { --accent-light: #3b1a4d; --accent-fg: #d29bf0; }
 
 .nb-nav { width: 400px; flex: none; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--surface-3); min-height: 0; }
 .nb-top { display: flex; gap: 6px; padding: 8px 8px 4px; }
@@ -62,7 +60,7 @@ body.full-page .nb-nav { display: none; }
 .titlebar .nav-btn { display: none; }
 
 @media (max-width: 760px) {
-  .nb-nav { position: absolute; z-index: 20; top: 0; bottom: 0; left: 0; width: 100vw; box-shadow: 4px 0 14px rgba(0,0,0,.2); }
+  .nb-nav { position: absolute; z-index: 20; top: 0; bottom: 0; left: 0; width: 100vw; box-shadow: var(--sh-3); }
   body.full-page .nb-nav, body:not(.nav-open) .nb-nav { display: none; }
   .note-page { padding: 16px 16px 100px; }
   .titlebar .nav-btn { display: inline-block; }
@@ -74,8 +72,8 @@ body.full-page .nb-nav { display: none; }
 
 /* Attachments and audio notes */
 .note-body .attachment, .note-body .audio-note { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; margin: 2px 0; border: 1px solid var(--border, #c8c6c4); border-radius: 14px; background: var(--surface-2, #f3f2f1); cursor: pointer; font-size: 13px; user-select: none; }
-.note-body .attachment small { color: #8a8886; }
-.note-body .audio-note.playing { background: #dbe7f7; border-color: #2b579a; }
-.note-body .attachment:hover, .note-body .audio-note:hover { border-color: #7719aa; }
-#recAudio.recording { background: #fde7e9; color: #a4262c; }
-#syncBtn.on { background: #e8f3ea; }
+.note-body .attachment small { color: var(--subtle); }
+.note-body .audio-note.playing { background: var(--accent-soft); border-color: var(--accent); }
+.note-body .attachment:hover, .note-body .audio-note:hover { border-color: var(--accent); }
+#recAudio.recording { background: var(--danger-bg); color: var(--danger-fg); }
+#syncBtn.on { background: var(--ok-bg); }
