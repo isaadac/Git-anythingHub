@@ -53,6 +53,29 @@ function addRecent(filePath) {
   app.addRecentDocument(filePath);
 }
 
+// ---------- Window frame ----------
+// The app draws its own title bar where the system lets it blend in: macOS keeps its traffic
+// lights over a translucent (vibrant) window; Windows keeps its buttons over the app's title bar,
+// on Windows 11 with the Mica material behind it. Linux keeps the system's frame.
+const TITLEBAR_H = 44;
+function frameKind() {
+  if (process.env.ISADEK_FRAME) return process.env.ISADEK_FRAME; // tests: system | mac | overlay | mica
+  if (process.platform === 'darwin') return 'mac';
+  if (process.platform === 'win32') return Number(os.release().split('.')[2]) >= 22000 ? 'mica' : 'overlay';
+  return 'system';
+}
+const chromeColors = () => (nativeTheme.shouldUseDarkColors ? { bg: '#141416', symbols: '#f5f6f8' } : { bg: '#f2f3f5', symbols: '#16181d' });
+function frameOptions() {
+  const kind = frameKind(), c = chromeColors();
+  if (kind === 'mac') return { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 15 }, vibrancy: 'under-window', visualEffectState: 'followWindow', backgroundColor: '#00000000' };
+  if (kind === 'overlay' || kind === 'mica') {
+    return { titleBarStyle: 'hidden', titleBarOverlay: { color: '#00000000', symbolColor: c.symbols, height: TITLEBAR_H }, autoHideMenuBar: true,
+      ...(kind === 'mica' ? { backgroundMaterial: 'mica', backgroundColor: '#00000000' } : { backgroundColor: c.bg }) };
+  }
+  return { backgroundColor: c.bg };
+}
+ipcMain.on('app:frame', e => { e.returnValue = frameKind(); });
+
 function createWindow(appName = 'home', filePath = null) {
   const cfg = APPS[appName] || APPS.home;
   const win = new BrowserWindow({
@@ -61,7 +84,7 @@ function createWindow(appName = 'home', filePath = null) {
     minWidth: 760,
     minHeight: 500,
     title: cfg.title,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#292929' : '#f3f2f1',
+    ...frameOptions(),
     icon: path.join(__dirname, '../../build/icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -253,8 +276,13 @@ ipcMain.handle('collab:pending', e => { const l = pendingCollab.get(e.sender.id)
 // window backgrounds match it.
 function applyTheme(mode) {
   nativeTheme.themeSource = ['light', 'dark'].includes(mode) ? mode : 'system';
-  const bg = nativeTheme.shouldUseDarkColors ? '#292929' : '#f3f2f1';
-  BrowserWindow.getAllWindows().forEach(w => { if (!w.isDestroyed()) w.setBackgroundColor(bg); });
+  const c = chromeColors(), kind = frameKind();
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (w.isDestroyed()) return;
+    if (kind === 'system' || kind === 'overlay') w.setBackgroundColor(c.bg);
+    // The window buttons drawn over the title bar follow the theme too.
+    if ((kind === 'overlay' || kind === 'mica') && w.setTitleBarOverlay) { try { w.setTitleBarOverlay({ color: '#00000000', symbolColor: c.symbols, height: TITLEBAR_H }); } catch { /* not this window */ } }
+  });
 }
 app.whenReady().then(() => applyTheme(settings.get('theme')));
 ipcMain.handle('app:set-theme', (_e, mode) => {

@@ -1,6 +1,8 @@
 'use strict';
 // Isadek Office — Español. Keys are the English text as it appears in the interface.
 (window.ISADEK_I18N = window.ISADEK_I18N || {}).es = {
+  // Ribbon display and the mini toolbar
+  'Ribbon display options': 'Opciones de presentación de la cinta', 'Full ribbon': 'Cinta completa', 'Single line': 'Una sola línea', 'Tabs only': 'Solo pestañas', 'Bold': 'Negrita', 'Italic': 'Cursiva', 'Underline': 'Subrayado', 'Strikethrough': 'Tachado', 'Increase font size': 'Aumentar tamaño de fuente', 'Decrease font size': 'Disminuir tamaño de fuente', 'Highlight': 'Resaltar', 'Font colour': 'Color de fuente', 'Bullets': 'Viñetas', 'Numbering': 'Numeración', 'Formatting': 'Formato',
   '3 Arrows ▲ ► ▼': '3 flechas ▲ ► ▼', '3 Flags ⚑': '3 banderas ⚑', '3 Symbols ✔ ! ✖': '3 símbolos ✔ ! ✖', '3 Traffic Lights ●': '3 semáforos ●',
   '? Question': '? Pregunta', 'Above Average…': 'Por encima del promedio…', 'Accessibility': 'Accesibilidad', 'Accounting': 'Contabilidad', 'Add a place': 'Agregar un sitio',
   'After': 'Después', 'After Previous': 'Después de la anterior', 'Alignment': 'Alineación', 'All': 'Todo', 'All Markup': 'Todas las marcas', 'All borders': 'Todos los bordes',

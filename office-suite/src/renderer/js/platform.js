@@ -281,8 +281,175 @@
       document.querySelectorAll('.titlebar [data-cmd], .ribbon [data-cmd]').forEach(b =>
         b.addEventListener('click', () => Platform.emit(b.dataset.cmd)));
       UI.commandSearch();
+      UI.ribbonModes();
+      // A ribbon too wide for the window gets more compact step by step, as Office's does: small
+      // buttons drop their words (still read out and shown as tooltips), then big buttons shrink.
+      if (ribbon && window.ResizeObserver) {
+        const fit = () => {
+          ribbon.classList.remove('compact-1', 'compact-2');
+          const panel = ribbon.querySelector('.ribbon-panel.active');
+          if (!panel || document.body.classList.contains('ribbon-tabs') && !document.body.classList.contains('ribbon-peek')) return;
+          for (const step of ['compact-1', 'compact-2']) {
+            if (ribbon.scrollWidth <= ribbon.clientWidth + 1) break;
+            ribbon.classList.add(step);
+          }
+        };
+        new ResizeObserver(fit).observe(ribbon);
+        document.querySelectorAll('.ribbon-tabs button').forEach(t => t.addEventListener('click', () => requestAnimationFrame(fit)));
+        window.addEventListener('resize', fit);
+        // Widths change again once the icons are drawn and the fonts have loaded.
+        requestAnimationFrame(fit);
+        window.addEventListener('load', fit);
+        if (document.fonts) document.fonts.ready.then(fit);
+      }
+      UI.miniToolbar({ 'app-write': '#doc', 'app-notes': '#body', 'app-slides': '#stage' }[[...document.body.classList].find(c => c.startsWith('app-'))]);
       // Keep focus in the editor when pressing ribbon buttons.
       document.querySelectorAll('.ribbon .btn, .titlebar .qa button').forEach(b => b.addEventListener('mousedown', e => e.preventDefault()));
+    },
+    /**
+     * How much of the ribbon shows: the full ribbon, a single line of commands, or only the tabs
+     * (a tab then opens the ribbon over the document until a command is used). Remembered;
+     * Ctrl+F1 and double-clicking a tab switch between full and tabs only, as in Office.
+     */
+    ribbonModes() {
+      const tabsBar = document.querySelector('.ribbon-tabs'), ribbon = document.querySelector('.ribbon');
+      if (!tabsBar || !ribbon || tabsBar.querySelector('.ribbon-mode')) return;
+      // icons: panel-top rows-2 panel-top-close chevron-up chevron-down check
+      const MODES = [['full', 'Full ribbon', 'panel-top'], ['line', 'Single line', 'rows-2'], ['tabs', 'Tabs only', 'panel-top-close']];
+      const read = () => { const v = localStorageGet('atlas-ribbon'); return MODES.some(m => m[0] === v) ? v : 'full'; };
+      const btn = document.createElement('button');
+      btn.className = 'ribbon-mode';
+      btn.title = 'Ribbon display options';
+      btn.setAttribute('aria-haspopup', 'menu');
+      btn.innerHTML = '<span class="ico" data-icon="chevron-down"></span>';
+      tabsBar.appendChild(btn);
+      let mode = read(), openTab = false;
+      const apply = m => {
+        mode = m;
+        localStorageSet('atlas-ribbon', m);
+        document.body.classList.remove('ribbon-full', 'ribbon-line', 'ribbon-tabs');
+        document.body.classList.add('ribbon-' + m);
+        document.body.classList.remove('ribbon-peek');
+        Icons.set(btn.querySelector('.ico'), m === 'tabs' ? 'chevron-down' : 'chevron-up');
+        window.dispatchEvent(new Event('resize'));
+      };
+      apply(mode);
+      // Tabs only: a tab shows the ribbon over the document until a command is used or you click away.
+      tabsBar.querySelectorAll('button[data-tab]').forEach(t => {
+        t.addEventListener('click', () => { if (mode === 'tabs') { document.body.classList.add('ribbon-peek'); openTab = true; } });
+        t.addEventListener('dblclick', () => apply(mode === 'tabs' ? 'full' : 'tabs'));
+      });
+      const closePeek = () => { if (openTab) { document.body.classList.remove('ribbon-peek'); openTab = false; } };
+      ribbon.addEventListener('click', e => { if (mode === 'tabs' && e.target.closest('button:not(.ribbon-mode)') && !e.target.closest('select')) setTimeout(closePeek, 0); });
+      document.addEventListener('mousedown', e => { if (openTab && !e.target.closest('.ribbon, .ribbon-tabs')) closePeek(); });
+      document.addEventListener('keydown', e => {
+        if (e.key === 'Escape') closePeek();
+        if (e.key === 'F1' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); apply(mode === 'tabs' ? 'full' : 'tabs'); }
+      });
+      btn.addEventListener('click', () => {
+        const old = document.querySelector('.ribbon-menu');
+        if (old) { old.remove(); return; }
+        const menu = document.createElement('div');
+        menu.className = 'ribbon-menu';
+        menu.setAttribute('role', 'menu');
+        MODES.forEach(([m, label, icon]) => {
+          const b = document.createElement('button');
+          b.setAttribute('role', 'menuitemradio');
+          b.setAttribute('aria-checked', String(m === mode));
+          b.innerHTML = `<span class="ico" data-icon="${icon}"></span><span></span><span class="ico check" data-icon="check"></span>`;
+          b.children[1].textContent = label;
+          b.addEventListener('click', () => { apply(m); menu.remove(); btn.focus(); });
+          menu.appendChild(b);
+        });
+        const r = btn.getBoundingClientRect();
+        menu.style.top = Math.round(r.bottom + 6) + 'px';
+        menu.style.right = Math.round(window.innerWidth - r.right) + 'px';
+        document.body.appendChild(menu);
+        menu.querySelector('[aria-checked="true"]').focus();
+        menu.addEventListener('keydown', e => {
+          const items = [...menu.querySelectorAll('button')], i = items.indexOf(document.activeElement);
+          if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+          if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+          if (e.key === 'Escape') { menu.remove(); btn.focus(); }
+        });
+        setTimeout(() => document.addEventListener('mousedown', function off(e) { if (!menu.contains(e.target) && e.target !== btn && !btn.contains(e.target)) { menu.remove(); } document.removeEventListener('mousedown', off); }), 0);
+      });
+      Platform.ribbonMode = { get: () => mode, set: apply };
+    },
+    /**
+     * The mini toolbar: the formatting commands most used on a selection, floating just above it.
+     * Each button presses the ribbon's own button, so it behaves exactly the same.
+     */
+    miniToolbar(rootSel) {
+      if (!rootSel || document.querySelector('.minibar')) return;
+      // icons: bold italic underline strikethrough a-arrow-up a-arrow-down highlighter baseline list list-ordered link message-square-plus
+      const ITEMS = [
+        ['.ribbon [data-exec="bold"]', 'bold', 'Bold'], ['.ribbon [data-exec="italic"]', 'italic', 'Italic'], ['.ribbon [data-exec="underline"]', 'underline', 'Underline'],
+        ['.ribbon [data-exec="strikeThrough"]', 'strikethrough', 'Strikethrough'], null,
+        ['.ribbon #growFont', 'a-arrow-up', 'Increase font size'], ['.ribbon #shrinkFont', 'a-arrow-down', 'Decrease font size'], null,
+        ['.ribbon .color-btn[title="Text highlight colour"] input', 'highlighter', 'Highlight'], ['.ribbon .color-btn[title="Font colour"] input', 'baseline', 'Font colour'], null,
+        ['.ribbon [data-exec="insertUnorderedList"]', 'list', 'Bullets'], ['.ribbon [data-exec="insertOrderedList"]', 'list-ordered', 'Numbering'], null,
+        ['.ribbon #insLink', 'link', 'Link'], ['.ribbon #addComment', 'message-square-plus', 'New Comment']
+      ];
+      const bar = document.createElement('div');
+      bar.className = 'minibar';
+      bar.setAttribute('role', 'toolbar');
+      bar.setAttribute('aria-label', 'Formatting');
+      let lastSep = true;
+      ITEMS.forEach(it => {
+        if (!it) { if (!lastSep) { const s = document.createElement('span'); s.className = 'sep'; bar.appendChild(s); lastSep = true; } return; }
+        const target = document.querySelector(it[0]);
+        if (!target) return;
+        const b = document.createElement('button');
+        b.className = 'btn';
+        b.title = it[2];
+        b.setAttribute('aria-label', it[2]);
+        b.innerHTML = `<span class="ico" data-icon="${it[1]}"></span>`;
+        b.addEventListener('mousedown', e => e.preventDefault());
+        b.addEventListener('click', () => { target.click(); setTimeout(sync, 0); });
+        b._target = target;
+        bar.appendChild(b);
+        lastSep = false;
+      });
+      if (bar.lastChild && bar.lastChild.className === 'sep') bar.lastChild.remove();
+      if (!bar.children.length) return;
+      bar.hidden = true;
+      document.body.appendChild(bar);
+      const sync = () => bar.querySelectorAll('.btn').forEach(b => {
+        const t = b._target.closest('.btn') || b._target;
+        b.classList.toggle('on', t.classList.contains('on') || t.getAttribute('aria-pressed') === 'true');
+      });
+      const hide = () => { bar.classList.remove('show'); bar.hidden = true; };
+      const selectionRect = () => {
+        const sel = getSelection();
+        if (!sel.rangeCount || sel.isCollapsed) return null;
+        const root = sel.anchorNode && (sel.anchorNode.nodeType === 1 ? sel.anchorNode : sel.anchorNode.parentElement);
+        if (!root || !root.closest(rootSel) || !root.closest('[contenteditable="true"]')) return null;
+        const r = sel.getRangeAt(0).getBoundingClientRect();
+        return r.width || r.height ? r : null;
+      };
+      const show = () => {
+        const r = selectionRect();
+        if (!r || !String(getSelection()).trim()) return hide();
+        bar.hidden = false;
+        sync();
+        const w = bar.offsetWidth, h = bar.offsetHeight, gap = 10;
+        let top = r.top - h - gap;
+        if (top < 8 + (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--chrome-h')) || 0)) top = r.bottom + gap;
+        const left = Math.max(8, Math.min(window.innerWidth - w - 8, r.left + r.width / 2 - w / 2));
+        bar.style.top = Math.round(top) + 'px';
+        bar.style.left = Math.round(left) + 'px';
+        requestAnimationFrame(() => bar.classList.add('show'));
+      };
+      // After selecting with the mouse (as Office does), not while typing or selecting with keys.
+      document.addEventListener('mouseup', e => { if (!bar.contains(e.target)) setTimeout(show, 10); });
+      document.addEventListener('dblclick', () => setTimeout(show, 10));
+      document.addEventListener('keydown', e => { if (!bar.contains(e.target) && !['Shift', 'Control', 'Meta', 'Alt'].includes(e.key)) hide(); });
+      document.addEventListener('mousedown', e => { if (!bar.contains(e.target)) hide(); });
+      document.addEventListener('selectionchange', () => { if (!bar.hidden && !selectionRect()) hide(); });
+      window.addEventListener('scroll', hide, true);
+      window.addEventListener('resize', hide);
+      UI.miniBar = { show, hide, el: bar };
     },
     /**
      * Search box in the title bar (Alt+Q): finds ribbon and File commands by name or tooltip

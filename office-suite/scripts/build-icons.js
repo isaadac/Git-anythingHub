@@ -6,7 +6,7 @@
 //   node scripts/build-icons.js
 //
 // Names are found in the pages (data-icon="…") and scripts (Icons.svg('…'), Icons.set(x, '…'),
-// icon: '…'); every one must exist in lucide-static.
+// icon: '…', and "// icons: a b c" comments for names picked at run time); each must exist in lucide-static.
 const fs = require('fs');
 const path = require('path');
 
@@ -20,6 +20,8 @@ function usedNames() {
     if (!/\.(html|js)$/.test(f) || f.endsWith('icons.js')) continue;
     const text = fs.readFileSync(path.join(RENDERER, f), 'utf8');
     for (const m of text.matchAll(/data-icon="([a-z0-9-]+)"|Icons\.(?:svg|set)\([^'"]*['"]([a-z0-9-]+)['"]|\bicon:\s*['"]([a-z0-9-]+)['"]/g)) names.add(m[1] || m[2] || m[3]);
+    // Names chosen at run time are listed in a comment: // icons: bold italic underline
+    for (const m of text.matchAll(/\/\/ icons: ([a-z0-9 -]+)/g)) m[1].trim().split(/\s+/).forEach(n => names.add(n));
   }
   return [...names].sort();
 }

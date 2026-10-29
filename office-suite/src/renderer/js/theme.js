@@ -11,6 +11,8 @@
     document.documentElement.dataset.themeMode = mode;
   }
   apply();
+  // Desktop: how the window is framed (the title bar leaves room for the system's buttons).
+  if (window.atlas && window.atlas.frame) document.documentElement.dataset.frame = window.atlas.frame;
   if (media && media.addEventListener) media.addEventListener('change', () => apply());
   // Another window changed it.
   window.addEventListener('storage', e => { if (e.key === KEY) apply(); });

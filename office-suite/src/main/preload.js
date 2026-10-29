@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('atlas', {
   isDesktop: true,
+  // How the window is framed (system, mac, overlay or mica): the pages lay out their title bar for it.
+  frame: (() => { try { return ipcRenderer.sendSync('app:frame'); } catch { return 'system'; } })(),
   platform: process.platform,
   openDialog: filters => ipcRenderer.invoke('file:open-dialog', filters),
   save: opts => ipcRenderer.invoke('file:save', opts),

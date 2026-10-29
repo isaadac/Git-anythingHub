@@ -293,3 +293,63 @@ html.touch .btn, html.touch .ribbon-tabs button, html.touch .modal .actions butt
 .titlebar .qa button .ico { font-size: 17px; }
 .btn.on .ico, .btn[aria-pressed="true"] .ico { color: var(--accent-fg); }
 .theme-btn { display: inline-flex; align-items: center; gap: var(--sp-3); }
+
+/* Ribbon display: full, single line, or tabs only */
+.ribbon-tabs .ribbon-mode { margin-left: auto; width: 32px; padding: 0; display: grid; place-items: center; color: var(--muted); }
+.ribbon-menu { position: fixed; z-index: 3000; min-width: 190px; background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-3); padding: var(--sp-2); display: grid; gap: 1px; animation: pop-in var(--dur-2) var(--ease-out); }
+.ribbon-menu button { display: grid; grid-template-columns: 20px 1fr 16px; align-items: center; gap: var(--sp-4); text-align: left; padding: 7px 10px; border: 0; background: none; border-radius: var(--r-sm); cursor: pointer; color: var(--text); }
+.ribbon-menu button:hover, .ribbon-menu button:focus-visible { background: var(--hover); outline: none; }
+.ribbon-menu .ico { font-size: 16px; color: var(--text-2); }
+.ribbon-menu .check { visibility: hidden; color: var(--accent-fg); }
+.ribbon-menu [aria-checked="true"] .check { visibility: visible; }
+body.ribbon-line .ribbon { min-height: 0; }
+body.ribbon-line .ribbon-panel { padding: var(--sp-2) var(--sp-3); flex-wrap: nowrap; align-items: center; }
+body.ribbon-line .group { flex-direction: row; align-items: center; padding: 0 var(--sp-3); }
+body.ribbon-line .group + .group::before { top: 4px; bottom: 4px; }
+body.ribbon-line .group .label { display: none; }
+body.ribbon-line .group .controls, body.ribbon-line .group .controls.col { flex-direction: row; flex-wrap: nowrap; max-width: none; align-items: center; }
+body.ribbon-line .btn.big { flex-direction: row; height: var(--ctl-h); min-width: 0; font-size: var(--fs-md); padding: 0 var(--sp-3); gap: var(--sp-3); border-radius: var(--r-sm); }
+body.ribbon-line .btn.big br { display: none; }
+body.ribbon-line .btn.big .ico { font-size: 16px; height: auto; }
+body.ribbon-line .btn.big .ico svg.icon { stroke-width: 1.75; }
+body.ribbon-tabs .ribbon { display: none; }
+body.ribbon-tabs.ribbon-peek .ribbon { display: block; position: absolute; left: 0; right: 0; top: calc(var(--titlebar-h) + 36px); z-index: 70; box-shadow: var(--sh-3); animation: pop-in var(--dur-2) var(--ease-out); }
+
+/* Mini toolbar over a selection */
+.minibar { position: fixed; z-index: 2500; display: flex; align-items: center; gap: 1px; padding: 4px; background: var(--raised); border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-3); opacity: 0; transform: translateY(4px) scale(.98); transition: opacity var(--dur-2) var(--ease-out), transform var(--dur-2) var(--ease-out); }
+.minibar.show { opacity: 1; transform: none; }
+.minibar[hidden] { display: none; }
+.minibar .btn { min-width: 30px; height: 30px; padding: 0; }
+.minibar .sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+@keyframes pop-in { from { opacity: 0; transform: translateY(-4px) scale(.98); } to { opacity: 1; transform: none; } }
+
+/* Desktop window frame: the title bar is the window's (drag to move, double-click to maximise) */
+html:is([data-frame="mac"], [data-frame="overlay"], [data-frame="mica"]) :is(.titlebar, body > header) { -webkit-app-region: drag; user-select: none; }
+html:is([data-frame="mac"], [data-frame="overlay"], [data-frame="mica"]) :is(.titlebar, body > header) :is(button, input, select, a, .tell-me, .live-people, .docname, .autosave) { -webkit-app-region: no-drag; }
+html[data-frame="mac"] :is(.titlebar, body > header) { padding-left: 86px; }
+html:is([data-frame="overlay"], [data-frame="mica"]) :is(.titlebar, body > header) { padding-right: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px); }
+html:is([data-frame="overlay"], [data-frame="mica"]) body > header { height: var(--titlebar-h); }
+/* Translucent material (Mica, vibrancy) shows through the frame; the document areas stay solid. */
+html:is([data-frame="mac"], [data-frame="mica"]) { --chrome: transparent; }
+html:is([data-frame="mac"], [data-frame="mica"]) body { background: transparent; }
+html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame="mac"], [data-frame="mica"]) .presenter { background: var(--bg); }
+
+/* A ribbon that doesn't fit: step 1, labelled small buttons show just their icon (the words stay for
+   screen readers and as tooltips); step 2, big buttons become small ones. Then it scrolls, on a thin bar. */
+.ribbon::-webkit-scrollbar { height: 6px; }
+.ribbon::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: var(--r-pill); }
+.ribbon::-webkit-scrollbar-track { background: transparent; }
+.ribbon.compact-1 .controls .btn:not(.big):has(> .ico) { font-size: 0; gap: 0; padding: 0 var(--sp-2); }
+.ribbon.compact-1 .controls .btn:not(.big):has(> .ico) .ico { font-size: 16px; }
+.ribbon.compact-2 .btn.big { height: var(--ctl-h); flex-direction: row; min-width: 0; font-size: 0; gap: 0; padding: 0 var(--sp-3); }
+.ribbon.compact-2 .btn.big .ico { font-size: 20px; height: auto; }
+.ribbon.compact-2 .btn.big br { display: none; }
+.ribbon.compact-2 .group .controls.col { justify-content: flex-start; }
+
+/* Side panes are cards beside the work, like the ribbon above it. */
+:is(.comments-pane, .navpane, .pivot-pane, .thumbs, .nb-nav) { border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); margin-bottom: var(--sp-4); overflow: hidden auto; }
+:is(.navpane, .thumbs, .nb-nav) { margin-left: var(--sp-4); margin-right: var(--sp-2); }
+:is(.comments-pane, .pivot-pane) { margin-right: var(--sp-4); margin-left: var(--sp-2); }
+.nb-nav { overflow: hidden; }
+@media screen and (max-width: 760px) { .pivot-pane { margin: 0; border-radius: 0; } }
+.note-canvas { border: 1px solid var(--border); border-radius: var(--r-lg); box-shadow: var(--sh-1); margin: 0 var(--sp-4) var(--sp-4) var(--sp-2); }
