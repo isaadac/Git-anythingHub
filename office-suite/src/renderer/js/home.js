@@ -57,8 +57,35 @@
 
   const keyOf = r => r.path || r.name;
   function openEntry(r) {
-    if (Platform.desktop && r.path) Platform.openPath(r.path);
+    if (Platform.isCloudPath(r.path) && window.Cloud) openCloud(r);
+    else if (Platform.desktop && r.path) Platform.openPath(r.path);
     else UI.toast('Open it with “Open a file…”');
+  }
+  /**
+   * A recent cloud document: fetched from the cloud, or — offline — the copy kept on this device
+   * (with any changes still waiting to go up).
+   */
+  async function openCloud(r) {
+    let data, note = '';
+    try {
+      if (!navigator.onLine) throw new TypeError('offline');
+      const p = Cloud.parsePath(r.path);
+      data = await Cloud.download(p.acct, { id: p.id, name: p.name });
+      Cloud.noteRev(r.path);
+      if (window.Offline) {
+        const mine = await Offline.copy(r.path);
+        // A save made offline that hasn't gone up yet is newer than the cloud's copy.
+        if (mine && mine.waiting) { data = mine.data; note = 'Your changes saved on this device are still waiting to go up.'; } else Offline.keep(r.path, r.name, data);
+      }
+    } catch (err) {
+      if (!window.Offline || !Offline.unreachable(err)) return UI.toast(`Couldn't open “${r.name}”: ${err.message}`, 5000);
+      const c = await Offline.copy(r.path);
+      if (!c) return UI.toast(`You're offline, and “${r.name}” hasn't been opened on this device before.`, 5000);
+      data = c.data;
+      note = 'You\'re offline: this is the copy on this device. Changes you save go up when you\'re back online.';
+    }
+    if (note) { try { sessionStorage.setItem('atlas-open-note', note); } catch { /* the note is optional */ } }
+    await Platform.openData(r.app, r.name, data, !Platform.desktop, r.path);
   }
   // icons: pin pin-off
   /** A file as a card: its miniature, name, when it was opened, and a pin. */

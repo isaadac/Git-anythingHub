@@ -478,3 +478,8 @@ html.touch-mode .thumbs .thumb, html.touch-mode .sheet-tabs .tab { min-height: 3
 html.capturing, html.capturing * { caret-color: transparent !important; }
 html.capturing .sel-box, html.capturing .fill-handle, html.capturing .spill-box, html.capturing .peer-cursor, html.capturing .handle { visibility: hidden !important; }
 html.capturing ::selection { background: transparent; }
+
+/* Cloud documents while offline (offline.js) */
+.sync-chip { display: inline-flex; align-items: center; gap: 4px; margin-left: var(--sp-4); padding: 2px 8px; border-radius: var(--r-pill); background: var(--warn-bg); color: var(--warn-fg); font-size: var(--fs-xs); white-space: nowrap; }
+.sync-chip[hidden] { display: none; }
+.sync-chip .ico svg { width: 14px; height: 14px; }

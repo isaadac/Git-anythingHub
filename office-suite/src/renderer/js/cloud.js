@@ -211,7 +211,8 @@
 
   // ---------- Services ----------
   // Each: who(a) -> label, root(a), list(a, folder) -> items, download(a, item) -> bytes,
-  // create(a, folder, name, bytes) -> item, update(a, id, name, bytes) -> item, share(a, id, {role, email}) -> link|null.
+  // create(a, folder, name, bytes) -> item, update(a, id, name, bytes) -> item, share(a, id, {role, email}) -> link|null,
+  // stat(a, id) -> the file's revision (changes whenever anyone saves it), for offline saves.
   // Items: { id, name, folder, size, modified, native }.
   const SERVICES = {
     google: {
@@ -247,6 +248,7 @@
         const j = (await call(a, endpoint(cfg, 'google', 'upload') + `/files/${encodeURIComponent(id)}?uploadType=media&fields=id,name`, { method: 'PATCH', headers: { 'Content-Type': mimeOf(name) }, body: bytes })).json();
         return { id: j.id, name: j.name };
       },
+      async stat(a, id, cfg) { const j = (await call(a, `${endpoint(cfg, 'google', 'api')}/files/${encodeURIComponent(id)}?fields=version,modifiedTime`)).json(); return String(j.version || j.modifiedTime || ''); },
       async share(a, id, { role, email }, cfg) {
         const api = endpoint(cfg, 'google', 'api');
         const perm = email ? { type: 'user', role, emailAddress: email } : { type: 'anyone', role };
@@ -277,6 +279,7 @@
         const j = (await call(a, `${endpoint(cfg, 'microsoft', 'api')}/me/drive/items/${encodeURIComponent(id)}/content`, { method: 'PUT', headers: { 'Content-Type': mimeOf(name) }, body: bytes })).json();
         return { id: j.id, name: j.name };
       },
+      async stat(a, id, cfg) { const j = (await call(a, `${endpoint(cfg, 'microsoft', 'api')}/me/drive/items/${encodeURIComponent(id)}?$select=eTag,lastModifiedDateTime`)).json(); return String(j.eTag || j.lastModifiedDateTime || ''); },
       async share(a, id, { role, email }, cfg) {
         const item = `${endpoint(cfg, 'microsoft', 'api')}/me/drive/items/${encodeURIComponent(id)}`;
         if (email) {
@@ -314,6 +317,7 @@
           headers: { 'Content-Type': 'application/octet-stream', 'Dropbox-API-Arg': headerJson({ path: id, mode: 'overwrite', mute: true }) } })).json();
         return { id: j.path_display, name: j.name };
       },
+      async stat(a, id, cfg) { const j = (await call(a, endpoint(cfg, 'dropbox', 'api') + '/files/get_metadata', { method: 'POST', ...jsonBody({ path: id }) })).json(); return String(j.rev || j.server_modified || ''); },
       async share(a, id, { role, email }, cfg) {
         const api = endpoint(cfg, 'dropbox', 'api');
         if (email) {
@@ -365,6 +369,13 @@
         await call(a, new URL(a.url).origin + id, { method: 'PUT', headers: { 'Content-Type': mimeOf(name) }, body: bytes });
         return { id, name };
       },
+      async stat(a, id) {
+        const body = '<?xml version="1.0" encoding="utf-8"?><d:propfind xmlns:d="DAV:"><d:prop><d:getetag/><d:getlastmodified/><d:getcontentlength/></d:prop></d:propfind>';
+        const r = await call(a, new URL(a.url).origin + id, { method: 'PROPFIND', headers: { Depth: '0', 'Content-Type': 'application/xml; charset=utf-8' }, body });
+        const xml = new DOMParser().parseFromString(r.text(), 'application/xml');
+        const get = n => (xml.getElementsByTagNameNS('DAV:', n)[0] || {}).textContent || '';
+        return get('getetag') || (get('getlastmodified') + '/' + get('getcontentlength'));
+      },
       async share(a, id, { role, email }) {
         // Nextcloud and ownCloud share through their OCS API next to the WebDAV endpoint.
         const m = /^(.*)\/remote\.php\/(?:dav\/files\/[^/]+|webdav)(\/.*)$/.exec(id);
@@ -386,6 +397,27 @@
     if (!m) throw new Error('Not a cloud document');
     return { acct: m[1], id: decodeURIComponent(m[2]), folder: decodeURIComponent(m[3]), name: decodeURIComponent(m[4]) };
   }
+
+  // ---------- Revisions ----------
+  // The revision each cloud file had when it was last opened or saved here: a save waiting to go
+  // up (offline.js) is a conflict if the file has another revision by then.
+  const REVS = 'atlas-cloud-revs';
+  const revs = () => { try { return JSON.parse(localStorage.getItem(REVS) || '{}') || {}; } catch { return {}; } };
+  function setRev(path, rev) {
+    const r = revs();
+    if (rev) r[path] = rev; else delete r[path];
+    const keys = Object.keys(r);
+    if (keys.length > 500) keys.slice(0, keys.length - 500).forEach(k => delete r[k]);
+    try { localStorage.setItem(REVS, JSON.stringify(r)); } catch { /* ignore */ }
+  }
+  /** The file's revision in the cloud now ('' when the service can't say). */
+  async function stat(path) {
+    const p = parsePath(path);
+    if (!p.id) return '';
+    const a = await account(p.acct);
+    return SERVICES[a.provider].stat ? SERVICES[a.provider].stat(a, p.id, await getConfig()) : '';
+  }
+  const noteRev = path => stat(path).then(r => setRev(path, r)).catch(() => {});
 
   // ---------- Public API ----------
   const Cloud = {
@@ -439,8 +471,11 @@
       if (!p.id) return Cloud.upload(p.acct, p.folder, name || p.name, data);
       const a = await account(p.acct);
       const it = await SERVICES[a.provider].update(a, p.id, name || p.name, toBytes(data), await getConfig());
-      return { name: name || p.name, path: makePath(p.acct, it.id || p.id, p.folder, name || p.name) };
+      const out = { name: name || p.name, path: makePath(p.acct, it.id || p.id, p.folder, name || p.name) };
+      await noteRev(out.path);
+      return out;
     },
+    stat, revisionSeen: path => revs()[path] || '', noteRev,
     async share(path, opts) {
       const p = parsePath(path);
       if (!p.id) throw new Error('Save the document first');
@@ -451,7 +486,10 @@
     async fetchFile(id, item, folder) {
       const data = await Cloud.download(id, item);
       // An exported Google Docs/Sheets/Slides file is saved as a new Office file next to it.
-      return { name: item.name, data, path: makePath(id, item.native ? '' : item.id, folder, item.name) };
+      const f = { name: item.name, data, path: makePath(id, item.native ? '' : item.id, folder, item.name) };
+      if (!item.native) await noteRev(f.path);
+      if (window.Offline) Offline.keep(f.path, f.name, data);
+      return f;
     }
   };
 

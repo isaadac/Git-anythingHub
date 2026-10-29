@@ -51,6 +51,8 @@
       // …with who made it: you, and anyone who edited with you in a live session since the last one.
       if (r && opts.data && !opts.noVersion) Versions.add(r.path || opts.path || r.name || opts.name, r.name || opts.name, opts.data, Platform.contributors ? Platform.contributors() : []).catch(() => {});
       if (r && opts.data && !opts.noVersion && !opts.saveAs) Thumbs.capture(r.path || opts.path || r.name || opts.name);
+      // After the app's own "Saved".
+      if (r && r.queued) setTimeout(() => UI.toast('Saved on this device. It will go up to the cloud when you\'re back online.', 5000), 60);
       return r;
     },
     async pending() {
@@ -70,6 +72,10 @@
       const bin = atob(String(dataUrl).slice(String(dataUrl).indexOf(',') + 1));
       const bytes = new Uint8Array(bin.length);
       for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+      // A word about where this copy came from (opened offline, say), once the document shows.
+      let note = null;
+      try { note = sessionStorage.getItem('atlas-open-note'); sessionStorage.removeItem('atlas-open-note'); } catch { /* ignore */ }
+      if (note) setTimeout(() => UI.toast(note, 6000), 800);
       return { name, path: Platform.isCloudPath(cloudPath) ? cloudPath : null, data: bytes };
     },
     /** Desktop: asks where to save without writing anything yet. Web: asks for a file name. */
@@ -91,7 +97,11 @@
       return null;
     },
     async print() { return desktop ? window.atlas.print() : window.print(); },
-    async recent() { return desktop ? window.atlas.recent() : JSON.parse(localStorageGet('atlas-recent') || '[]'); },
+    async recent() {
+      const own = JSON.parse(localStorageGet('atlas-recent') || '[]');
+      if (!desktop) return own;
+      return [...await window.atlas.recent(), ...own.filter(r => Platform.isCloudPath(r.path))].sort((a, b) => (b.opened || 0) - (a.opened || 0));
+    },
     async clearRecent() { return desktop ? window.atlas.clearRecent() : localStorageSet('atlas-recent', '[]'); },
     newWindow(app) {
       if (desktop) return window.atlas.newWindow(app);
@@ -131,6 +141,13 @@
 
   function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
   function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* ignore */ } }
+
+  // The web version keeps its own files for opening offline (sw.js). Not in the desktop or phone
+  // apps, which have them already, nor under test automation unless asked for.
+  if (!desktop && 'serviceWorker' in navigator && /^https?:$/.test(location.protocol) && !(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform()) &&
+      (!navigator.webdriver || localStorageGet('atlas-sw') === '1')) {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* offline opening is a bonus */ });
+  }
 
   // File → Office Theme and File → Language in every app.
   Platform.onMenu(cmd => {
@@ -706,6 +723,7 @@
           if (input && document.activeElement !== input) input.value = state.name;
           const saved = document.querySelector('.status-saved');
           if (saved) saved.textContent = state.dirty ? 'Unsaved changes' : (state.path ? 'Saved' : '');
+          if (state.syncChip) state.syncChip();
           Platform.setTitle(`${state.dirty ? '• ' : ''}${state.name} — ${appLabel}`);
         }
       };
@@ -717,6 +735,28 @@
         // overwriting the old one under the old name.
         state.set({ name, path: null, dirty: true });
       });
+      // Cloud documents: whether this device is offline, or has saves waiting to go up.
+      const saved = document.querySelector('.status-saved');
+      if (saved && window.Offline) {
+        const chip = document.createElement('span');
+        chip.className = 'sync-chip';
+        chip.setAttribute('role', 'status');
+        chip.hidden = true;
+        saved.after(chip);
+        let st = Offline.state;
+        // icons: cloud-off cloud-upload
+        state.syncChip = () => {
+          const cloud = Platform.isCloudPath(state.path);
+          const text = st.busy && st.waiting ? 'Uploading…' : st.waiting ? `Saved on this device · ${st.offline ? 'uploads when online' : 'uploading soon'}` : st.offline && cloud ? 'Offline' : '';
+          chip.hidden = !text;
+          if (!text) return;
+          chip.innerHTML = `<span class="ico" data-icon="${st.waiting ? 'cloud-upload' : 'cloud-off'}"></span><span></span>`;
+          chip.lastChild.textContent = text;
+          chip.title = st.waiting ? 'Changes saved while offline go up to the cloud as soon as the connection is back' : 'No connection: saving keeps your changes on this device until it is back';
+          if (window.Icons) Icons.fill(chip);
+        };
+        Offline.onChange(x => { st = x; state.syncChip(); });
+      }
       state.render();
       return state;
     }
@@ -763,8 +803,20 @@
     } catch { return opts.data; }
   }
   async function saveNow({ data, name, path, filters, saveAs }) {
-    // A document opened from (or saved to) a cloud account goes back there.
-    if (Platform.isCloudPath(path) && window.Cloud) return window.Cloud.saveTo(path, name, data);
+    // A document opened from (or saved to) a cloud account goes back there — or, when the cloud
+    // can't be reached, waits on this device and goes up later (offline.js).
+    if (Platform.isCloudPath(path) && window.Cloud) {
+      const off = window.Offline;
+      if (off && !navigator.onLine) return off.queue(path, name, data);
+      try {
+        const r = await window.Cloud.saveTo(path, name, data);
+        if (off) { off.drop(path); off.keep(r.path, r.name, data); }
+        return r;
+      } catch (err) {
+        if (off && off.unreachable(err)) return off.queue(path, name, data);
+        throw err;
+      }
+    }
     if (desktop) return window.atlas.save({ data, filePath: path, defaultName: name, filters, saveAs });
     let fileName = name;
     if (saveAs || !fileName) {
@@ -866,9 +918,11 @@
    */
   Platform.rememberRecent = function (name, app, filePath) {
     setTimeout(() => Thumbs.capture(filePath || name), 600);
-    if (desktop) return;
-    const list = JSON.parse(localStorageGet('atlas-recent') || '[]').filter(r => r.name !== name);
-    list.unshift({ name, app, opened: Date.now() });
+    // Cloud documents are listed here in the desktop app too (its own list is of files on disk).
+    const cloud = Platform.isCloudPath(filePath);
+    if (desktop && !cloud) return;
+    const list = JSON.parse(localStorageGet('atlas-recent') || '[]').filter(r => (cloud ? r.path !== filePath : r.name !== name || r.path));
+    list.unshift({ name, app, opened: Date.now(), ...(cloud ? { path: filePath } : {}) });
     localStorageSet('atlas-recent', JSON.stringify(list.slice(0, 20)));
   };
 

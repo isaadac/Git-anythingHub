@@ -102,6 +102,12 @@ module.exports = function start(root, files) {
       const ok = req.headers.authorization === 'Basic ' + Buffer.from('u:secret').toString('base64');
       if (!ok) { res.writeHead(401, { 'WWW-Authenticate': 'Basic' }); return res.end(); }
       if (p.startsWith('/ocs/')) { const f = new URLSearchParams(body.toString()); S.shares.push({ dav: f.get('path'), type: f.get('shareType'), perms: f.get('permissions'), api: req.headers['ocs-apirequest'] }); return json(res, 200, { ocs: { data: { url: 'https://cloud.test/s/abc' } } }); }
+      if (req.method === 'PROPFIND' && req.headers.depth === '0' && S.dav[p]) {
+        // One file: its ETag changes whenever its content does.
+        const tag = '"' + require('crypto').createHash('sha1').update(S.dav[p]).digest('hex').slice(0, 16) + '"';
+        res.writeHead(207, { 'Content-Type': 'application/xml' });
+        return res.end(`<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"><d:response><d:href>${p}</d:href><d:propstat><d:prop><d:getetag>${tag}</d:getetag><d:getcontentlength>${S.dav[p].length}</d:getcontentlength></d:prop></d:propstat></d:response></d:multistatus>`);
+      }
       if (req.method === 'PROPFIND') {
         const dir = p.endsWith('/') ? p : p + '/';
         const kids = Object.keys(S.dav).filter(k => k.startsWith(dir) && !k.slice(dir.length).includes('/'));
@@ -118,7 +124,7 @@ module.exports = function start(root, files) {
     // ---- static
     const file = path.join(root, decodeURIComponent(p));
     if (!file.startsWith(root) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); return res.end('nf'); }
-    const type = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.wasm': 'application/wasm' }[path.extname(file)] || 'application/octet-stream';
+    const type = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.wasm': 'application/wasm', '.json': 'application/json', '.woff2': 'font/woff2' }[path.extname(file)] || 'application/octet-stream';
     res.writeHead(200, { 'Content-Type': type });
     fs.createReadStream(file).pipe(res);
   });
