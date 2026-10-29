@@ -89,22 +89,24 @@
   const MEDIA_TYPES = { mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm', ogv: 'video/ogg', mov: 'video/quicktime', mp3: 'audio/mpeg', m4a: 'audio/mp4', wav: 'audio/wav', ogg: 'audio/ogg', oga: 'audio/ogg', aac: 'audio/aac', flac: 'audio/flac' };
   const mediaUrl = v => (typeof v === 'string' && /^data:(video\/(mp4|webm|ogg|quicktime)|audio\/(mpeg|mp3|mp4|x-m4a|wav|x-wav|ogg|aac|flac));base64,/i.test(v) ? v : null);
   const oneOf = (v, list, d) => (list.includes(v) ? v : d);
-  function cleanPres(p) {
+  /** A slide from a file or a live session, rebuilt from known fields (keepIds: keep its elements' ids). */
+  function cleanSlide(sl, layouts, keepIds) {
+    const s = newSlide('blank');
+    if (!sl || typeof sl !== 'object') return s;
+    s.layout = typeof sl.layout === 'string' && (BUILTIN_LAYOUTS[sl.layout] || (layouts && Object.hasOwn(layouts, sl.layout))) ? sl.layout : 'blank';
+    s.bg = color(sl.bg);
+    s.bgImage = imageUrl(sl.bgImage);
+    s.transition = oneOf(sl.transition, SlidesAnim.TRANSITIONS, 'none');
+    s.transDur = num(sl.transDur, 1, 0.1, 30);
+    s.advance = typeof sl.advance === 'number' && isFinite(sl.advance) ? Math.max(0, Math.min(3600, sl.advance)) : null;
+    s.notes = typeof sl.notes === 'string' ? sl.notes.slice(0, 100000) : '';
+    s.elements = cleanElements(sl.elements, [], 0, keepIds);
+    if (sl.hideMaster === true) s.hideMaster = true;
+    return s;
+  }
+  function cleanPres(p, keepIds) {
     if (!p || !Array.isArray(p.slides)) throw new Error('Not a presentation');
-    const slides = p.slides.slice(0, 2000).map(sl => {
-      const s = newSlide('blank');
-      if (!sl || typeof sl !== 'object') return s;
-      s.layout = typeof sl.layout === 'string' && (BUILTIN_LAYOUTS[sl.layout] || (p.layouts && Object.hasOwn(p.layouts, sl.layout))) ? sl.layout : 'blank';
-      s.bg = color(sl.bg);
-      s.bgImage = imageUrl(sl.bgImage);
-      s.transition = oneOf(sl.transition, SlidesAnim.TRANSITIONS, 'none');
-      s.transDur = num(sl.transDur, 1, 0.1, 30);
-      s.advance = typeof sl.advance === 'number' && isFinite(sl.advance) ? Math.max(0, Math.min(3600, sl.advance)) : null;
-      s.notes = typeof sl.notes === 'string' ? sl.notes.slice(0, 100000) : '';
-      s.elements = cleanElements(sl.elements);
-      if (sl.hideMaster === true) s.hideMaster = true;
-      return s;
-    });
+    const slides = p.slides.slice(0, 2000).map(sl => cleanSlide(sl, p.layouts, keepIds));
     if (!slides.length) slides.push(newSlide('title'));
     const out = { theme: Object.prototype.hasOwnProperty.call(THEMES, p.theme) || p.theme === 'custom' ? p.theme : 'office', slides };
     const ct = p.customTheme;
@@ -116,7 +118,7 @@
     const m = p.master && typeof p.master === 'object' ? p.master : null;
     out.master = defaultMaster();
     if (m) {
-      out.master.elements = cleanElements(m.elements, ['footer', 'sldNum', 'dt']);
+      out.master.elements = cleanElements(m.elements, ['footer', 'sldNum', 'dt'], 0, keepIds);
       out.master.bg = color(m.bg); out.master.bgImage = imageUrl(m.bgImage);
       const f = m.footer || {};
       out.master.footer = { text: typeof f.text === 'string' ? f.text.slice(0, 500) : '', number: f.number === true, date: f.date === true, skipTitle: f.skipTitle !== false };
@@ -127,28 +129,30 @@
         if (!/^[\w-]{1,40}$/.test(k)) return;
         const L = p.layouts[k];
         if (!L || typeof L !== 'object') return;
-        out.layouts[k] = { name: typeof L.name === 'string' ? L.name.slice(0, 100) : layoutName(k), elements: cleanElements(L.elements), bg: color(L.bg), bgImage: imageUrl(L.bgImage) };
+        out.layouts[k] = { name: typeof L.name === 'string' ? L.name.slice(0, 100) : layoutName(k), elements: cleanElements(L.elements, [], 0, keepIds), bg: color(L.bg), bgImage: imageUrl(L.bgImage) };
         if (L.custom === true || !BUILTIN_LAYOUTS[k]) out.layouts[k].custom = true;
       });
     }
     return out;
   }
   /** Elements from a file, rebuilt from known fields (phs: extra placeholder kinds allowed, e.g. footers on the master). */
-  function cleanElements(list, phs = [], depth = 0) {
+  function cleanElements(list, phs = [], depth = 0, keepIds = false) {
     const ids = new Map(); // old id -> new id, so connectors keep pointing at their shapes
-    const out = (Array.isArray(list) ? list : []).slice(0, 500).map(el => cleanElement(el, phs, depth, ids)).filter(Boolean);
+    const out = (Array.isArray(list) ? list : []).slice(0, 500).map(el => cleanElement(el, phs, depth, ids, keepIds)).filter(Boolean);
     out.forEach(c => {
       if (c.type !== 'connector') return;
       ['from', 'to'].forEach(k => { if (c[k]) { const id = ids.get(c[k].id); if (id) c[k].id = id; else delete c[k]; } });
     });
     return out;
   }
-  function cleanElement(el, phs, depth, ids) {
+  const ID_OK = /^[\w-]{1,60}$/;
+  function cleanElement(el, phs, depth, ids, keepIds) {
     {
       if (!el || typeof el !== 'object') return null;
       const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector', 'cameo', 'ink'], null);
       if (!type) return null;
-      const out = { id: newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
+      // A live session keeps everyone's ids (they name the same object in every copy).
+      const out = { id: keepIds && typeof el.id === 'string' && ID_OK.test(el.id) ? el.id : newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
       if (typeof el.id === 'string') ids.set(el.id, out.id);
       // Morph key: the same object on the next slide (kept from the copy it was duplicated from).
       if (typeof el.mk === 'string' && /^[\w-]{1,60}$/.test(el.mk)) out.mk = el.mk;
@@ -158,7 +162,7 @@
       if (el.decorative === true) out.decorative = true;
       if (type === 'group') {
         if (depth >= 5) return null;
-        out.children = cleanElements(el.children, phs, depth + 1).filter(c => c.type !== 'connector');
+        out.children = cleanElements(el.children, phs, depth + 1, keepIds).filter(c => c.type !== 'connector');
         if (!out.children.length) return null;
         if (el.smart && typeof el.smart === 'object' && Object.hasOwn(SlidesExtras.SMART, el.smart.type) && typeof el.smart.text === 'string') out.smart = { type: el.smart.type, text: el.smart.text.slice(0, 5000) };
         if (el.rot) out.rot = num(el.rot, 0, -360, 360);
@@ -2981,24 +2985,35 @@
       const byId = new Map(pres.slides.map((s, i) => { s.pos = i; s.elements.forEach((e, z) => { e.z = z; }); return [s.id, s]; }));
       const orphans = new Map();
       for (const [k, v] of Object.entries(changes)) {
-        if (k === 'deck' && v) {
+        // Everything from others goes through the same checks as a file (ids kept).
+        if (k === 'deck' && v && typeof v === 'object') {
+          let deck;
+          try { deck = cleanPres({ ...v, slides: [] }, true); } catch { continue; }
           for (const key of Object.keys(pres)) if (key !== 'slides') delete pres[key];
-          Object.assign(pres, JSON.parse(JSON.stringify(v)));
+          delete deck.slides;
+          Object.assign(pres, deck);
         } else if (k.startsWith('s:')) {
           const id = k.slice(2);
+          if (!ID_OK.test(id)) continue;
           if (v === null) { byId.delete(id); continue; }
+          if (!v || typeof v !== 'object') continue;
           let sl = byId.get(id);
           if (!sl) { sl = { id, elements: [] }; byId.set(id, sl); }
           for (const key of Object.keys(sl)) if (key !== 'elements') delete sl[key];
-          Object.assign(sl, JSON.parse(JSON.stringify(v)), { id });
+          const clean = cleanSlide({ ...v, elements: [] }, pres.layouts, true);
+          delete clean.elements;
+          Object.assign(sl, clean, { id, pos: Number.isInteger(v.pos) ? v.pos : sl.pos });
         } else if (k.startsWith('e:')) {
           const i = k.indexOf(':', 2);
           const sid = k.slice(2, i), eid = k.slice(i + 1);
+          if (i < 0 || !ID_OK.test(sid) || !ID_OK.test(eid)) continue;
+          const el = v === null ? null : cleanElements([v], [], 0, true)[0];
+          if (v !== null && (!el || el.id !== eid)) continue;
+          if (el && Number.isFinite(v.z)) el.z = v.z;
           let sl = byId.get(sid);
-          if (!sl) { if (v === null) continue; if (!orphans.has(sid)) orphans.set(sid, []); orphans.get(sid).push(v); continue; }
+          if (!sl) { if (!el) continue; if (!orphans.has(sid)) orphans.set(sid, []); orphans.get(sid).push(el); continue; }
           const at = sl.elements.findIndex(e => e.id === eid);
-          if (v === null) { if (at >= 0) sl.elements.splice(at, 1); continue; }
-          const el = JSON.parse(JSON.stringify(v));
+          if (!el) { if (at >= 0) sl.elements.splice(at, 1); continue; }
           if (at >= 0) sl.elements[at] = el; else sl.elements.push(el);
         }
       }

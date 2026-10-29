@@ -2890,6 +2890,56 @@
     if (obj && typeof obj === 'object') Object.entries(obj).forEach(([k, v]) => { if (/^\d{1,7}$/.test(k) && typeof v === 'number' && v >= lo && v <= hi) out[+k] = Math.round(v); });
     return out;
   };
+  const cleanQueries = list => (Array.isArray(list) ? list : []).filter(q => q && typeof q.url === 'string' && /^https?:\/\//.test(q.url)).map(q => ({ url: q.url.slice(0, 2000), table: Math.max(0, +q.table || 0), r: Math.max(0, +q.r || 0), c: Math.max(0, +q.c || 0), h: Math.max(0, +q.h || 0), w: Math.max(0, +q.w || 0) })).slice(0, 50);
+  // Clean & Transform queries: a source range and steps (plain data, rebuilt from known fields).
+  const cleanCleans = list => (Array.isArray(list) ? list : []).filter(q => q && q.src && typeof q.src.sheet === 'string' && typeof q.src.ref === 'string' && /^[A-Z]{1,3}\d+:[A-Z]{1,3}\d+$/.test(q.src.ref) && Array.isArray(q.steps))
+    .map(q => ({ src: { sheet: q.src.sheet.slice(0, 31), ref: q.src.ref }, steps: q.steps.slice(0, 200).map(SheetsClean.cleanStep).filter(Boolean), r: Math.max(0, +q.r || 0), c: Math.max(0, +q.c || 0), h: Math.max(0, +q.h || 0), w: Math.max(0, +q.w || 0) })).slice(0, 50);
+  const cleanSolver = v => {
+    if (!v || typeof v !== 'object') return null;
+    const str = x => (typeof x === 'string' ? x.slice(0, 5000) : '');
+    return { obj: str(v.obj), goal: ['max', 'min', 'value'].includes(v.goal) ? v.goal : 'max', target: +v.target || 0, vars: str(v.vars), cons: str(v.cons), nonneg: v.nonneg !== false };
+  };
+  const cleanIndexes = (list, max) => (Array.isArray(list) ? list : []).filter(n => Number.isInteger(n) && n >= 0 && n < max).slice(0, 100000);
+  /** A cell from a live session: a plain value, its style and note, nothing else. */
+  function cleanLiveCell(c) {
+    if (!c || typeof c !== 'object' || Array.isArray(c)) return null;
+    const v = c.v;
+    const out = { v: (typeof v === 'number' && isFinite(v)) || typeof v === 'boolean' ? v : typeof v === 'string' ? v.slice(0, 32767) : '' };
+    const st = cleanStyle(c.s) || {};
+    if (c.s && typeof c.s.fmt === 'string' && c.s.fmt.length <= 255) st.fmt = c.s.fmt;
+    if (Object.keys(st).length) out.s = st;
+    if (typeof c.n === 'string' && c.n) out.n = c.n.slice(0, 32767);
+    if (c.li === true) out.li = true;
+    return out;
+  }
+  /** A sheet's settings from a live session, through the same checks as a file's. */
+  function cleanLiveSheet(v) {
+    const s = {};
+    s.name = cleanSheetName(v.name) || 'Sheet';
+    s.colWidths = cleanSizes(v.colWidths, 10, 2000);
+    s.rowHeights = cleanSizes(v.rowHeights, 4, 2000);
+    s.hiddenRows = cleanIndexes(v.hiddenRows, MAX_ROWS);
+    s.merges = (Array.isArray(v.merges) ? v.merges : []).filter(m => m && [m.r1, m.c1, m.r2, m.c2].every(n => Number.isInteger(n) && n >= 0) && m.r2 >= m.r1 && m.c2 >= m.c1 && m.r2 < MAX_ROWS && m.c2 < MAX_COLS)
+      .map(m => ({ r1: m.r1, c1: m.c1, r2: m.r2, c2: m.c2 })).slice(0, 10000);
+    s.charts = (Array.isArray(v.charts) ? v.charts : []).map(cleanChart).filter(Boolean).slice(0, 100);
+    s.cf = (Array.isArray(v.cf) ? v.cf : []).map(SheetsCF.clean).filter(Boolean).slice(0, 500);
+    s.pivots = (Array.isArray(v.pivots) ? v.pivots : []).map(SheetsPivot.clean).filter(Boolean).slice(0, 50);
+    s.dv = (Array.isArray(v.dv) ? v.dv : []).map(SheetsDV.clean).filter(Boolean).slice(0, 500);
+    s.tables = (Array.isArray(v.tables) ? v.tables : []).map(SheetsTables.cleanTable).filter(Boolean).slice(0, 500);
+    s.sparklines = (Array.isArray(v.sparklines) ? v.sparklines : []).map(SheetsSpark.clean).filter(Boolean).slice(0, 10000);
+    s.slicers = (Array.isArray(v.slicers) ? v.slicers : []).map(SheetsTables.cleanSlicer).filter(Boolean).slice(0, 100);
+    s.queries = cleanQueries(v.queries);
+    s.cleans = cleanCleans(v.cleans);
+    const solver = cleanSolver(v.solver);
+    if (solver) s.solver = solver;
+    const prot = v.protect ? SheetsProtect.clean(v.protect) : null;
+    if (prot) s.protect = prot;
+    if (v.freezeRow === true) s.freezeRow = true;
+    if (v.freezeCol === true) s.freezeCol = true;
+    if (Platform.isColor(v.color)) s.color = v.color;
+    if (Number.isInteger(v.filterCol) && v.filterCol >= 0 && v.filterCol < MAX_COLS) s.filterCol = v.filterCol;
+    return s;
+  }
 
   /**
    * Parses an Excel/ODS file in a throwaway worker with a time limit, so a hostile file can't
@@ -3050,14 +3100,9 @@
       if (ms && ms.name === sn && Array.isArray(ms.sparklines)) s.sparklines = ms.sparklines.map(SheetsSpark.clean).filter(Boolean).slice(0, 10000);
       else if (ex && typeof ex.spark === 'string' && ex.spark) { try { s.sparklines = SheetsSpark.fromXlsx(ex.spark, sn); } catch (err) { console.info('Sparklines skipped:', err); } }
       if (ms && ms.name === sn && Array.isArray(ms.slicers)) s.slicers = ms.slicers.map(SheetsTables.cleanSlicer).filter(Boolean).slice(0, 100);
-      if (ms && ms.name === sn && Array.isArray(ms.queries)) s.queries = ms.queries.filter(q => q && typeof q.url === 'string' && /^https?:\/\//.test(q.url)).map(q => ({ url: q.url.slice(0, 2000), table: Math.max(0, +q.table || 0), r: Math.max(0, +q.r || 0), c: Math.max(0, +q.c || 0), h: Math.max(0, +q.h || 0), w: Math.max(0, +q.w || 0) })).slice(0, 50);
-      // Clean & Transform queries: a source range and steps (plain data, rebuilt from known fields).
-      if (ms && ms.name === sn && Array.isArray(ms.cleans)) s.cleans = ms.cleans.filter(q => q && q.src && typeof q.src.sheet === 'string' && typeof q.src.ref === 'string' && /^[A-Z]{1,3}\d+:[A-Z]{1,3}\d+$/.test(q.src.ref) && Array.isArray(q.steps))
-        .map(q => ({ src: { sheet: q.src.sheet.slice(0, 31), ref: q.src.ref }, steps: q.steps.slice(0, 200).map(SheetsClean.cleanStep).filter(Boolean), r: Math.max(0, +q.r || 0), c: Math.max(0, +q.c || 0), h: Math.max(0, +q.h || 0), w: Math.max(0, +q.w || 0) })).slice(0, 50);
-      if (ms && ms.name === sn && ms.solver && typeof ms.solver === 'object') {
-        const v = ms.solver, str = x => (typeof x === 'string' ? x.slice(0, 5000) : '');
-        s.solver = { obj: str(v.obj), goal: ['max', 'min', 'value'].includes(v.goal) ? v.goal : 'max', target: +v.target || 0, vars: str(v.vars), cons: str(v.cons), nonneg: v.nonneg !== false };
-      }
+      if (ms && ms.name === sn && Array.isArray(ms.queries)) s.queries = cleanQueries(ms.queries);
+      if (ms && ms.name === sn && Array.isArray(ms.cleans)) s.cleans = cleanCleans(ms.cleans);
+      if (ms && ms.name === sn && cleanSolver(ms.solver)) s.solver = cleanSolver(ms.solver);
       if (ms && ms.name === sn && Array.isArray(ms.dv)) s.dv = ms.dv.map(SheetsDV.clean).filter(Boolean).slice(0, 500);
       else if (ex && typeof ex.dv === 'string' && ex.dv) {
         try { s.dv = SheetsDV.fromXlsx(ex.dv); } catch (err) { console.info('Data validation skipped:', err); }
@@ -3474,11 +3519,10 @@
             byUid.set(u, s);
             Object.keys(s.cells).forEach(ref => growFor(s, ref));
           }
+          if (!v || typeof v !== 'object') continue;
           for (const key of Object.keys(s)) if (!SHEET_LOCAL.has(key)) delete s[key];
-          Object.assign(s, JSON.parse(JSON.stringify(v)));
-          s.tables = (s.tables || []).map(SheetsTables.cleanTable).filter(Boolean);
-          s.sparklines = (s.sparklines || []).map(SheetsSpark.clean).filter(Boolean);
-          s.slicers = (s.slicers || []).map(SheetsTables.cleanSlicer).filter(Boolean);
+          // Everything from others goes through the same checks as a file.
+          Object.assign(s, cleanLiveSheet(v), { pos: Number.isInteger(v.pos) ? v.pos : s.pos });
         } else if (k === 'book:names') {
           book.names = (Array.isArray(v) ? v : []).map(SheetsTables.cleanName).filter(Boolean);
         } else if (k === 'book:scripts') {
@@ -3491,7 +3535,8 @@
           const s = byUid.get(u);
           let cells = s && s.cells;
           if (!cells) { if (!orphanCells.has(u)) orphanCells.set(u, {}); cells = orphanCells.get(u); }
-          if (v === null) delete cells[ref]; else { cells[ref] = v; if (s) growFor(s, ref); }
+          const cell = v === null ? null : cleanLiveCell(v);
+          if (!cell) delete cells[ref]; else { cells[ref] = cell; if (s) growFor(s, ref); }
           if (s) touched(s);
         }
       }
