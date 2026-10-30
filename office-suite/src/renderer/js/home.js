@@ -7,10 +7,11 @@
     sheets: { label: 'S', cls: 't-sheets', page: 'sheets.html' },
     slides: { label: 'P', cls: 't-slides', page: 'slides.html' },
     notes: { label: 'N', cls: 't-notes', page: 'notes.html' },
-    pdf: { label: 'PDF', cls: 't-pdf', page: 'pdf.html' }
+    pdf: { label: 'PDF', cls: 't-pdf', page: 'pdf.html' },
+    board: { label: 'B', cls: 't-board', page: 'board.html' }
   };
   const EXT_APP = { docx: 'write', html: 'write', htm: 'write', txt: 'write', md: 'write',
-    xlsx: 'sheets', xls: 'sheets', csv: 'sheets', ods: 'sheets', tsv: 'sheets', pptx: 'slides', aslides: 'slides', anote: 'notes', pdf: 'pdf' };
+    xlsx: 'sheets', xls: 'sheets', csv: 'sheets', ods: 'sheets', tsv: 'sheets', pptx: 'slides', aslides: 'slides', anote: 'notes', pdf: 'pdf', aboard: 'board' };
 
   // Greeting: the time of day, and the person's first name once they have given it (Live, comments).
   const now = new Date(), h = now.getHours();

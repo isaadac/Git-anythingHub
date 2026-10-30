@@ -187,3 +187,8 @@ test('remote taps are limited per minute', () => {
   assert.throws(() => store.remoteCommand(id, token, 'next'), /Too many/);
   store.close();
 });
+
+test('questions without ids get their own', () => {
+  const f = C.clean({ questions: [{ type: 'text', title: 'A' }, { type: 'text', title: 'B' }] });
+  assert.deepStrictEqual(f.questions.map(q => q.id), ['q1', 'q2']);
+});

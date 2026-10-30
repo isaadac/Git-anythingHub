@@ -5,6 +5,7 @@
   "Clean & Transform": "Limpiar y transformar", "Applied steps": "Pasos aplicados",
   "Waterfall": "Cascada", "Funnel": "Embudo", "Map": "Mapa", "Run Python": "Ejecutar Python",
   "Cameo": "Cameo", "Rehearse with Coach": "Ensayar con el entrenador", "Live Captions": "Subtítulos en directo", "Speaking": "Hablar",
+  "Sticky Note": "Nota adhesiva", "Frame": "Marco", "Create": "Crear", "Connector": "Conector", "Connect": "Conectar", "Pen": "Lápiz", "Flowchart": "Diagrama de flujo", "Mind Map": "Mapa mental", "Brainstorm": "Lluvia de ideas", "Retro": "Retrospectiva", "Kanban": "Kanban", "Align": "Alinear", "Tidy Up": "Ordenar", "Zoom to Fit": "Ajustar a la ventana", "Export Picture": "Exportar imagen", "Export SVG": "Exportar SVG", "Export": "Exportar",
   "Poll": "Encuesta", "Audience": "Público", "Audience Q&A": "Preguntas del público", "Phone Remote": "Control desde el teléfono", "Reset Poll": "Reiniciar encuesta", "Captions in": "Subtítulos en",
   "Annotate": "Anotar", "Fill & Sign": "Rellenar y firmar", "Hand": "Mano", "Tools": "Herramientas", "Edit in Write": "Editar en Write", "Add Text": "Agregar texto", "Comment": "Comentario", "Colour": "Color", "Sign": "Firmar", "Date": "Fecha", "Form Fields": "Campos de formulario", "Form": "Formulario", "Forms": "Formularios", "Rotate Left": "Girar a la izquierda", "Rotate Right": "Girar a la derecha", "Move Up": "Subir", "Move Down": "Bajar", "Organize": "Organizar", "Insert PDF": "Insertar PDF", "Extract": "Extraer", "Combine": "Combinar",
   "Speech": "Voz",

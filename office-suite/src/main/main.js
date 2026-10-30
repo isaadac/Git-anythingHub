@@ -27,13 +27,14 @@ const APPS = {
   slides: { page: 'slides.html', title: 'Isadek Slides', width: 1360, height: 860 },
   notes: { page: 'notes.html', title: 'Isadek Notes', width: 1280, height: 840 },
   pdf: { page: 'pdf.html', title: 'Isadek PDF', width: 1280, height: 880 },
+  board: { page: 'board.html', title: 'Isadek Whiteboard', width: 1360, height: 860 },
   help: { page: 'help.html', title: 'Isadek Office Help', width: 1000, height: 760 }
 };
 
 const EXT_TO_APP = {
   '.docx': 'write', '.html': 'write', '.htm': 'write', '.txt': 'write', '.md': 'write',
   '.xlsx': 'sheets', '.xls': 'sheets', '.csv': 'sheets', '.ods': 'sheets', '.tsv': 'sheets',
-  '.pptx': 'slides', '.aslides': 'slides', '.anote': 'notes', '.pdf': 'pdf'
+  '.pptx': 'slides', '.aslides': 'slides', '.anote': 'notes', '.pdf': 'pdf', '.aboard': 'board'
 };
 
 const pendingFiles = new Map(); // webContents.id -> file path to open on load
@@ -485,6 +486,7 @@ function buildMenu() {
         { label: L('New Spreadsheet'), accelerator: 'CmdOrCtrl+Shift+E', click: () => createWindow('sheets') },
         { label: L('New Presentation'), accelerator: 'CmdOrCtrl+Shift+P', click: () => createWindow('slides') },
         { label: L('Isadek Notes'), accelerator: 'CmdOrCtrl+Shift+O', click: () => createWindow('notes') },
+        { label: L('New Whiteboard'), click: () => createWindow('board') },
         { type: 'separator' },
         { label: L('New'), accelerator: 'CmdOrCtrl+N', click: () => send('new') },
         { label: L('Open…'), accelerator: 'CmdOrCtrl+O', click: () => send('open') },

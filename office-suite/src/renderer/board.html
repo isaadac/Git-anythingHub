@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Isadek Whiteboard</title>
+<link rel="stylesheet" href="css/office.css">
+<script src="js/theme.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/icons.js"></script>
+<link rel="stylesheet" href="css/board.css">
+</head>
+<body class="app-board">
+<div class="titlebar">
+  <div class="brand"><div class="logo">B</div><span>Whiteboard</span></div>
+  <div class="qa">
+    <button data-cmd="save" title="Save (Ctrl+S)"><span class="ico" data-icon="save"></span></button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)"><span class="ico" data-icon="undo-2"></span></button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)"><span class="ico" data-icon="redo-2"></span></button>
+  </div>
+  <div class="docname"><input value="Board" aria-label="Board name" spellcheck="false"></div>
+  <span class="status-saved"></span>
+  <button class="share-btn" data-cmd="share" title="Share with others">Share</button>
+</div>
+
+<div class="ribbon-tabs">
+  <button class="file-tab">File</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="insert">Insert</button>
+  <button data-tab="arrange">Arrange</button>
+  <button data-tab="view">View</button>
+</div>
+
+<div class="ribbon">
+  <div class="ribbon-panel active" data-panel="home">
+    <div class="group"><div class="controls">
+      <button class="btn big tool on" data-tool="select" title="Select and move (V)"><span class="ico" data-icon="mouse-pointer-2"></span>Select</button>
+      <button class="btn big tool" data-tool="hand" title="Move around the board (H, or hold Space)"><span class="ico" data-icon="hand"></span>Hand</button>
+    </div><div class="label">Tools</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big tool" data-tool="sticky" title="Sticky note (N): click to add, or drag to size"><span class="ico" data-icon="sticky-note"></span>Sticky<br>Note</button>
+      <button class="btn big tool" data-tool="text" title="Text (T)"><span class="ico" data-icon="type"></span>Text</button>
+      <button class="btn big tool" data-tool="frame" title="Frame: an area with a title that holds what's on it (F)"><span class="ico" data-icon="frame"></span>Frame</button>
+    </div><div class="label">Create</div></div>
+    <div class="group"><div class="controls shapes-grid">
+      <button class="btn tool" data-tool="shape:rect" title="Rectangle (R) — process"><span class="ico" data-icon="square"></span></button>
+      <button class="btn tool" data-tool="shape:round" title="Rounded rectangle — start or end"><span class="ico" data-icon="rectangle-horizontal"></span></button>
+      <button class="btn tool" data-tool="shape:ellipse" title="Ellipse (O)"><span class="ico" data-icon="circle"></span></button>
+      <button class="btn tool" data-tool="shape:diamond" title="Diamond (D) — decision"><span class="ico" data-icon="diamond"></span></button>
+      <button class="btn tool" data-tool="shape:triangle" title="Triangle"><span class="ico" data-icon="triangle"></span></button>
+      <button class="btn tool" data-tool="shape:parallelogram" title="Parallelogram — input or output"><span class="ico" data-icon="rectangle-ellipsis"></span></button>
+      <button class="btn tool" data-tool="shape:cylinder" title="Cylinder — database"><span class="ico" data-icon="database"></span></button>
+      <button class="btn tool" data-tool="shape:hexagon" title="Hexagon — preparation"><span class="ico" data-icon="hexagon"></span></button>
+    </div><div class="label">Shapes</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big tool" data-tool="connector" title="Connector (L): drag from one item to another"><span class="ico" data-icon="move-up-right"></span>Connector</button>
+      <div class="controls col">
+        <select class="ctl" id="connKind" aria-label="Connector style" title="Connector style"><option value="elbow">Elbow</option><option value="straight">Straight</option><option value="curve">Curved</option></select>
+        <select class="ctl" id="connArrow" aria-label="Arrow ends" title="Arrow ends"><option value="end">Arrow</option><option value="both">Both ends</option><option value="none">No arrow</option></select>
+      </div>
+    </div><div class="label">Connect</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big tool" data-tool="pen" title="Pen (P)"><span class="ico" data-icon="pen-line"></span>Pen</button>
+      <button class="btn big tool" data-tool="highlighter" title="Highlighter"><span class="ico" data-icon="highlighter" style="color:#e0b000"></span>Highlighter</button>
+      <button class="btn big tool" data-tool="eraser" title="Eraser (E): touch a drawing to remove it"><span class="ico" data-icon="eraser"></span>Eraser</button>
+    </div><div class="label">Draw</div></div>
+    <div class="group"><div class="controls swatches" id="swatches" role="group" aria-label="Colour"></div><div class="label">Colour</div></div>
+  </div>
+  <div class="ribbon-panel" data-panel="insert">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insPicture"><span class="ico" data-icon="image"></span>Picture</button>
+    </div><div class="label">Media</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" data-template="flowchart" title="A flowchart to start from"><span class="ico" data-icon="workflow"></span>Flowchart</button>
+      <button class="btn big" data-template="mindmap" title="A mind map: Tab adds a branch, Enter a sibling"><span class="ico" data-icon="network"></span>Mind Map</button>
+      <button class="btn big" data-template="brainstorm" title="A frame of sticky notes for ideas"><span class="ico" data-icon="lightbulb"></span>Brainstorm</button>
+      <button class="btn big" data-template="retro" title="What went well, what to improve, actions"><span class="ico" data-icon="rotate-ccw"></span>Retro</button>
+      <button class="btn big" data-template="kanban" title="To do, doing, done"><span class="ico" data-icon="square-kanban"></span>Kanban</button>
+    </div><div class="label">Templates</div></div>
+  </div>
+  <div class="ribbon-panel" data-panel="arrange">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="toFront"><span class="ico" data-icon="bring-to-front"></span>Bring to<br>Front</button>
+      <button class="btn big" id="toBack"><span class="ico" data-icon="send-to-back"></span>Send to<br>Back</button>
+      <button class="btn big" id="dupBtn" title="Duplicate (Ctrl+D)"><span class="ico" data-icon="copy-plus"></span>Duplicate</button>
+      <button class="btn big" id="delBtn" title="Delete (Del)"><span class="ico" data-icon="trash-2"></span>Delete</button>
+    </div><div class="label">Order</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn" data-align="left" title="Align left"><span class="ico" data-icon="align-start-vertical"></span></button>
+      <button class="btn" data-align="center" title="Align centres"><span class="ico" data-icon="align-center-vertical"></span></button>
+      <button class="btn" data-align="right" title="Align right"><span class="ico" data-icon="align-end-vertical"></span></button>
+      <button class="btn" data-align="top" title="Align top"><span class="ico" data-icon="align-start-horizontal"></span></button>
+      <button class="btn" data-align="middle" title="Align middles"><span class="ico" data-icon="align-center-horizontal"></span></button>
+      <button class="btn" data-align="bottom" title="Align bottom"><span class="ico" data-icon="align-end-horizontal"></span></button>
+      <button class="btn" data-align="hspace" title="Space evenly across"><span class="ico" data-icon="align-horizontal-space-around"></span></button>
+      <button class="btn" data-align="vspace" title="Space evenly down"><span class="ico" data-icon="align-vertical-space-around"></span></button>
+    </div><div class="label">Align</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="tidyBtn" title="Lay out the selected mind map or flowchart neatly"><span class="ico" data-icon="sparkles"></span>Tidy Up</button>
+    </div><div class="label">Layout</div></div>
+  </div>
+  <div class="ribbon-panel" data-panel="view">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="zoomFit" title="Show everything (Shift+1)"><span class="ico" data-icon="scan"></span>Zoom to<br>Fit</button>
+      <button class="btn" id="zoomOut" title="Zoom out (-)"><span class="ico" data-icon="zoom-out"></span></button>
+      <button class="btn" id="zoomIn" title="Zoom in (+)"><span class="ico" data-icon="zoom-in"></span></button>
+      <button class="btn" id="zoom100" title="Actual size (Shift+0)">100%</button>
+    </div><div class="label">Zoom</div></div>
+    <div class="group"><div class="controls">
+      <select class="ctl" id="bgSel" aria-label="Background"><option value="dots">Dots</option><option value="grid">Grid</option><option value="plain">Plain</option></select>
+    </div><div class="label">Background</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" data-cmd="export-png"><span class="ico" data-icon="image-down"></span>Export<br>Picture</button>
+      <button class="btn big" data-cmd="export-svg"><span class="ico" data-icon="file-code"></span>Export<br>SVG</button>
+    </div><div class="label">Export</div></div>
+  </div>
+</div>
+
+<div class="workspace board-work">
+  <svg class="board" id="board" tabindex="0" role="application" aria-label="Whiteboard" aria-describedby="boardHelp">
+    <defs>
+      <pattern id="bgDots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="1" cy="1" r="1" class="bg-dot"/></pattern>
+      <pattern id="bgGrid" width="24" height="24" patternUnits="userSpaceOnUse"><path d="M24 0H0V24" fill="none" class="bg-line"/></pattern>
+      <marker id="arrowEnd" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="context-stroke"/></marker>
+    </defs>
+    <rect class="bg" id="bg" width="100%" height="100%"/>
+    <g id="world"><g id="items"></g><g id="overlay"></g><g id="peers"></g></g>
+  </svg>
+  <p class="sr-only" id="boardHelp">Use the tools to add sticky notes, text, shapes and drawings. Arrow keys move the selection; Tab adds a connected item.</p>
+  <div class="board-empty" id="empty"><span class="ico" data-icon="presentation"></span><h2>A blank board</h2><p>Add sticky notes, shapes and drawings — or start from a template on the Insert tab.</p></div>
+  <textarea class="board-editor" id="editor" hidden aria-label="Text"></textarea>
+</div>
+
+<div class="statusbar">
+  <span id="stItems"></span>
+  <span class="spacer"></span>
+  <span id="stTool">Select</span>
+  <span id="stZoom">100%</span>
+</div>
+
+<div class="backstage">
+  <nav>
+    <button class="back" title="Back"><span class="ico" data-icon="arrow-left"></span></button>
+    <button data-cmd="new">New</button>
+    <button data-cmd="open">Open</button>
+    <button data-cmd="open-cloud">Open from Cloud</button>
+    <button data-cmd="save">Save</button>
+    <button data-cmd="save-as">Save As</button>
+    <button data-cmd="save-cloud">Save to Cloud</button>
+    <button data-cmd="share">Share</button>
+    <button data-cmd="version-history" title="Earlier versions of this board, kept each time you save">Version History</button>
+    <hr>
+    <button data-cmd="export-png">Export as Picture (PNG)</button>
+    <button data-cmd="export-svg">Export as SVG</button>
+    <button data-cmd="export-pdf">Export to PDF</button>
+    <button data-cmd="print">Print</button>
+    <hr>
+    <button data-cmd="theme">Office Theme</button>
+    <button data-cmd="language">Language</button>
+    <button data-cmd="help">Help</button>
+    <button data-cmd="home">Isadek Office Home</button>
+  </nav>
+  <main><h1>Isadek Whiteboard</h1><p>An endless board for ideas and diagrams: sticky notes, shapes, connectors, frames and drawing. Boards save as .aboard files; export a picture, an SVG or a PDF to share.</p></main>
+</div>
+
+<script src="js/platform.js"></script>
+<script src="js/a11y.js"></script>
+<script src="js/mobile.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/offline.js"></script>
+<script src="js/merge3.js"></script>
+<script src="js/collab.js"></script>
+<script src="js/ink.js"></script>
+<script src="js/board.js"></script>
+</body>
+</html>

@@ -21,13 +21,13 @@
   .hero { margin: var(--sp-5) 0 var(--sp-6); }
   .hero h1 { margin: 0; }
   .hero .today { margin: var(--sp-3) 0 0; color: var(--muted); font-size: var(--fs-lg); }
-  .apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(164px, 1fr)); gap: 16px; }
+  .apps { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 16px; }
   .app-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 0; cursor: pointer; text-align: left; display: flex; flex-direction: column; box-shadow: var(--sh-1); overflow: hidden; color: var(--text); transition: box-shadow var(--dur-2), transform var(--dur-2) var(--ease-out), border-color var(--dur-2); }
   .app-card:hover, .app-card:focus-visible { box-shadow: var(--sh-3); transform: translateY(-2px); border-color: var(--border-strong); }
   .app-card .lbl { display: flex; gap: var(--sp-5); align-items: center; padding: var(--sp-5) var(--sp-6); }
   .app-card .tile { width: 36px; height: 36px; border-radius: var(--r-md); box-shadow: inset 0 -3px 0 rgb(0 0 0 / .12), var(--sh-1); color: #fff; display: grid; place-items: center; font-size: 17px; font-weight: 700; flex: none; }
   .app-card strong { display: block; font-size: 14px; }
-  .t-write { background: #1f5fcf; } .t-sheets { background: #13834a; } .t-slides { background: #c4401f; } .t-notes { background: #7c3aed; } .t-pdf { background: #b42318; font-size: 11px !important; letter-spacing: .02em; }
+  .t-write { background: #1f5fcf; } .t-sheets { background: #13834a; } .t-slides { background: #c4401f; } .t-notes { background: #7c3aed; } .t-pdf { background: #b42318; font-size: 11px !important; letter-spacing: .02em; } .t-board { background: #e37400; }
   .art { height: 112px; background: var(--canvas); position: relative; border-bottom: 1px solid var(--border); overflow: hidden; }
   .art-write::before { content: ''; position: absolute; left: 50%; top: 14px; width: 104px; bottom: -8px; transform: translateX(-50%); background: #fff; box-shadow: var(--page-shadow); border-radius: 2px; }
   .art-write i { position: absolute; left: calc(50% - 38px); height: 4px; border-radius: 2px; background: #dfe3ea; width: 76px; z-index: 1; }
@@ -38,9 +38,12 @@
   .art-slides::before { content: ''; position: absolute; left: 50%; top: 50%; width: 150px; height: 84px; transform: translate(-50%, -50%); background: #fff; box-shadow: var(--page-shadow); border-radius: 3px; }
   .art-slides i { position: absolute; left: 50%; transform: translateX(-50%); border-radius: 2px; z-index: 1; }
   .art-slides i:nth-child(1) { top: 46px; width: 92px; height: 9px; background: #c4401f; opacity: .7; } .art-slides i:nth-child(2) { top: 62px; width: 60px; height: 5px; background: #dfe3ea; }
+  .art-board { background: #f8f9fa radial-gradient(#c7cbd1 1px, transparent 1px) 0 0 / 14px 14px; }
+  .art-board i { position: absolute; border-radius: 3px; box-shadow: 0 1px 2px rgb(0 0 0 / .15); }
+  .art-board i:nth-child(1) { left: 12%; top: 22px; width: 24%; aspect-ratio: 1; background: #fff176; } .art-board i:nth-child(2) { left: 40%; top: 34px; width: 24%; aspect-ratio: 1; background: #b3e5fc; } .art-board i:nth-child(3) { left: 68%; top: 26px; width: 22%; height: 30px; box-sizing: border-box; background: #e8f0fe; border: 2px solid #1a73e8; box-shadow: none; border-radius: 8px; }
   .art-pdf { background: #fff; }
-  .art-pdf i { position: absolute; left: 22px; height: 4px; border-radius: 2px; background: #dfe3ea; width: 130px; }
-  .art-pdf i:nth-child(1) { top: 24px; height: 10px; width: 90px; background: #b42318; opacity: .75; } .art-pdf i:nth-child(2) { top: 46px; background: #fff2a8; height: 8px; } .art-pdf i:nth-child(3) { top: 60px; width: 100px; }
+  .art-pdf i { position: absolute; left: 12%; height: 4px; border-radius: 2px; background: #dfe3ea; width: 76%; }
+  .art-pdf i:nth-child(1) { top: 24px; height: 10px; width: 52%; background: #b42318; opacity: .75; } .art-pdf i:nth-child(2) { top: 46px; background: #fff2a8; height: 8px; } .art-pdf i:nth-child(3) { top: 60px; width: 58%; }
   .art-notes { background: linear-gradient(90deg, #ede5fd 0 46px, transparent 46px), #fff; }
   .art-notes i { position: absolute; left: 62px; height: 4px; border-radius: 2px; background: #dfe3ea; width: 110px; }
   .art-notes i:nth-child(1) { top: 24px; height: 8px; width: 80px; background: #7c3aed; opacity: .7; } .art-notes i:nth-child(2) { top: 44px; } .art-notes i:nth-child(3) { top: 54px; width: 84px; }
@@ -100,6 +103,7 @@
     <button class="app-card" data-app="sheets"><div class="art art-sheets" aria-hidden="true"></div><div class="lbl"><div class="tile t-sheets">S</div><div><strong>Isadek Sheets</strong><span>Blank workbook · .xlsx</span></div></div></button>
     <button class="app-card" data-app="slides"><div class="art art-slides" aria-hidden="true"><i></i><i></i></div><div class="lbl"><div class="tile t-slides">P</div><div><strong>Isadek Slides</strong><span>Blank presentation · .pptx</span></div></div></button>
     <button class="app-card" data-app="notes"><div class="art art-notes" aria-hidden="true"><i></i><i></i><i></i></div><div class="lbl"><div class="tile t-notes">N</div><div><strong>Isadek Notes</strong><span>Notebooks · saved as you type</span></div></div></button>
+    <button class="app-card" data-app="board"><div class="art art-board" aria-hidden="true"><i></i><i></i><i></i></div><div class="lbl"><div class="tile t-board">B</div><div><strong>Isadek Whiteboard</strong><span>Ideas and diagrams</span></div></div></button>
     <button class="app-card" data-app="pdf"><div class="art art-pdf" aria-hidden="true"><i></i><i></i><i></i></div><div class="lbl"><div class="tile t-pdf">PDF</div><div><strong>Isadek PDF</strong><span>Read, annotate, fill &amp; sign</span></div></div></button>
   </div>
   <h2>Templates <span class="tpl-tools"><span class="chips" role="radiogroup" aria-label="Show templates for" id="tplFilter"><button role="radio" aria-checked="true" data-f="all">All</button><button role="radio" aria-checked="false" data-f="write">Documents</button><button role="radio" aria-checked="false" data-f="sheets">Workbooks</button><button role="radio" aria-checked="false" data-f="slides">Presentations</button></span><button class="linkbtn" id="moreTemplates">More templates</button></span></h2>

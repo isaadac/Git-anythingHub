@@ -18,7 +18,7 @@
   /** A question with known fields only. */
   function cleanQuestion(q, i) {
     if (!q || typeof q !== 'object' || !TYPES[q.type]) return null;
-    const out = { id: ID.test(q.id) ? q.id : 'q' + (i + 1), type: q.type, title: str(q.title, LIMITS.title) || 'Question', required: q.required === true };
+    const out = { id: typeof q.id === 'string' && ID.test(q.id) ? q.id : 'q' + (i + 1), type: q.type, title: str(q.title, LIMITS.title) || 'Question', required: q.required === true };
     const help = str(q.help, LIMITS.help);
     if (help) out.help = help;
     if (WITH_OPTIONS.has(q.type)) {

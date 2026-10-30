@@ -131,6 +131,13 @@
         "mimeType": "application/x-atlas-notebook"
       },
       {
+        "ext": "aboard",
+        "name": "Isadek Whiteboard",
+        "description": "Isadek Whiteboard",
+        "role": "Editor",
+        "mimeType": "application/x-isadek-board"
+      },
+      {
         "ext": "pdf",
         "name": "PDF Document",
         "description": "PDF Document",
