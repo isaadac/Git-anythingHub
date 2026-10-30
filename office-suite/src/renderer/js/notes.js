@@ -520,7 +520,7 @@
   const SYNC_KEY = 'atlas-notes-sync';
   const links = () => { try { return JSON.parse(localStorage.getItem(SYNC_KEY) || '{}') || {}; } catch { return {}; } };
   const setLink = (id, path) => { const l = links(); if (path) l[id] = path; else delete l[id]; try { localStorage.setItem(SYNC_KEY, JSON.stringify(l)); } catch { /* ignore */ } };
-  let syncing = null, syncTimer = null;
+  let syncing = null, syncAgain = null, syncTimer = null;
   const syncState = t => { $('syncState').textContent = t; };
   function showSyncState() {
     const linked = nb && links()[nb.id];
@@ -531,7 +531,9 @@
     if (!nb || !window.Cloud) return false;
     const path = links()[nb.id];
     if (!path) return false;
-    if (syncing) return syncing;
+    // A sync already under way may have read the cloud copy before the latest change there:
+    // one more sync follows it (however many are asked for meanwhile).
+    if (syncing) return syncAgain || (syncAgain = syncing.then(() => { syncAgain = null; return syncNow(quiet); }));
     syncing = (async () => {
       syncState('Syncing…');
       await flush();
