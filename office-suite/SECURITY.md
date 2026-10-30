@@ -73,7 +73,13 @@ server):
 - Answers that look like formulas (`=`, `+`, `-`, `@`…) are written to cells as text.
 - The desktop app's server serves the answer page and the forms API only (no other files); the
   answer page has a strict CSP (no inline script, connects only to its own server).
-- A workbook from someone else asks before fetching answers from its form's server.
+- A workbook from someone else asks before fetching answers from its form's server; so does a
+  slide deck's poll.
+- The phone remote (kept in memory only): the presenter holds a key and the phone a separate
+  token (in the link's `#fragment`, which is not sent to servers in requests or referrers); each
+  works only for its side, taps are limited per minute, and an idle remote expires.
+- Export to Video in the desktop app captures only the window's own page (`capturePage`), never
+  the screen; in a browser the person chooses to share the tab.
 
 Run them behind HTTPS (a reverse proxy) when they are reachable from the internet. A live
 session's link is its key: share it only with the people meant to join.

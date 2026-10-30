@@ -42,9 +42,9 @@ test('the dictionaries cover the ribbons of every app', () => {
 });
 
 test('every page loads the language script', () => {
-  // form.html is the public page people answer a form on: the form's own words, in the
-  // language its author wrote them, and none of the app's.
-  for (const f of fs.readdirSync(R).filter(f => f.endsWith('.html') && f !== 'form.html')) assert.match(fs.readFileSync(path.join(R, f), 'utf8'), /<script src="js\/i18n\.js"><\/script>/, f);
+  // form.html and remote.html are the small pages phones open (a form to answer, the slide
+  // show remote), served on their own by the forms server: a form is in its author's words.
+  for (const f of fs.readdirSync(R).filter(f => f.endsWith('.html') && !['form.html', 'remote.html'].includes(f))) assert.match(fs.readFileSync(path.join(R, f), 'utf8'), /<script src="js\/i18n\.js"><\/script>/, f);
 });
 
 test('the native menus are translated in every language', () => {

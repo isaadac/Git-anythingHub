@@ -146,3 +146,44 @@ test('the local-network server serves only the answer page and the API', async (
     assert.strictEqual((await api(port, 'POST', `/api/forms/${id}/responses`, { answers: { name: 'Ada', day: 'Mon' } })).status, 201);
   } finally { srv.close(); }
 });
+
+test('the phone remote: the show’s state out, taps in, each side with its own secret', async () => {
+  const srv = createWebServer({ live: false, apiKey: '' });
+  const port = await listen(srv);
+  try {
+    const made = await api(port, 'POST', '/api/remote');
+    assert.strictEqual(made.status, 201);
+    const { id, key, token } = made.data;
+    assert.ok(key !== token && key.length >= 40 && token.length >= 40);
+    // /r/<id> leads to the remote page (the token stays in the link's #fragment).
+    const link = await api(port, 'GET', '/r/' + id);
+    assert.strictEqual(link.headers.get('location'), '/src/renderer/remote.html?id=' + id);
+    // The phone waits for news; the presenter's state answers it at once.
+    const waiting = api(port, 'GET', `/api/remote/${id}/state?since=0`, null, token);
+    await new Promise(r => setTimeout(r, 100));
+    assert.strictEqual((await api(port, 'PUT', `/api/remote/${id}/state`, { slide: 2, total: 9, title: 'Results', notes: 'Say thanks', showing: true, extra: '<b>' }, key)).status, 200);
+    const st = (await waiting).data;
+    assert.deepStrictEqual([st.slide, st.total, st.title, st.notes, st.showing, st.extra], [2, 9, 'Results', 'Say thanks', true, undefined]);
+    // Each side's secret works only for its side.
+    assert.strictEqual((await api(port, 'PUT', `/api/remote/${id}/state`, { slide: 0 }, token)).status, 403);
+    assert.strictEqual((await api(port, 'GET', `/api/remote/${id}/commands`, null, token)).status, 403);
+    assert.strictEqual((await api(port, 'POST', `/api/remote/${id}/command`, { cmd: 'next' }, key)).status, 403);
+    // Taps reach the presenter, who waits for them.
+    const listening = api(port, 'GET', `/api/remote/${id}/commands?after=0`, null, key);
+    await new Promise(r => setTimeout(r, 100));
+    assert.strictEqual((await api(port, 'POST', `/api/remote/${id}/command`, { cmd: 'next' }, token)).status, 201);
+    assert.deepStrictEqual((await listening).data.commands.map(c => c.cmd), ['next']);
+    assert.strictEqual((await api(port, 'POST', `/api/remote/${id}/command`, { cmd: 'rm -rf' }, token)).status, 400);
+    // Ending it: both sides are told.
+    assert.strictEqual((await api(port, 'DELETE', '/api/remote/' + id, null, key)).status, 200);
+    assert.strictEqual((await api(port, 'GET', `/api/remote/${id}/state?since=99`, null, token)).status, 404);
+  } finally { srv.close(); }
+});
+
+test('remote taps are limited per minute', () => {
+  const store = createFormsStore({ limits: { commandsPerMinute: 3 } });
+  const { id, token } = store.createRemote();
+  for (let i = 0; i < 3; i++) store.remoteCommand(id, token, 'next');
+  assert.throws(() => store.remoteCommand(id, token, 'next'), /Too many/);
+  store.close();
+});

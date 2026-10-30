@@ -201,6 +201,13 @@ ipcMain.handle('file:save', async (e, { data, filePath, defaultName, filters, sa
 
 // A small picture of part of the window (the first page, slide or cells), saved inside .docx, .xlsx
 // and .pptx files as their thumbnail: Finder, Quick Look and File Explorer show it.
+// Export to Video: one frame of the window's own page (never the screen), full size.
+ipcMain.handle('app:capture-frame', async (e, r) => {
+  if (!r || ![r.x, r.y, r.width, r.height].every(Number.isFinite) || r.width < 16 || r.height < 16) return null;
+  const rect = { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.round(Math.min(r.width, 7680)), height: Math.round(Math.min(r.height, 4320)) };
+  const img = await e.sender.capturePage(rect);
+  return img.isEmpty() ? null : img.toJPEG(90);
+});
 ipcMain.handle('app:capture', async (e, r) => {
   if (!r || ![r.x, r.y, r.width, r.height].every(Number.isFinite) || r.width < 16 || r.height < 16) return null;
   const rect = { x: Math.max(0, Math.round(r.x)), y: Math.max(0, Math.round(r.y)), width: Math.round(Math.min(r.width, 4000)), height: Math.round(Math.min(r.height, 4000)) };
@@ -311,7 +318,7 @@ ipcMain.handle('forms:host', async () => {
   }
 });
 // The workbook's own calls, straight to the store (no network, no key on the wire).
-ipcMain.handle('forms:call', (_e, op, a) => {
+ipcMain.handle('forms:call', async (_e, op, a) => {
   const ok = v => typeof v === 'string' && v.length <= 100;
   try {
     a = a && typeof a === 'object' ? a : {};
@@ -320,6 +327,11 @@ ipcMain.handle('forms:call', (_e, op, a) => {
     if (op === 'remove' && ok(a.id) && ok(a.key)) return forms().remove(a.id, a.key);
     if (op === 'responses' && ok(a.id) && ok(a.key)) return forms().responses(a.id, a.key, a.after, a.limit);
     if (op === 'respond' && ok(a.id)) return forms().respond(a.id, a.answers);
+    // The phone remote: the presenter's side (the phone talks to the network server).
+    if (op === 'remote-create') return forms().createRemote();
+    if (op === 'remote-state' && ok(a.id) && ok(a.key)) return forms().setRemoteState(a.id, a.key, a.state);
+    if (op === 'remote-commands' && ok(a.id) && ok(a.key)) return await forms().remoteCommands(a.id, a.key, a.after, 15000);
+    if (op === 'remote-remove' && ok(a.id) && ok(a.key)) return forms().removeRemote(a.id, a.key);
     return { error: 'Unknown request', status: 400 };
   } catch (err) {
     return { error: String(err.message || err), status: err.status || 500, ...(err.errors ? { errors: err.errors } : {}) };

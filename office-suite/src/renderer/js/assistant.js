@@ -329,5 +329,22 @@
   };
   const backend = window.atlas && window.atlas.aiAsk ? Desktop : Web;
 
-  window.Assistant = { attach, otherFiles, dictate, dictateButton, spaced };
+  /**
+   * Translates a short text (a caption line) with the Assistant: resolves to the translation.
+   * Throws with a message to show when the Assistant isn't set up.
+   */
+  let trSeq = 0;
+  async function translate(text, language) {
+    const st = await backend.status();
+    if (!st.ready) throw new Error(st.message || 'Set up the Assistant to translate');
+    const res = await backend.ask({
+      id: 'tr' + Date.now().toString(36) + (++trSeq),
+      system: `You translate live captions of a talk into ${String(language).slice(0, 40)}. Reply with only the translation of the user's text: no quotes, notes or explanations. Keep names, numbers and product names as they are.`,
+      messages: [{ role: 'user', content: String(text).slice(0, 2000) }]
+    }, () => {});
+    if (!res || res.error || res.cancelled) throw new Error((res && res.error) || 'The translation was cancelled');
+    return String(res.text || '').trim();
+  }
+
+  window.Assistant = { attach, otherFiles, dictate, dictateButton, spaced, translate };
 })();

@@ -14,7 +14,7 @@ const path = require('path');
 const crypto = require('crypto');
 const FormsCore = require('../renderer/js/forms-core');
 
-const LIMITS = { forms: 10000, responses: 50000, storedBytes: 100e6, formBytes: 512e3, answerBytes: 256e3, perMinute: 30, createPerHour: 60 };
+const LIMITS = { remotes: 2000, remoteIdleMs: 12 * 3600e3, commandsPerMinute: 240, waitMs: 20000, forms: 10000, responses: 50000, storedBytes: 100e6, formBytes: 512e3, answerBytes: 256e3, perMinute: 30, createPerHour: 60 };
 const ID_RE = /^[A-Za-z0-9_-]{22}$/;
 const token = n => crypto.randomBytes(n).toString('base64url');
 const hash = k => crypto.createHash('sha256').update(String(k)).digest('hex');
@@ -118,10 +118,82 @@ function createFormsStore(opts = {}) {
     return { form: f.form, open: f.open, count: f.count, responses: list };
   }
 
+  // ---------- The phone remote: a presenter's show and a phone, through this server ----------
+  // Kept in memory only. The presenter holds the key (state out, commands in); the phone holds
+  // the token (state in, commands out). Waiting requests are answered as soon as there is news.
+  const remotes = new Map();
+  const COMMANDS = ['next', 'prev', 'first', 'last', 'black'];
+  const wake = set => { for (const fn of [...set]) fn(); set.clear(); };
+  function createRemote() {
+    if (remotes.size >= limits.remotes) throw Object.assign(new Error('This server has as many remotes as it can take'), { status: 507 });
+    const id = token(16), key = token(32), tok = token(32);
+    remotes.set(id, { keyHash: hash(key), tokenHash: hash(tok), state: { v: 0 }, cmds: [], n: 0, stateWait: new Set(), cmdWait: new Set(), touched: Date.now(), hits: [] });
+    return { id, key, token: tok };
+  }
+  function remoteFor(id, secret, which) {
+    const r = ID_RE.test(String(id)) ? remotes.get(id) : null;
+    if (!r) throw Object.assign(new Error('This remote has ended'), { status: 404 });
+    if (typeof secret !== 'string' || !same(hash(secret), r[which])) throw Object.assign(new Error('That link doesn’t control this show'), { status: 403 });
+    r.touched = Date.now();
+    return r;
+  }
+  const text = (v, n) => (typeof v === 'string' ? v.slice(0, n) : '');
+  function setRemoteState(id, key, st = {}) {
+    const r = remoteFor(id, key, 'keyHash');
+    const int = (v, hi) => (Number.isInteger(v) && v >= 0 && v <= hi ? v : 0);
+    r.state = { v: r.state.v + 1, slide: int(st.slide, 10000), total: int(st.total, 10000), title: text(st.title, 300), next: text(st.next, 300), notes: text(st.notes, 20000), black: st.black === true, showing: st.showing === true, started: int(st.started, 1e13) };
+    wake(r.stateWait);
+    return { v: r.state.v };
+  }
+  /** Waits (up to ms) for something newer than `since`; resolves to its value, or the current one. */
+  function waitFor(r, set, ready, ms, close) {
+    if (ready()) return Promise.resolve();
+    return new Promise(resolve => {
+      const done = () => { clearTimeout(t); set.delete(done); resolve(); };
+      const t = setTimeout(done, ms);
+      set.add(done);
+      if (close) close(done);
+    });
+  }
+  async function remoteState(id, tok, since = 0, ms = 0, close) {
+    const r = remoteFor(id, tok, 'tokenHash');
+    since = Math.floor(+since) || 0;
+    await waitFor(r, r.stateWait, () => r.state.v > since, Math.min(ms, limits.waitMs), close);
+    return r.state;
+  }
+  function remoteCommand(id, tok, cmd) {
+    const r = remoteFor(id, tok, 'tokenHash');
+    if (!COMMANDS.includes(cmd)) throw Object.assign(new Error('Unknown command'), { status: 400 });
+    const cut = Date.now() - 60000;
+    r.hits = r.hits.filter(x => x > cut);
+    if (r.hits.length >= limits.commandsPerMinute) throw Object.assign(new Error('Too many taps in the last minute'), { status: 429 });
+    r.hits.push(Date.now());
+    r.cmds.push({ n: ++r.n, cmd, at: Date.now() });
+    r.cmds = r.cmds.slice(-100);
+    wake(r.cmdWait);
+    return { n: r.n };
+  }
+  async function remoteCommands(id, key, after = 0, ms = 0, close) {
+    const r = remoteFor(id, key, 'keyHash');
+    after = Math.floor(+after) || 0;
+    await waitFor(r, r.cmdWait, () => r.n > after, Math.min(ms, limits.waitMs), close);
+    return { n: r.n, commands: r.cmds.filter(c => c.n > after) };
+  }
+  function removeRemote(id, key) {
+    const r = remoteFor(id, key, 'keyHash');
+    wake(r.stateWait); wake(r.cmdWait);
+    remotes.delete(id);
+    return { deleted: true };
+  }
+
   // ---------- HTTP ----------
   // Answers per address per minute, and forms created per address per hour.
   const hits = new Map();
-  const timer = setInterval(() => { const cut = Date.now() - 3600e3; for (const [k, t] of hits) { const keep = t.filter(x => x > cut); if (keep.length) hits.set(k, keep); else hits.delete(k); } }, 60000);
+  const timer = setInterval(() => {
+    const cut = Date.now() - 3600e3;
+    for (const [k, t] of hits) { const keep = t.filter(x => x > cut); if (keep.length) hits.set(k, keep); else hits.delete(k); }
+    for (const [id, r] of remotes) if (Date.now() - r.touched > limits.remoteIdleMs) { wake(r.stateWait); wake(r.cmdWait); remotes.delete(id); }
+  }, 60000);
   timer.unref();
   function allowed(kind, who, max, ms) {
     const k = kind + ' ' + who, cut = Date.now() - ms;
@@ -150,7 +222,15 @@ function createFormsStore(opts = {}) {
       res.end();
       return true;
     }
-    if (!url.pathname.startsWith('/api/forms')) return false;
+    if (url.pathname.startsWith('/r/')) {
+      const id = url.pathname.slice(3);
+      if (!ID_RE.test(id)) { res.writeHead(404); res.end('Not found'); return true; }
+      // The phone's token stays in the link's #fragment, which browsers keep across the redirect.
+      res.writeHead(302, { Location: '/src/renderer/remote.html?id=' + id, 'Cache-Control': 'no-store' });
+      res.end();
+      return true;
+    }
+    if (!url.pathname.startsWith('/api/forms') && !url.pathname.startsWith('/api/remote')) return false;
     // The owner's calls carry their key, never cookies, so any page (the desktop app's, a phone's)
     // may make them.
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -159,10 +239,24 @@ function createFormsStore(opts = {}) {
     res.setHeader('Access-Control-Max-Age', '600');
     if (req.method === 'OPTIONS') { res.writeHead(204); res.end(); return true; }
     const who = req.socket.remoteAddress || '?';
-    const parts = url.pathname.split('/').filter(Boolean); // api, forms, id?, responses?
+    const parts = url.pathname.split('/').filter(Boolean); // api, forms|remote, id?, sub?
     const id = parts[2], sub = parts[3];
+    // A waiting request ends early when its connection closes.
+    const onClose = done => res.on('close', done);
     const fail = err => { if (!res.headersSent) json(res, err.status || 500, { error: err.status ? err.message : 'Something went wrong', ...(err.errors ? { errors: err.errors } : {}) }); else res.end(); };
     (async () => {
+      if (parts[1] === 'remote') {
+        if (parts.length === 2 && req.method === 'POST') {
+          if (!allowed('create', who, limits.createPerHour, 3600e3)) return json(res, 429, { error: 'Too many new remotes from here in the last hour' });
+          return json(res, 201, createRemote());
+        }
+        if (parts.length === 3 && req.method === 'DELETE') return json(res, 200, removeRemote(id, keyOf(req)));
+        if (parts.length === 4 && sub === 'state' && req.method === 'PUT') return json(res, 200, setRemoteState(id, keyOf(req), await readBody(req, 64e3)));
+        if (parts.length === 4 && sub === 'state' && req.method === 'GET') return json(res, 200, await remoteState(id, keyOf(req), url.searchParams.get('since'), limits.waitMs, onClose));
+        if (parts.length === 4 && sub === 'command' && req.method === 'POST') return json(res, 201, remoteCommand(id, keyOf(req), (await readBody(req, 1e3)).cmd));
+        if (parts.length === 4 && sub === 'commands' && req.method === 'GET') return json(res, 200, await remoteCommands(id, keyOf(req), url.searchParams.get('after'), limits.waitMs, onClose));
+        return json(res, 404, { error: 'Not found' });
+      }
       if (parts.length === 2 && req.method === 'GET') return json(res, 200, { available: true });
       if (parts.length === 2 && req.method === 'POST') {
         if (!allowed('create', who, limits.createPerHour, 3600e3)) return json(res, 429, { error: 'Too many new forms from here in the last hour' });
@@ -183,11 +277,12 @@ function createFormsStore(opts = {}) {
     return true;
   }
 
-  return { create, update, remove, publicForm, respond, responses, handle, close: () => clearInterval(timer) };
+  const close = () => { clearInterval(timer); for (const r of remotes.values()) { wake(r.stateWait); wake(r.cmdWait); } };
+  return { create, update, remove, publicForm, respond, responses, createRemote, setRemoteState, remoteState, remoteCommand, remoteCommands, removeRemote, handle, close };
 }
 
 // The files the answer page needs, and nothing else of the app.
-const PAGE_FILES = ['src/renderer/form.html', 'src/renderer/css/form.css', 'src/renderer/js/form.js', 'src/renderer/js/forms-core.js', 'src/renderer/js/forms-view.js'];
+const PAGE_FILES = ['src/renderer/form.html', 'src/renderer/css/form.css', 'src/renderer/js/form.js', 'src/renderer/js/forms-core.js', 'src/renderer/js/forms-view.js', 'src/renderer/remote.html', 'src/renderer/css/remote.css', 'src/renderer/js/remote.js'];
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8' };
 const ROOT = path.resolve(__dirname, '../..');
 

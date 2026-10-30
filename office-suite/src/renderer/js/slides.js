@@ -107,8 +107,14 @@
   function cleanPres(p, keepIds) {
     if (!p || !Array.isArray(p.slides)) throw new Error('Not a presentation');
     const slides = p.slides.slice(0, 2000).map(sl => cleanSlide(sl, p.layouts, keepIds));
+    // Slides get new ids: zooms follow their slide to its new id (and lose a slide that's gone).
+    const slideIds = new Map(p.slides.slice(0, 2000).map((sl, i) => [sl && sl.id, slides[i].id]));
+    const retarget = list => list.forEach(e => { if (e.type === 'zoom') { if (slideIds.has(e.target)) e.target = slideIds.get(e.target); else if (!keepIds) delete e.target; } if (e.children) retarget(e.children); });
+    slides.forEach(sl => retarget(sl.elements));
     if (!slides.length) slides.push(newSlide('title'));
     const out = { theme: Object.prototype.hasOwnProperty.call(THEMES, p.theme) || p.theme === 'custom' ? p.theme : 'office', slides };
+    const qa = FormsClient.cleanRef(p.qa);
+    if (qa) out.qa = qa;
     const ct = p.customTheme;
     if (out.theme === 'custom') {
       const fontOk = f => (typeof f === 'string' && /^[\w .-]{1,64}$/.test(f) ? f : null);
@@ -149,7 +155,7 @@
   function cleanElement(el, phs, depth, ids, keepIds) {
     {
       if (!el || typeof el !== 'object') return null;
-      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector', 'cameo', 'ink'], null);
+      const type = oneOf(el.type, ['text', 'shape', 'image', 'table', 'media', 'group', 'connector', 'cameo', 'ink', 'poll', 'zoom'], null);
       if (!type) return null;
       // A live session keeps everyone's ids (they name the same object in every copy).
       const out = { id: keepIds && typeof el.id === 'string' && ID_OK.test(el.id) ? el.id : newId(), type, x: num(el.x, 100), y: num(el.y, 100), w: num(el.w, 200, 1), h: num(el.h, 100, 1) };
@@ -187,6 +193,13 @@
         const anim = SlidesAnim.clean(el.anim);
         if (anim) out.anim = anim;
         return out;
+      }
+      if (type === 'poll' || type === 'zoom') {
+        // Live polls and slide zooms (slides-live.js).
+        if (el.rot) out.rot = num(el.rot, 0, -360, 360);
+        const anim = SlidesAnim.clean(el.anim);
+        if (anim) out.anim = anim;
+        return SlidesLive.clean(type, el, out);
       }
       if (type === 'cameo') {
         out.shape = oneOf(el.shape, ['circle', 'rounded', 'rect'], 'circle');
@@ -374,6 +387,7 @@
       div.appendChild(svg);
       return div;
     }
+    if (el.type === 'poll' || el.type === 'zoom') { aud().build(el, div); return div; }
     if (el.type === 'cameo') {
       // Live camera while presenting (attachCameos); a placeholder while editing.
       div.classList.add('cameo-' + (el.shape || 'circle'));
@@ -735,6 +749,7 @@
     const el = elDiv && elById(elDiv.dataset.id);
     if (el && el.type === 'group' && el.smart) { smartArtDialog(el); return; }
     if (el && el.type === 'cameo') { cameoDialog(el); return; }
+    if (el && (el.type === 'poll' || el.type === 'zoom')) { aud().dblclick(el); return; }
     if (!el || ['group', 'connector', 'image', 'media', 'ink'].includes(el.type)) return;
     if (elDiv.dataset.id !== editingId) startEditing(elDiv.dataset.id);
   });
@@ -891,7 +906,7 @@
     else if (mod && e.key.toLowerCase() === 'b') { e.preventDefault(); wholeBox('bold'); }
     else if (mod && e.key.toLowerCase() === 'i') { e.preventDefault(); wholeBox('italic'); }
     else if (mod && e.key.toLowerCase() === 'u') { e.preventDefault(); wholeBox('underline'); }
-    else if (e.key.length === 1 && !mod && !e.altKey && !['image', 'media', 'group', 'connector', 'cameo', 'ink'].includes(el.type)) {
+    else if (e.key.length === 1 && !mod && !e.altKey && !['image', 'media', 'group', 'connector', 'cameo', 'ink', 'poll', 'zoom'].includes(el.type)) {
       // Typing on a selected box replaces its text, like PowerPoint.
       e.preventDefault();
       snapshot();
@@ -1477,6 +1492,31 @@
   notes.addEventListener('input', () => { slide().notes = notes.value; state.markDirty(); });
   document.getElementById('toggleNotes').addEventListener('click', e => { document.body.classList.toggle('hide-notes'); e.currentTarget.classList.toggle('on', !document.body.classList.contains('hide-notes')); fitStage(); });
 
+  // ---------- The audience: polls, Q&A, the phone remote, zooms (slides-live.js) ----------
+  let audience_ = null;
+  function aud() {
+    return audience_ || (audience_ = SlidesLive({
+      W, H, pres: () => pres, slide, snapshot, newId, renderSlide,
+      select: id => { selectedId = id; extraSel.clear(); },
+      changed: () => { renderAll(); state.markDirty(); },
+      show: () => ({ index: showIndex, showing: !presenter.hidden, black: presenter.classList.contains('black'), started: presenter.hidden ? 0 : shownAt }),
+      command: remoteCommand,
+      zoomTo
+    }));
+  }
+  document.getElementById('insPoll').addEventListener('click', () => { commitEditing(); aud().insertPoll(); });
+  document.getElementById('insZoom').addEventListener('click', () => { commitEditing(); aud().insertZoom(); });
+  document.getElementById('qaBtn').addEventListener('click', () => aud().toggleQa());
+  document.getElementById('remoteBtn').addEventListener('click', () => aud().startRemote());
+  document.getElementById('pollReset').addEventListener('click', () => {
+    const el = selectedId && elById(selectedId);
+    if (!el || el.type !== 'poll') return UI.toast('Select a poll first');
+    aud().clearPoll(el);
+  });
+
+  let video_ = null; // Export to Video (slides-video.js)
+  const vid = () => video_ || (video_ = SlidesVideo({ pres: () => pres, present, endShow, slideNode: () => presentSlide, name: () => state.name, restart: () => { if (!presenter.hidden) scheduleAdvance(); } }));
+
   // ---------- Slide show ----------
   const presenter = document.getElementById('presenter');
   const presentSlide = document.getElementById('presentSlide');
@@ -1488,11 +1528,11 @@
     presenter.hidden = false;
     presenter.classList.remove('black');
     Platform.fullscreen(true);
-    showSlide(showIndex, false);
     shownAt = Date.now();
+    showSlide(showIndex, false);
     setTimeout(() => { if (!presenter.hidden) showSlide(showIndex, false); }, 300); // refit after going full screen
     document.getElementById('presentHint').textContent = '→ / Space: next   ← : previous   B: black   C: captions   Esc: end';
-    if (captions.pref && !AUDIENCE) setCaptions(true, true);
+    if (captions.pref && !AUDIENCE && !vid().active) setCaptions(true, true);
     setTimeout(() => { document.getElementById('presentHint').textContent = ''; }, 3000);
   }
   let groups = [], built = 0, running = [], advanceTimer = null;
@@ -1508,8 +1548,10 @@
   };
   /** Shows slide i with its builds done up to `upTo` (0 = none, Infinity = all). */
   let shownSlide = null; // what the show displays now, for Morph
+  let zoomReturn = null; // after a zoomed-to slide, the show goes back to the slide with the zoom
   function showSlide(i, animate = true, upTo = 0) {
     if (live) live.moved(); // people following see the same slide
+    if (zoomReturn && i !== zoomReturn.to) zoomReturn = null;
     finishRunning();
     clearTimeout(advanceTimer);
     const s = pres.slides[i];
@@ -1528,6 +1570,7 @@
     applyVisibility(s);
     startMedia(s);
     attachCameos(presentSlide);
+    aud().shown(s, presentSlide);
     if (coach) coachSlide(i);
     const frames = TRANSITION_FRAMES[s.transition];
     let wait = 0;
@@ -1543,6 +1586,7 @@
       if (!m) return;
       if (e.kind === 'audio' && e.hideIcon) node.querySelector('.media-audio-icon').style.visibility = 'hidden';
       node.addEventListener('click', ev => { ev.stopPropagation(); if (m.paused) m.play().catch(() => {}); else m.pause(); });
+      if (vid().active) { vid().addSound(m); m.play().catch(() => {}); return; }
       if (e.autoplay) m.play().catch(() => {});
     });
   }
@@ -1565,11 +1609,14 @@
     clearTimeout(advanceTimer);
     if (AUDIENCE) return; // the presenter's window decides when to move on
     const s = pres.slides[showIndex];
-    if (typeof s.advance !== 'number' || built < groups.length) return;
     const end = Math.max(0, ...running.map(r => { const t = r.a.effect.getComputedTiming(); return (t.endTime || 0); }));
-    advanceTimer = setTimeout(() => { if (!presenter.hidden) step(1); }, end + s.advance * 1000);
+    // Exporting a video: builds follow each other by themselves, and every slide moves on.
+    if (vid().active && built < groups.length) { advanceTimer = setTimeout(() => { if (!presenter.hidden) build(); }, end + 1200); return; }
+    const adv = typeof s.advance === 'number' ? s.advance : vid().secs;
+    if (adv === null || built < groups.length) return;
+    advanceTimer = setTimeout(() => { if (!presenter.hidden) step(1); }, end + adv * 1000);
   }
-  function endShow() {
+  function endShow(finished = false) {
     finishRunning();
     clearTimeout(advanceTimer);
     shownSlide = null;
@@ -1577,19 +1624,56 @@
     stopCamera();
     setCaptions(false, true);
     if (coach) finishCoach();
+    zoomReturn = null;
     presenter.hidden = true;
+    aud().ended();
     if (live) live.moved();
     Platform.fullscreen(false);
     goTo(showIndex);
+    if (vid().active) vid().showEnded(finished);
   }
   function step(d) {
     if (d > 0 && build()) return;
-    if (d < 0 && built > 0) { running.forEach(r => { r.a.dropped = true; r.a.cancel(); }); running = []; built--; applyVisibility(pres.slides[showIndex]); return; }
+    if (d < 0 && built > 0) { running.forEach(r => { r.a.dropped = true; r.a.cancel(); }); running = []; built--; applyVisibility(pres.slides[showIndex]); aud().moved(); return; }
+    if (zoomReturn && showIndex === zoomReturn.to) return zoomBack();
     const n = showIndex + d;
-    if (n >= pres.slides.length) return endShow();
+    if (n >= pres.slides.length) return endShow(true);
     if (n < 0) return;
     showIndex = n;
     showSlide(n, d > 0, d > 0 ? 0 : Infinity);
+  }
+  /** Zoom: the clicked slide preview grows into its slide; after that slide the show comes back. */
+  function zoomTo(targetId, node) {
+    const to = pres.slides.findIndex(x => x.id === targetId);
+    if (to < 0 || presenter.hidden) return;
+    const r = node.getBoundingClientRect(), from = showIndex;
+    showIndex = to;
+    showSlide(to, false);
+    zoomReturn = { from, to, targetId };
+    const k = Math.min(window.innerWidth / W, window.innerHeight / H);
+    const dx = r.left + r.width / 2 - window.innerWidth / 2, dy = r.top + r.height / 2 - window.innerHeight / 2;
+    if (!matchMedia('(prefers-reduced-motion: reduce)').matches) presentSlide.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${r.width / W})` }, { transform: `scale(${k})` }], { duration: 550, easing: 'cubic-bezier(.2,.7,.2,1)' });
+  }
+  function zoomBack() {
+    const z = zoomReturn;
+    zoomReturn = null;
+    showIndex = z.from;
+    showSlide(z.from, false, Infinity);
+    const node = [...presentSlide.querySelectorAll('.el.zoom')].find(n => { const e = pres.slides[z.from].elements.find(x => x.id === n.dataset.id); return e && e.target === z.targetId; });
+    if (!node || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const r = node.getBoundingClientRect(), k = Math.min(window.innerWidth / W, window.innerHeight / H);
+    const f = (W * k) / r.width;
+    const dx = (window.innerWidth / 2 - (r.left + r.width / 2)) * f, dy = (window.innerHeight / 2 - (r.top + r.height / 2)) * f;
+    presentSlide.animate([{ transform: `translate(${dx}px, ${dy}px) scale(${k * f})`, opacity: 0.4 }, { transform: `scale(${k})`, opacity: 1 }], { duration: 550, easing: 'cubic-bezier(.2,.7,.2,1)' });
+  }
+  /** A command from the phone remote. */
+  function remoteCommand(cmd) {
+    if (presenter.hidden) { if (cmd === 'next' || cmd === 'first') present(cmd === 'first' ? 0 : current); return; }
+    if (cmd === 'next') step(1);
+    else if (cmd === 'prev') step(-1);
+    else if (cmd === 'first') { showIndex = 0; showSlide(0); }
+    else if (cmd === 'last') { showIndex = pres.slides.length - 1; showSlide(showIndex); }
+    else if (cmd === 'black') { presenter.classList.toggle('black'); aud().moved(); }
   }
   presenter.addEventListener('click', e => { if (e.button !== 0) return; if (AUDIENCE) audience.toPresenter({ cmd: 'key', key: 'ArrowRight' }); else step(1); });
   presenter.addEventListener('contextmenu', e => { e.preventDefault(); if (AUDIENCE) audience.toPresenter({ cmd: 'key', key: 'ArrowLeft' }); else step(-1); });
@@ -1603,8 +1687,9 @@
     else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'Backspace', 'p', 'P'].includes(k)) step(-1);
     else if (k === 'Home') { showIndex = 0; showSlide(0); }
     else if (k === 'End') { showIndex = pres.slides.length - 1; showSlide(showIndex); }
-    else if (k === 'b' || k === 'B' || k === '.') presenter.classList.toggle('black');
+    else if (k === 'b' || k === 'B' || k === '.') { presenter.classList.toggle('black'); aud().moved(); }
     else if (k === 'c' || k === 'C') setCaptions(!captions.on);
+    else if (k === 'q' || k === 'Q') aud().qaPanel(presentSlide);
     else if (k === 'Escape') endShow();
   }, true);
   window.addEventListener('resize', () => { if (!presenter.hidden) showSlide(showIndex, false); });
@@ -1619,14 +1704,41 @@
   const captions = { on: false, pref: (() => { try { return localStorage.getItem('atlas-captions') === '1'; } catch { return false; } })(), lines: [], interim: '', hide: null };
   let speech = null, coach = null;
   const speechLang = () => ({ en: 'en-US', es: 'es-ES', fr: 'fr-FR', de: 'de-DE', pt: 'pt-BR' }[(window.I18n && I18n.lang) || ''] || navigator.language || 'en-US');
-  function heard(text, final) {
-    if (captions.on) {
+  // Translated captions: each finished phrase goes to the Assistant, in order; what is being said
+  // meanwhile shows faintly in the language spoken.
+  const capLang = document.getElementById('captionsLang');
+  try { capLang.value = localStorage.getItem('atlas-captions-lang') || ''; } catch { /* ignore */ }
+  capLang.addEventListener('change', () => { try { localStorage.setItem('atlas-captions-lang', capLang.value); } catch { /* ignore */ } if (capLang.value) UI.toast(`Captions will be translated into ${capLang.value} by the Assistant`, 3500); });
+  let translating = Promise.resolve(), trFailed = false;
+  function showCaption() {
+    capEl.textContent = '';
+    const done = captions.lines.join(' ').slice(-160);
+    if (done) capEl.append(done + (captions.interim ? ' ' : ''));
+    if (captions.interim) { const i = document.createElement('span'); i.className = capLang.value ? 'cap-pending' : ''; i.textContent = captions.interim.slice(-160); capEl.append(i); }
+    capEl.hidden = false;
+    clearTimeout(captions.hide);
+    captions.hide = setTimeout(() => { captions.lines = []; capEl.hidden = true; }, capLang.value ? 8000 : 5000);
+  }
+  function caption(text, final) {
+    const lang = capLang.value;
+    if (!lang || !final) {
       if (final) { captions.lines.push(text.trim()); captions.lines = captions.lines.slice(-2); captions.interim = ''; } else captions.interim = text.trim();
-      capEl.textContent = [...captions.lines, captions.interim].filter(Boolean).join(' ').slice(-160);
-      capEl.hidden = false;
-      clearTimeout(captions.hide);
-      captions.hide = setTimeout(() => { captions.lines = []; capEl.hidden = true; }, 5000);
+      return showCaption();
     }
+    captions.interim = text.trim();
+    showCaption();
+    const phrase = text.trim();
+    translating = translating.then(async () => {
+      let out = phrase;
+      try { out = await Assistant.translate(phrase, lang); trFailed = false; } catch (err) { if (!trFailed) UI.toast('Captions can’t be translated: ' + err.message, 5000); trFailed = true; }
+      if (!captions.on) return;
+      captions.lines.push(out); captions.lines = captions.lines.slice(-2);
+      if (captions.interim === phrase) captions.interim = '';
+      showCaption();
+    });
+  }
+  function heard(text, final) {
+    if (captions.on) caption(text, final);
     if (coach) {
       if (final && text.trim()) { coach.heard.push({ slide: showIndex, text: text.trim() }); coachLive(text); }
     }
@@ -1997,6 +2109,18 @@
           ps.addImage({ data: c.toDataURL('image/png'), ...box, altText: 'Drawing' });
           continue;
         }
+        if (el.type === 'poll') {
+          // PowerPoint shows the question and answers; Isadek restores the live poll from the metadata.
+          ps.addText([{ text: el.question, options: { bold: true, fontSize: 24, breakLine: true } }, ...el.options.map((o, i) => ({ text: o, options: { bullet: true, fontSize: 18, breakLine: i < el.options.length - 1 } }))],
+            { ...box, fill: { color: 'FFFFFF' }, color: '1F1F1F', valign: 'top', margin: 12, altText: 'Poll: ' + el.question });
+          continue;
+        }
+        if (el.type === 'zoom') {
+          // A box that links to its slide, as a PowerPoint zoom would go there.
+          const i = pres.slides.findIndex(x => x.id === el.target);
+          ps.addText([{ text: i >= 0 ? `Slide ${i + 1}` : 'Zoom', options: i >= 0 ? { hyperlink: { slide: i + 1, tooltip: 'Go to slide ' + (i + 1) } } : {} }], { ...box, fill: { color: 'F2F2F2' }, line: { color: '888888', width: 1 }, align: 'center', valign: 'middle', fontSize: 16, color: '1F1F1F' });
+          continue;
+        }
         if (el.type === 'cameo') {
           // PowerPoint has no camera object it can read from here: a framed placeholder.
           ps.addText('Cameo', { ...box, shape: el.shape === 'circle' ? pptx.ShapeType.ellipse : el.shape === 'rounded' ? pptx.ShapeType.roundRect : pptx.ShapeType.rect, fill: { color: '2B2B2B' }, color: 'FFFFFF', fontSize: 14, align: 'center', valign: 'middle', altText: 'Camera (Cameo)' });
@@ -2048,11 +2172,12 @@
     }
     pres.slides.forEach((sl, i) => { const list = sl.elements.filter(e => keyOf.has(e.id)).map(e => [e.id, keyOf.get(e.id)]); if (list.length) morphNames.set(i, list); });
     // The master, layouts and theme go in a custom document property so Isadek can restore them exactly.
-    const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, slides: pres.slides.map(sl => ({
+    const meta = JSON.stringify({ theme: pres.theme, customTheme: pres.customTheme || null, master: pres.master, layouts: pres.layouts, qa: pres.qa || null, slides: pres.slides.map(sl => ({
       layout: sl.layout, hideMaster: !!sl.hideMaster,
       morph: Object.fromEntries((morphNames.get(pres.slides.indexOf(sl)) || []).map(([elId, key]) => [key, elId])),
       media: Object.fromEntries(sl.elements.flatMap(e => flattenGroup(e)).filter(e => e.type === 'media').map(e => [e.id, { autoplay: !!e.autoplay, loop: !!e.loop, hideIcon: !!e.hideIcon }])),
       cameos: Object.fromEntries(sl.elements.filter(e => e.type === 'cameo').map(e => [e.id, { shape: e.shape, mirror: e.mirror !== false }])),
+      live: Object.fromEntries(sl.elements.filter(e => e.type === 'poll' || e.type === 'zoom').map(e => [e.id, e.type === 'poll' ? { type: 'poll', question: e.question, options: e.options, form: e.form || null } : { type: 'zoom', target: pres.slides.findIndex(x => x.id === e.target) }])),
       inks: Object.fromEntries(sl.elements.filter(e => e.type === 'ink').map(e => [e.id, { vw: e.vw, vh: e.vh, strokes: e.strokes }])),
       groups: sl.elements.filter(e => e.type === 'group').map(groupMeta),
       connectors: Object.fromEntries(sl.elements.filter(e => e.type === 'connector').map(c => [c.id, { kind: c.kind, arrow: c.arrow, color: c.color || null, width: c.width, from: c.from || null, to: c.to || null }]))
@@ -2589,6 +2714,15 @@
           const o = e.atlasName && Object.hasOwn(m.cameos, e.atlasName) ? m.cameos[e.atlasName] : null;
           return o ? { id: e.id, type: 'cameo', x: e.x, y: e.y, w: e.w, h: e.h, atlasName: e.atlasName, shape: o.shape, ...(o.mirror === false ? { mirror: false } : {}), ...(e.rot ? { rot: e.rot } : {}), ...(e.anim ? { anim: e.anim } : {}) } : e;
         });
+        // Polls and zooms were written as text boxes: they become live again.
+        if (m.live && typeof m.live === 'object') slides[i].elements = slides[i].elements.map(e => {
+          const o = e.atlasName && Object.hasOwn(m.live, e.atlasName) ? m.live[e.atlasName] : null;
+          if (!o || typeof o !== 'object') return e;
+          const base = { id: e.id, x: e.x, y: e.y, w: e.w, h: e.h, atlasName: e.atlasName, ...(e.rot ? { rot: e.rot } : {}), ...(e.anim ? { anim: e.anim } : {}) };
+          if (o.type === 'poll') return { ...base, type: 'poll', question: o.question, options: o.options, form: o.form };
+          if (o.type === 'zoom' && Number.isInteger(o.target) && slides[o.target]) return { ...base, type: 'zoom', target: slides[o.target].id || (slides[o.target].id = 'imp' + o.target) };
+          return e;
+        });
         if (m.media && typeof m.media === 'object') slides[i].elements.forEach(e => { const o = e.type === 'media' && e.atlasName && Object.hasOwn(m.media, e.atlasName) ? m.media[e.atlasName] : null; if (o) ['autoplay', 'loop', 'hideIcon'].forEach(k => { e[k] = o[k] === true; }); });
         if (m.connectors && typeof m.connectors === 'object') slides[i].elements.forEach(e => {
           const o = e.type === 'connector' && e.atlasName && Object.hasOwn(m.connectors, e.atlasName) ? m.connectors[e.atlasName] : null;
@@ -2601,7 +2735,7 @@
         const byName = new Map(slides[i].elements.filter(e => e.atlasName).map(e => [e.atlasName, e.id]));
         slides[i].elements.forEach(e => { if (e.type === 'connector') ['from', 'to'].forEach(k => { if (e[k] && byName.has(e[k].id)) e[k] = { ...e[k], id: byName.get(e[k].id) }; else if (e[k] && !slides[i].elements.some(x => x.id === e[k].id)) delete e[k]; }); });
       });
-      return cleanPres({ theme: meta.theme, customTheme: meta.customTheme, master: meta.master, layouts: meta.layouts, slides });
+      return cleanPres({ theme: meta.theme, customTheme: meta.customTheme, master: meta.master, layouts: meta.layouts, qa: meta.qa, slides });
     }
     return cleanPres({ theme: 'office', slides, ...imported });
   }
@@ -2867,6 +3001,7 @@
       case 'save-cloud': Cloud.saveAsDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEditing() }); break;
       case 'share': Cloud.shareDialog({ state, serialize: ext => serialize(ext), exts: CLOUD_EXTS, before: () => commitEditing(), save: () => save(false) }); break;
       case 'save-and-close': if (await save(false)) Platform.closeNow(); break;
+      case 'export-video': commitEditing(); vid().start(); break;
       case 'export-pdf': commitEditing(); preparePrint(); Platform.exportPdf(Platform.baseName(state.name) + '.pdf', true); break;
       case 'print': commitEditing(); preparePrint(); Platform.print(); break;
       case 'undo': if (editingId) document.execCommand('undo'); else undo(); break;

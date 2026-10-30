@@ -8,14 +8,10 @@
 // fetched so far), sheet (where they go), cols (question ids, one column each, in order) }.
 (function () {
   const C = () => window.FormsCore;
-  const MINE = 'atlas-forms-mine';
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-  const getMine = () => { try { return JSON.parse(localStorage.getItem(MINE) || '[]'); } catch { return []; } };
-  const isMine = f => getMine().includes(f.server + '|' + f.id);
-  const addMine = f => { try { localStorage.setItem(MINE, JSON.stringify([...new Set([...getMine(), f.server + '|' + f.id])].slice(-500))); } catch { /* private mode */ } };
+  const { isMine, addMine, SERVER_OK, call, hostUrls, linkOf } = window.FormsClient;
   const uid = () => 'f' + Math.random().toString(36).slice(2, 10);
   // icons: send eye square-pen copy-plus copy refresh-cw trash-2 plus arrow-up arrow-down x clipboard-list
-  const SERVER_OK = /^https:\/\/[^\s/?#]+(:\d+)?$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
 
   /** A form from a file: known fields, a clean definition and a server address that can be called. */
   function cleanEntry(f) {
@@ -28,43 +24,6 @@
     return out;
   }
   const cleanList = list => (Array.isArray(list) ? list : []).map(cleanEntry).filter(Boolean).slice(0, 50);
-
-  // ---------- Talking to where the answers are collected ----------
-  async function call(f, op, args = {}) {
-    if (f.server === 'local') {
-      if (!(window.atlas && window.atlas.formsCall)) throw new Error('This form collects answers in the Isadek Office desktop app');
-      const r = await window.atlas.formsCall(op, { id: f.id, key: f.key, ...args });
-      if (r && r.error) throw Object.assign(new Error(r.error), { status: r.status, errors: r.errors });
-      return r;
-    }
-    const base = f.server + '/api/forms' + (f.id ? '/' + f.id : '');
-    const path = { create: ['POST', f.server + '/api/forms'], update: ['PUT', base], remove: ['DELETE', base], respond: ['POST', base + '/responses'], responses: ['GET', `${base}/responses?after=${args.after || 0}&limit=${args.limit || 1000}`] }[op];
-    let res;
-    try {
-      res = await fetch(path[1], {
-        method: path[0], credentials: 'omit', cache: 'no-store',
-        headers: { ...(f.key && op !== 'respond' ? { Authorization: 'Bearer ' + f.key } : {}), ...(path[0] === 'GET' || path[0] === 'DELETE' ? {} : { 'Content-Type': 'application/json' }) },
-        body: path[0] === 'GET' || path[0] === 'DELETE' ? undefined : JSON.stringify(op === 'respond' ? { answers: args.answers } : op === 'create' ? { form: args.form } : { form: args.form, open: args.open })
-      });
-    } catch { throw new Error(`${new URL(f.server).host} can’t be reached`); }
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw Object.assign(new Error(data.error || `The server answered ${res.status}`), { status: res.status, errors: data.errors });
-    return data;
-  }
-  async function serverHere() {
-    if (!/^https?:$/.test(location.protocol)) return null;
-    try { const r = await fetch('/api/forms', { cache: 'no-store', credentials: 'omit' }); return r.ok && (await r.json()).available ? location.origin : null; } catch { return null; }
-  }
-  async function hostUrls() {
-    const r = await window.atlas.formsHost();
-    if (r.error) throw new Error('Couldn’t start collecting answers on this computer: ' + r.error);
-    return r.urls;
-  }
-  async function linkOf(f) {
-    if (!f.id) return '';
-    if (f.server !== 'local') return `${f.server}/f/${f.id}`;
-    return (await hostUrls())[0] + '/f/' + f.id;
-  }
 
   function SheetsForms(ctx) {
     const F = window.Formula;
@@ -162,23 +121,6 @@
     }
 
     // ---------- Publishing ----------
-    async function chooseServer() {
-      const here = await serverHere();
-      if (here) return here;
-      const desktop = !!(window.atlas && window.atlas.formsHost);
-      const buttons = [...(desktop ? ['This computer'] : []), 'A server…', 'Cancel'];
-      const i = await UI.choose('Publish Form', (desktop ? 'This computer: people on the same network (Wi-Fi) answer while Isadek Office is open here.\n\n' : '') + 'A server: an Isadek Office web server (anyone with the link can answer, any time).', buttons, 'send');
-      if (buttons[i] === 'This computer') return 'local';
-      if (buttons[i] !== 'A server…') return null;
-      const url = await UI.prompt('Forms Server', 'Address of the Isadek Office server (https://…)', 'https://');
-      if (!url) return null;
-      let u;
-      try { u = new URL(url.trim()); } catch { UI.toast('Enter an address such as https://office.example.com', 4000); return null; }
-      const server = u.origin;
-      if (!SERVER_OK.test(server)) { UI.toast('The server must use https', 4000); return null; }
-      try { const r = await fetch(server + '/api/forms', { cache: 'no-store', credentials: 'omit' }); if (!r.ok) throw 0; } catch { UI.toast(`${u.host} doesn’t collect forms (or can’t be reached)`, 4000); return null; }
-      return server;
-    }
     async function publish(f) {
       if (!f.def.questions.length) return UI.toast('Add a question first');
       try {
@@ -188,7 +130,7 @@
           ensureSheet(f); ctx.buildGrid();
           UI.toast('Form updated');
         } else {
-          const server = await chooseServer();
+          const server = await FormsClient.chooseServer('Publish Form', 'answer');
           if (!server) return;
           f.server = server;
           const r = await call(f, 'create', { form: f.def });

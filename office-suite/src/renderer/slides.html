@@ -100,7 +100,11 @@
       <button class="btn big" id="insImage"><span class="ico" data-icon="image"></span>Picture</button>
       <button class="btn big" id="insTable"><span class="ico" data-icon="table"></span>Table</button>
       <button class="btn big" id="insSmartArt" title="A diagram from a list: process, cycle, hierarchy, pyramid…"><span class="ico" data-icon="network"></span>SmartArt</button>
+      <button class="btn big" id="insZoom" title="Slide Zoom: a preview of another slide; in the show, click it to go there and come back after"><span class="ico" data-icon="zoom-in"></span>Zoom</button>
     </div><div class="label">Content</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insPoll" title="A live poll: people answer from their phones and the results appear on the slide"><span class="ico" data-icon="chart-bar-big"></span>Poll</button>
+    </div><div class="label">Audience</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="insVideo"><span class="ico" data-icon="clapperboard"></span>Video</button>
       <button class="btn big" id="insAudio"><span class="ico" data-icon="audio-lines"></span>Audio</button>
@@ -275,7 +279,14 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="rehearse" title="Practise your talk: the coach listens and reports on pace, filler words, reading the slides aloud and timing"><span class="ico" data-icon="graduation-cap"></span>Rehearse<br>with Coach</button>
       <button class="btn big" id="captionsToggle" title="Show what you say as captions at the foot of the slides while presenting (C in the show)"><span class="ico" data-icon="captions"></span>Live<br>Captions</button>
+      <div class="controls col"><label class="row" title="Captions in another language, translated by the Assistant as you speak">Captions in
+        <select class="ctl" id="captionsLang" aria-label="Caption language"><option value="">the language spoken</option><option>English</option><option>Spanish</option><option>French</option><option>German</option><option>Portuguese</option><option>Italian</option><option>Dutch</option><option>Polish</option><option>Turkish</option><option>Russian</option><option>Ukrainian</option><option>Arabic</option><option>Hindi</option><option>Chinese</option><option>Japanese</option><option>Korean</option><option>Indonesian</option><option>Swahili</option><option>Yoruba</option></select></label></div>
     </div><div class="label">Speaking</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="qaBtn" title="Let the audience send questions from their phones during the show (Q shows them)"><span class="ico" data-icon="message-circle-question"></span>Audience<br>Q&amp;A</button>
+      <button class="btn big" id="remoteBtn" title="Move the slides from your phone, with your notes and the time"><span class="ico" data-icon="smartphone"></span>Phone<br>Remote</button>
+      <div class="controls col"><button class="btn" id="pollReset" title="Start the selected poll again with no votes"><span class="ico" data-icon="rotate-ccw"></span>Reset Poll</button></div>
+    </div><div class="label">Audience</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="toggleNotes"><span class="ico" data-icon="notebook-pen"></span>Notes</button>
     </div><div class="label">View</div></div>
@@ -330,6 +341,7 @@
     <button data-cmd="protect" title="Require a password to open this document (.docx, .xlsx, .pptx)">Protect with Password</button>
     <hr>
     <button data-cmd="export-pdf">Export to PDF</button>
+    <button data-cmd="export-video" title="The slide show as a video (MP4): transitions, animations, timings and narration">Export to Video</button>
     <button data-cmd="print">Print</button>
     <hr>
     <button data-cmd="theme">Office Theme</button>
@@ -358,6 +370,11 @@
 <script src="js/slides-anim.js"></script>
 <script src="js/slides-extras.js"></script>
 <script src="js/slides-coach.js"></script>
+<script src="js/forms-core.js"></script>
+<script src="js/forms-client.js"></script>
+<script src="../../node_modules/qrcode-generator/dist/qrcode.js"></script>
+<script src="js/slides-live.js"></script>
+<script src="js/slides-video.js"></script>
 <script src="js/ink.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/slides.js"></script>
