@@ -66,6 +66,7 @@
     "files": [
       "src/**/*",
       "!src/server/**",
+      "!node_modules/@napi-rs/**",
       "build/icon.png",
       "package.json"
     ],
