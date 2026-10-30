@@ -1,0 +1,382 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: ws: wss:; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Isadek Slides</title>
+<link rel="stylesheet" href="css/office.css">
+<script src="js/theme.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/icons.js"></script>
+<link rel="stylesheet" href="css/slides.css">
+</head>
+<body class="app-slides">
+<div class="titlebar">
+  <div class="brand"><div class="logo">P</div><span>Slides</span></div>
+  <div class="qa">
+    <button data-cmd="save" title="Save (Ctrl+S)"><span class="ico" data-icon="save"></span></button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)"><span class="ico" data-icon="undo-2"></span></button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)"><span class="ico" data-icon="redo-2"></span></button>
+    <button data-cmd="present" title="Start slide show (F5)"><span class="ico" data-icon="play"></span></button>
+  </div>
+  <div class="docname"><input value="Presentation1" aria-label="Presentation name" spellcheck="false"></div>
+  <span class="status-saved"></span>
+  <button class="share-btn" data-cmd="share" title="Share with others">Share</button>
+</div>
+
+<div class="ribbon-tabs">
+  <button class="file-tab">File</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="insert">Insert</button>
+  <button data-tab="draw">Draw</button>
+  <button data-tab="design">Design</button>
+  <button data-tab="transitions">Transitions</button>
+  <button data-tab="animations">Animations</button>
+  <button data-tab="arrange">Arrange</button>
+  <button data-tab="show">Slide Show</button>
+  <button data-tab="review">Review</button>
+  <button data-tab="viewtab">View</button>
+  <button data-tab="master" class="contextual" hidden>Slide Master</button>
+</div>
+
+<div class="ribbon">
+  <div class="ribbon-panel active" data-panel="home">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="newSlide"><span class="ico" data-icon="square-plus"></span>New<br>Slide</button>
+      <div class="controls col">
+        <select class="ctl" id="layout" title="Layout">
+          <option value="title">Title Slide</option><option value="content" selected>Title and Content</option>
+          <option value="section">Section Header</option><option value="two">Two Content</option><option value="titleonly">Title Only</option><option value="blank">Blank</option>
+        </select>
+        <button class="btn" id="resetSlide" title="Put placeholders back where the layout has them"><span class="ico" data-icon="rotate-ccw"></span>Reset</button>
+        <button class="btn" id="dupSlide"><span class="ico" data-icon="copy-plus"></span>Duplicate</button>
+        <button class="btn" id="delSlide"><span class="ico" data-icon="trash-2"></span>Delete</button>
+      </div>
+    </div><div class="label">Slides</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <select class="ctl" id="fontName" style="width:130px">
+          <option>Calibri</option><option>Calibri Light</option><option>Arial</option><option>Georgia</option><option>Segoe UI</option><option>Verdana</option><option>Trebuchet MS</option><option>Times New Roman</option><option>Courier New</option><option>Impact</option>
+        </select>
+        <select class="ctl" id="fontSize" style="width:56px">
+          <option>10</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>32</option><option>36</option><option>40</option><option>44</option><option>54</option><option>60</option><option>72</option><option>96</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" data-exec="bold" aria-label="Bold"><span class="ico" data-icon="bold"></span></button>
+        <button class="btn" data-exec="italic" aria-label="Italic"><span class="ico" data-icon="italic"></span></button>
+        <button class="btn" data-exec="underline" aria-label="Underline"><span class="ico" data-icon="underline"></span></button>
+        <button class="btn" data-exec="strikeThrough" aria-label="Strikethrough"><span class="ico" data-icon="strikethrough"></span></button>
+        <span class="btn color-btn" title="Font colour"><b>A</b><span class="bar" style="background:#c00000"></span><input type="color" id="textColor" value="#c00000"></span>
+      </div>
+    </div><div class="label">Font</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <button class="btn" data-exec="insertUnorderedList" aria-label="Bullets"><span class="ico" data-icon="list"></span></button>
+        <button class="btn" data-exec="insertOrderedList" aria-label="Numbering"><span class="ico" data-icon="list-ordered"></span></button>
+      </div>
+      <div class="row">
+        <button class="btn" data-align="left" aria-label="Align left"><span class="ico" data-icon="align-left"></span></button>
+        <button class="btn" data-align="center" aria-label="Center"><span class="ico" data-icon="align-center"></span></button>
+        <button class="btn" data-align="right" aria-label="Align right"><span class="ico" data-icon="align-right"></span></button>
+        <button class="btn" data-valign="top" title="Align top"><span class="ico" data-icon="align-vertical-justify-start"></span></button>
+        <button class="btn" data-valign="middle" title="Align middle"><span class="ico" data-icon="align-vertical-justify-center"></span></button>
+        <button class="btn" data-valign="bottom" title="Align bottom"><span class="ico" data-icon="align-vertical-justify-end"></span></button>
+      </div>
+    </div><div class="label">Paragraph</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Fill <input type="color" class="ctl" id="shapeFill" value="#4472c4"> <button class="btn" id="noFill" title="No fill"><span class="ico" data-icon="paint-bucket"></span></button></label>
+      <label class="row">Outline <input type="color" class="ctl" id="shapeLine" value="#2f528f"> <button class="btn" id="noLine" title="No outline"><span class="ico" data-icon="square-dashed"></span></button></label>
+    </div><div class="label">Drawing</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="insert">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="newSlide2"><span class="ico" data-icon="square-plus"></span>New<br>Slide</button>
+    </div><div class="label">Slides</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insText"><span class="ico" data-icon="type"></span>Text Box</button>
+      <button class="btn big" id="insImage"><span class="ico" data-icon="image"></span>Picture</button>
+      <button class="btn big" id="insTable"><span class="ico" data-icon="table"></span>Table</button>
+      <button class="btn big" id="insSmartArt" title="A diagram from a list: process, cycle, hierarchy, pyramid…"><span class="ico" data-icon="network"></span>SmartArt</button>
+      <button class="btn big" id="insZoom" title="Slide Zoom: a preview of another slide; in the show, click it to go there and come back after"><span class="ico" data-icon="zoom-in"></span>Zoom</button>
+    </div><div class="label">Content</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insPoll" title="A live poll: people answer from their phones and the results appear on the slide"><span class="ico" data-icon="chart-bar-big"></span>Poll</button>
+    </div><div class="label">Audience</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insVideo"><span class="ico" data-icon="clapperboard"></span>Video</button>
+      <button class="btn big" id="insAudio"><span class="ico" data-icon="audio-lines"></span>Audio</button>
+      <button class="btn big" id="insCameo" title="Your camera, live in the slide while you present"><span class="ico" data-icon="square-user"></span>Cameo</button>
+      <div class="controls col">
+        <label class="row" title="Play when the slide appears (else on click)"><input type="checkbox" id="mediaAuto"> Start automatically</label>
+        <label class="row"><input type="checkbox" id="mediaLoop"> Loop until stopped</label>
+        <label class="row"><input type="checkbox" id="mediaHide"> Hide icon during show</label>
+      </div>
+      <button class="btn big" id="mediaPlay"><span class="ico" data-icon="circle-play"></span>Play</button>
+    </div><div class="label">Media</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="headerFooter"><span class="ico" data-icon="panel-bottom"></span>Header &amp;<br>Footer</button>
+    </div><div class="label">Text</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn" data-shape="rect" title="Rectangle"><span class="ico" data-icon="rectangle-horizontal"></span></button>
+      <button class="btn" data-shape="roundRect" title="Rounded rectangle"><span class="ico" data-icon="square"></span></button>
+      <button class="btn" data-shape="ellipse" title="Oval"><span class="ico" data-icon="circle"></span></button>
+      <button class="btn" data-shape="triangle" title="Triangle"><span class="ico" data-icon="triangle"></span></button>
+      <button class="btn" data-shape="rightArrow" title="Arrow"><span class="ico" data-icon="move-right"></span></button>
+      <button class="btn" data-shape="line" title="Line"><span class="ico" data-icon="minus"></span></button>
+      <button class="btn" data-shape="star5" title="Star"><span class="ico" data-icon="star"></span></button>
+      <button class="btn" data-shape="diamond" title="Diamond"><span class="ico" data-icon="diamond"></span></button>
+      <button class="btn" data-connector="straight" title="Arrow connector: click two shapes"><span class="ico" data-icon="move-up-right"></span></button>
+      <button class="btn" data-connector="elbow" title="Elbow connector: click two shapes"><span class="ico" data-icon="corner-down-right"></span></button>
+    </div><div class="label">Shapes</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="draw">
+    <div class="group"><div class="controls">
+      <button class="btn big on" id="inkSelect" title="Select and edit"><span class="ico" data-icon="mouse-pointer-2"></span>Select</button>
+      <button class="btn big pen" data-pen="#1f1f1f" data-w="3" title="Black pen"><span class="ico" style="color:#1f1f1f" data-icon="pen-line"></span>Black</button>
+      <button class="btn big pen" data-pen="#1565c0" data-w="3" title="Blue pen"><span class="ico" style="color:#1565c0" data-icon="pen-line"></span>Blue</button>
+      <button class="btn big pen" data-pen="#c62828" data-w="3" title="Red pen"><span class="ico" style="color:#c62828" data-icon="pen-line"></span>Red</button>
+      <button class="btn big pen" data-pen="#ffe600" data-w="18" data-hl="1" title="Highlighter"><span class="ico" style="color:#e0c000" data-icon="highlighter"></span>Highlighter</button>
+      <button class="btn big" id="inkEraser" title="Eraser: touch a stroke to remove it"><span class="ico" data-icon="eraser"></span>Eraser</button>
+    </div><div class="label">Pens</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="inkTouch" title="Draw with your finger even after using a pen (normally, once a pen is used, a finger scrolls)"><span class="ico" data-icon="hand"></span>Draw with<br>Touch</button>
+    </div><div class="label">Touch</div></div>
+  </div>
+  <div class="ribbon-panel" data-panel="design">
+    <div class="group"><div class="controls themes" id="themes"></div><div class="label">Themes</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="designIdeas" title="Designer: other layouts for this slide's title, text and pictures"><span class="ico" data-icon="sparkles"></span>Design<br>Ideas</button>
+    </div><div class="label">Designer</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Background <input type="color" class="ctl" id="slideBg" value="#ffffff"></label>
+      <button class="btn" id="bgAll">Apply to all slides</button>
+      <button class="btn" id="bgImage"><span class="ico" data-icon="image"></span>Background picture</button>
+      <button class="btn" id="hideMaster" title="Hide the master's shapes, footers and slide number on this slide"><span class="ico" data-icon="eye-off"></span>Hide background graphics</button>
+    </div><div class="label">Customize</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="masterView2"><span class="ico" data-icon="layout-template"></span>Slide<br>Master</button>
+    </div><div class="label">Master</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="review">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="proofEditor" title="Spelling &amp; Grammar (F7)"><span class="ico" data-icon="spell-check"></span>Spelling</button>
+      <button class="btn big" id="proofLang" title="Proofing language"><span class="ico" data-icon="languages"></span>Language</button>
+    </div><div class="label">Proofing</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="a11yCheck" title="Find things that make the presentation hard to use for people with disabilities"><span class="ico" data-icon="accessibility"></span>Check<br>Accessibility</button>
+    </div><div class="label">Accessibility</div></div>
+  </div>
+  <div class="ribbon-panel" data-panel="viewtab">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="masterView" title="Edit the master and layouts: shapes, backgrounds and placeholders shared by slides"><span class="ico" data-icon="layout-template"></span>Slide<br>Master</button>
+    </div><div class="label">Master Views</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="master">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insLayout"><span class="ico" data-icon="square-plus"></span>Insert<br>Layout</button>
+      <div class="controls col">
+        <button class="btn" id="renameLayout"><span class="ico" data-icon="pencil"></span>Rename</button>
+        <button class="btn" id="delLayout"><span class="ico" data-icon="trash-2"></span>Delete</button>
+        <select class="ctl" id="insPlaceholder" title="Insert Placeholder"><option value="">Insert Placeholder…</option><option value="title">Title</option><option value="subtitle">Subtitle</option><option value="body">Content</option></select>
+      </div>
+    </div><div class="label">Edit Master</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="headerFooter2"><span class="ico" data-icon="panel-bottom"></span>Header &amp;<br>Footer</button>
+      <button class="btn big" id="closeMaster"><span class="ico" data-icon="x"></span>Close<br>Master View</button>
+    </div><div class="label">Close</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="transitions">
+    <div class="group"><div class="controls">
+      <button class="btn big" data-trans="none"><span class="ico" data-icon="square-x"></span>None</button>
+      <button class="btn big" data-trans="fade"><span class="ico" data-icon="blend"></span>Fade</button>
+      <button class="btn big" data-trans="push"><span class="ico" data-icon="arrow-left-to-line"></span>Push</button>
+      <button class="btn big" data-trans="wipe"><span class="ico" data-icon="paint-roller"></span>Wipe</button>
+      <button class="btn big" data-trans="split"><span class="ico" data-icon="columns-2"></span>Split</button>
+      <button class="btn big" data-trans="cover"><span class="ico" data-icon="layers"></span>Cover</button>
+      <button class="btn big" data-trans="uncover"><span class="ico" data-icon="layers-2"></span>Uncover</button>
+      <button class="btn big" data-trans="zoom"><span class="ico" data-icon="zoom-in"></span>Zoom</button>
+      <button class="btn big" data-trans="morph" title="Morph: objects on this and the previous slide glide from one place to the other (duplicate a slide, then move things)"><span class="ico" data-icon="shapes"></span>Morph</button>
+    </div><div class="label">Transition to This Slide</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Duration <input class="ctl" id="transDur" type="number" min="0.1" max="30" step="0.25" value="1" style="width:60px"> s</label>
+      <label class="row"><input type="checkbox" id="advanceOn"> After <input class="ctl" id="advanceAfter" type="number" min="0" max="3600" step="0.5" value="0" style="width:60px"> s</label>
+      <button class="btn" id="transAll">Apply to all</button>
+    </div><div class="label">Timing</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="animations">
+    <div class="group"><div class="controls col">
+      <select class="ctl" id="animEffect" style="width:150px" title="Animation">
+        <option value="">None</option>
+        <optgroup label="Entrance"><option value="appear">Appear</option><option value="fade">Fade</option><option value="fly">Fly In</option><option value="float">Float In</option><option value="wipe">Wipe</option><option value="zoom">Zoom</option></optgroup>
+        <optgroup label="Emphasis"><option value="pulse">Pulse</option><option value="spin">Spin</option></optgroup>
+        <optgroup label="Exit"><option value="fadeOut">Fade Out</option><option value="flyOut">Fly Out</option><option value="zoomOut">Zoom Out</option></optgroup>
+      </select>
+      <select class="ctl" id="animDir" title="Effect options"><option value="bottom">From Bottom</option><option value="left">From Left</option><option value="right">From Right</option><option value="top">From Top</option></select>
+    </div><div class="label">Animation</div></div>
+    <div class="group"><div class="controls col">
+      <label class="row">Start <select class="ctl" id="animStart"><option value="click">On Click</option><option value="with">With Previous</option><option value="after">After Previous</option></select></label>
+      <label class="row">Duration <input class="ctl" id="animDur" type="number" min="0" max="60" step="0.25" style="width:60px"> s</label>
+      <label class="row">Delay <input class="ctl" id="animDelay" type="number" min="0" max="600" step="0.25" style="width:60px"> s</label>
+    </div><div class="label">Timing</div></div>
+    <div class="group"><div class="controls">
+      <div class="controls col">
+        <button class="btn" id="animEarlier"><span class="ico" data-icon="arrow-up"></span>Move Earlier</button>
+        <button class="btn" id="animLater"><span class="ico" data-icon="arrow-down"></span>Move Later</button>
+      </div>
+      <button class="btn big" id="animPreview"><span class="ico" data-icon="play"></span>Preview</button>
+    </div><div class="label">Order</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="arrange">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="toFront"><span class="ico" data-icon="bring-to-front"></span>Bring to<br>Front</button>
+      <button class="btn big" id="toBack"><span class="ico" data-icon="send-to-back"></span>Send to<br>Back</button>
+    </div><div class="label">Order</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="altText" title="Describe the selected picture, video or shape for screen readers"><span class="ico" data-icon="message-square-text"></span>Alt<br>Text</button>
+    </div><div class="label">Accessibility</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="groupEls" title="Group (Ctrl+G); Shift+click to select several objects"><span class="ico" data-icon="group"></span>Group</button>
+      <button class="btn big" id="ungroupEls" title="Ungroup (Ctrl+Shift+G)"><span class="ico" data-icon="ungroup"></span>Ungroup</button>
+    </div><div class="label">Group</div></div>
+    <div class="group"><div class="controls col">
+      <button class="btn" id="rotRight"><span class="ico" data-icon="rotate-cw"></span>Rotate right 90°</button>
+      <button class="btn" id="rotLeft"><span class="ico" data-icon="rotate-ccw"></span>Rotate left 90°</button>
+    </div><div class="controls col">
+      <button class="btn" id="flipH"><span class="ico" data-icon="flip-horizontal-2"></span>Flip horizontal</button>
+      <button class="btn" id="flipV"><span class="ico" data-icon="flip-vertical-2"></span>Flip vertical</button>
+    </div><div class="label">Rotate</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="alignCenterH"><span class="ico" data-icon="align-center-horizontal"></span>Center<br>Horizontally</button>
+      <button class="btn big" id="alignCenterV"><span class="ico" data-icon="align-center-vertical"></span>Center<br>Vertically</button>
+      <button class="btn big" id="dupEl"><span class="ico" data-icon="copy-plus"></span>Duplicate</button>
+      <button class="btn big" id="delEl"><span class="ico" data-icon="trash-2"></span>Delete</button>
+    </div><div class="label">Arrange</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="show">
+    <div class="group"><div class="controls">
+      <button class="btn big" data-cmd="present"><span class="ico" data-icon="play"></span>From<br>Beginning</button>
+      <button class="btn big" data-cmd="present-current"><span class="ico" data-icon="square-play"></span>From Current<br>Slide</button>
+      <button class="btn big" data-cmd="presenter-view" title="Your notes, the next slide and a timer on this screen; the slides on the other screen or window"><span class="ico" data-icon="presentation"></span>Presenter<br>View</button>
+    </div><div class="label">Start Slide Show</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="recordShow" title="Record narration and timings from the first slide"><span class="ico" data-icon="circle-dot"></span>Record</button>
+      <div class="controls col">
+        <button class="btn" id="recordCurrent"><span class="ico" data-icon="circle-dot"></span>From Current Slide</button>
+        <button class="btn" id="clearRecording"><span class="ico" data-icon="circle-x"></span>Clear Recording</button>
+      </div>
+      <button class="btn big" id="handouts" title="Print or save handouts and notes pages"><span class="ico" data-icon="printer"></span>Handouts</button>
+    </div><div class="label">Set Up</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="rehearse" title="Practise your talk: the coach listens and reports on pace, filler words, reading the slides aloud and timing"><span class="ico" data-icon="graduation-cap"></span>Rehearse<br>with Coach</button>
+      <button class="btn big" id="captionsToggle" title="Show what you say as captions at the foot of the slides while presenting (C in the show)"><span class="ico" data-icon="captions"></span>Live<br>Captions</button>
+      <div class="controls col"><label class="row" title="Captions in another language, translated by the Assistant as you speak">Captions in
+        <select class="ctl" id="captionsLang" aria-label="Caption language"><option value="">the language spoken</option><option>English</option><option>Spanish</option><option>French</option><option>German</option><option>Portuguese</option><option>Italian</option><option>Dutch</option><option>Polish</option><option>Turkish</option><option>Russian</option><option>Ukrainian</option><option>Arabic</option><option>Hindi</option><option>Chinese</option><option>Japanese</option><option>Korean</option><option>Indonesian</option><option>Swahili</option><option>Yoruba</option></select></label></div>
+    </div><div class="label">Speaking</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="qaBtn" title="Let the audience send questions from their phones during the show (Q shows them)"><span class="ico" data-icon="message-circle-question"></span>Audience<br>Q&amp;A</button>
+      <button class="btn big" id="remoteBtn" title="Move the slides from your phone, with your notes and the time"><span class="ico" data-icon="smartphone"></span>Phone<br>Remote</button>
+      <div class="controls col"><button class="btn" id="pollReset" title="Start the selected poll again with no votes"><span class="ico" data-icon="rotate-ccw"></span>Reset Poll</button></div>
+    </div><div class="label">Audience</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="toggleNotes"><span class="ico" data-icon="notebook-pen"></span>Notes</button>
+    </div><div class="label">View</div></div>
+  </div>
+</div>
+
+<div class="workspace">
+  <div class="thumbs" id="thumbs"></div>
+  <div class="editor-col">
+    <div class="stage-wrap" id="stageWrap">
+      <div class="slide" id="stage"></div>
+    </div>
+    <div class="notes" id="notesPane">
+      <textarea id="notes" placeholder="Click to add notes"></textarea>
+    </div>
+  </div>
+</div>
+
+<div class="statusbar">
+  <span id="stSlide">Slide 1 of 1</span>
+  <span class="spacer"></span>
+  <span class="hint">Double-click a box to edit text · Delete removes it · F5 presents</span>
+</div>
+
+<div class="presenter" id="presenter" hidden><div class="slide" id="presentSlide"></div><div class="present-hint" id="presentHint"></div><div class="captions" id="captions" aria-live="polite" hidden></div><div class="coach-pill" id="coachPill" role="status" hidden></div></div>
+<div class="presenter-view" id="presenterView" hidden>
+  <div class="pv-top"><span id="pvTimer" class="pv-timer">0:00:00</span><button class="pv-btn" id="pvPause" title="Pause timer"><span class="ico" data-icon="pause"></span></button><button class="pv-btn" id="pvReset" title="Restart timer"><span class="ico" data-icon="rotate-ccw"></span></button><span class="pv-spacer"></span><span id="pvClock"></span></div>
+  <div class="pv-main">
+    <div class="pv-current" id="pvCurrentBox"><div class="slide" id="pvCurrent"></div></div>
+    <div class="pv-side">
+      <div class="pv-label" id="pvNextLabel">Next slide</div>
+      <div class="pv-next" id="pvNextBox"><div class="slide" id="pvNext"></div></div>
+      <div class="pv-notes-bar"><span>Notes</span><button class="pv-btn" id="pvZoomOut" title="Smaller notes"><span class="ico" data-icon="a-arrow-down"></span></button><button class="pv-btn" id="pvZoomIn" title="Larger notes"><span class="ico" data-icon="a-arrow-up"></span></button></div>
+      <div class="pv-notes" id="pvNotes"></div>
+    </div>
+  </div>
+  <div class="pv-bottom"><button class="pv-btn" id="pvPrev" title="Previous (←)"><span class="ico" data-icon="chevron-left"></span></button><span id="pvCount"></span><button class="pv-btn" id="pvNextBtn" title="Next (→, Space)"><span class="ico" data-icon="chevron-right"></span></button><span class="pv-spacer"></span><button class="pv-btn" id="pvBlack" title="Black screen (B)"><span class="ico" data-icon="square"></span>Black</button><button class="pv-btn" id="pvEnd" title="End show (Esc)">End Show</button></div>
+</div>
+<div class="print-slides" id="printSlides"></div>
+
+<div class="backstage">
+  <nav>
+    <button class="back" title="Back"><span class="ico" data-icon="arrow-left"></span></button>
+    <button data-cmd="new">New</button>
+    <button data-cmd="open">Open</button>
+    <button data-cmd="open-cloud">Open from Cloud</button>
+    <button data-cmd="save">Save</button>
+    <button data-cmd="save-as">Save As</button>
+    <button data-cmd="save-cloud">Save to Cloud</button>
+    <button data-cmd="share">Share</button>
+    <button data-cmd="version-history" title="Earlier versions of this document, kept each time you save">Version History</button>
+    <button data-cmd="protect" title="Require a password to open this document (.docx, .xlsx, .pptx)">Protect with Password</button>
+    <hr>
+    <button data-cmd="export-pdf">Export to PDF</button>
+    <button data-cmd="export-video" title="The slide show as a video (MP4): transitions, animations, timings and narration">Export to Video</button>
+    <button data-cmd="print">Print</button>
+    <hr>
+    <button data-cmd="theme">Office Theme</button>
+    <button data-cmd="language">Language</button>
+    <button data-cmd="speech-settings" title="Speech recognition for dictation, captions and Coach: on this device, or the browser’s service">Speech</button>
+    <button data-cmd="help">Help</button>
+    <button data-cmd="home">Isadek Office Home</button>
+  </nav>
+  <main><h1>Isadek Slides</h1><p>Open and save PowerPoint presentations (.pptx) and Isadek presentations (.aslides, keeps everything exactly).</p></main>
+</div>
+
+<script src="../../node_modules/jszip/dist/jszip.min.js"></script>
+<script src="../../node_modules/pptxgenjs/dist/pptxgen.min.js"></script>
+<script src="../../node_modules/cfb/dist/cfb.min.js"></script>
+<script src="js/office-crypto.js"></script>
+<script src="js/platform.js"></script>
+<script src="js/a11y.js"></script>
+<script src="js/mobile.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/offline.js"></script>
+<script src="js/merge3.js"></script>
+<script src="js/collab.js"></script>
+<script src="js/speech.js"></script>
+<script src="js/assistant.js"></script>
+<script src="js/proofing.js"></script>
+<script src="js/slides-anim.js"></script>
+<script src="js/slides-extras.js"></script>
+<script src="js/slides-coach.js"></script>
+<script src="js/forms-core.js"></script>
+<script src="js/forms-client.js"></script>
+<script src="../../node_modules/qrcode-generator/dist/qrcode.js"></script>
+<script src="js/slides-live.js"></script>
+<script src="js/slides-video.js"></script>
+<script src="js/ink.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/slides.js"></script>
+</body>
+</html>

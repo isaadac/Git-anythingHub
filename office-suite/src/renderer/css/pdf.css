@@ -1,0 +1,43 @@
+/* Isadek PDF */
+.pdf-work { display: flex; flex: 1; min-height: 0; }
+.pdf-thumbs { width: 168px; flex: none; overflow-y: auto; background: var(--surface-2); border-right: 1px solid var(--border); padding: var(--sp-5) var(--sp-4); display: flex; flex-direction: column; gap: var(--sp-5); align-items: center; }
+.pdf-thumb { border: 0; background: none; padding: 0; cursor: pointer; display: grid; justify-items: center; gap: 4px; color: var(--muted); font-size: var(--fs-xs); }
+.pdf-thumb canvas { width: 120px; height: auto; background: #fff; box-shadow: 0 0 0 1px var(--border), var(--sh-1); border-radius: 2px; }
+.pdf-thumb.on canvas { box-shadow: 0 0 0 3px var(--accent); }
+.pdf-thumb.on .n { color: var(--accent-fg); font-weight: var(--fw-semibold); }
+.pdf-thumb.drop canvas { box-shadow: 0 -4px 0 0 var(--accent), 0 0 0 1px var(--border); }
+.pdf-view { flex: 1; overflow: auto; background: var(--canvas, var(--bg)); outline: none; position: relative; }
+.pdf-pages { display: flex; flex-direction: column; align-items: center; gap: var(--sp-7); padding: var(--sp-7) var(--sp-6); min-width: max-content; margin: 0 auto; }
+.pdf-page { position: relative; background: #fff; box-shadow: var(--sh-2); flex: none; }
+.pdf-page canvas { display: block; }
+.pdf-page .textLayer, .pdf-page .annotationLayer { position: absolute; inset: 0; }
+.pdf-annots { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.pdf-annots rect.hl { mix-blend-mode: multiply; opacity: .45; }
+.pdf-textbox { position: absolute; white-space: pre; font-family: Helvetica, Arial, sans-serif; line-height: 1; pointer-events: auto; transform: translateY(0); }
+.pdf-note { position: absolute; width: 26px; height: 26px; margin: -13px 0 0 -13px; border: 0; border-radius: 6px 6px 6px 0; background: #ffd23f; color: #5c4400; display: grid; place-items: center; cursor: pointer; box-shadow: var(--sh-2); pointer-events: auto; z-index: 3; }
+.pdf-note svg { width: 15px; height: 15px; }
+.pdf-empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--sp-4); color: var(--muted); text-align: center; }
+.pdf-empty[hidden] { display: none; }
+.pdf-empty > .ico svg { width: 56px; height: 56px; opacity: .5; }
+.pdf-empty h2 { margin: 0; color: var(--text); }
+.pdf-find { display: flex; gap: var(--sp-3); align-items: center; padding: var(--sp-3) var(--sp-5); border-bottom: 1px solid var(--border); background: var(--surface); }
+.pdf-find[hidden] { display: none; }
+.pdf-find input { flex: 0 1 320px; height: 28px; border: 1px solid var(--border); border-radius: var(--r-md); padding: 0 var(--sp-4); background: var(--surface); color: inherit; }
+.textLayer span.find-hit { background: rgba(255, 210, 0, .45); border-radius: 2px; }
+.textLayer span.find-hit.cur { background: rgba(255, 140, 0, .6); }
+/* Tools: what the pointer does over a page. */
+body[data-pdf-tool="hand"] .pdf-page, body[data-pdf-tool="hand"] .pdf-page * { cursor: grab !important; }
+body[data-pdf-tool="hand"] .textLayer, body[data-pdf-tool="pen"] .textLayer, body[data-pdf-tool="pen"] .annotationLayer,
+body[data-pdf-tool="text"] .textLayer, body[data-pdf-tool="note"] .textLayer, body[data-pdf-tool="date"] .textLayer, body[data-pdf-tool="signature"] .textLayer,
+body[data-pdf-tool="erase"] .textLayer { pointer-events: none; }
+body[data-pdf-tool="pen"] .pdf-page { cursor: crosshair; touch-action: none; }
+body[data-pdf-tool="text"] .pdf-page, body[data-pdf-tool="note"] .pdf-page, body[data-pdf-tool="date"] .pdf-page, body[data-pdf-tool="signature"] .pdf-page { cursor: copy; }
+body[data-pdf-tool="highlight"] .pdf-page { cursor: text; }
+body[data-pdf-tool="erase"] .pdf-page { cursor: cell; }
+body[data-pdf-tool="erase"] .pdf-annots { pointer-events: auto; }
+body[data-pdf-tool="erase"] .pdf-annots > * { cursor: pointer; }
+.sig-dialog { width: min(680px, 96vw); }
+.sig-pad { background: #fff; border: 1px solid var(--border); border-radius: var(--r-md); margin: var(--sp-4) 0; }
+.sig-pad svg { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; border-bottom: 1px dashed #c8ccd4; }
+.sig-dialog .actions .sp { flex: 1; }
+@media print { .titlebar, .ribbon-tabs, .ribbon, .statusbar, .pdf-thumbs, .pdf-find { display: none !important; } .pdf-view { overflow: visible; } .pdf-page { box-shadow: none; break-after: page; } }

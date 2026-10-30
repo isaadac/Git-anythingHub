@@ -1,0 +1,60 @@
+/* Isadek Forms: a form to answer, on its own page and inside Sheets (preview, fill in). It takes
+   the app's colours when they are there (--surface, --text…) and its own otherwise. */
+.fv {
+  --fv-accent: #13834a;
+  --fv-bg: var(--surface, #fff);
+  --fv-text: var(--text, #1f1f1f);
+  --fv-subtle: var(--subtle, #5f6368);
+  --fv-border: var(--border, #dadce0);
+  --fv-field: var(--surface-2, #f8f9fa);
+  --fv-danger: var(--danger-fg, #b3261e);
+  color: var(--fv-text);
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.fv-body { display: flex; flex-direction: column; gap: 12px; margin: 0; }
+.fv-head, .fv-q { background: var(--fv-bg); border: 1px solid var(--fv-border); border-radius: 12px; padding: 18px 22px; margin: 0; min-width: 0; }
+.fv-head { border-top: 8px solid var(--fv-accent); }
+.fv-form-title { font-size: 26px; line-height: 1.25; margin: 0 0 6px; font-weight: 600; overflow-wrap: anywhere; }
+.fv-desc { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.fv-note { margin: 10px 0 0; color: var(--fv-danger); font-size: 13px; }
+.fv-q legend { float: left; width: 100%; padding: 0; margin-bottom: 8px; }
+.fv-q legend + * { clear: both; }
+.fv-title { font-size: 16px; font-weight: 500; overflow-wrap: anywhere; }
+.fv-req { color: var(--fv-danger); }
+.fv-help { color: var(--fv-subtle); font-size: 13px; margin: 0 0 10px; white-space: pre-wrap; }
+.fv-input { display: block; width: 100%; box-sizing: border-box; font: inherit; color: inherit; background: var(--fv-field); border: 1px solid var(--fv-border); border-radius: 8px; padding: 9px 11px; }
+.fv-input:focus, .fv-option input:focus-visible, .fv-star input:focus-visible + span { outline: 2px solid var(--fv-accent); outline-offset: 1px; }
+input.fv-input:not([type=date]) { max-width: 520px; }
+select.fv-input { max-width: 320px; }
+.fv-options { display: flex; flex-direction: column; gap: 4px; }
+.fv-option { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 6px; cursor: pointer; }
+.fv-option input { width: 18px; height: 18px; margin: 0; accent-color: var(--fv-accent); flex: none; }
+.fv-option span { overflow-wrap: anywhere; }
+.fv-rating { display: flex; flex-wrap: wrap; gap: 6px; }
+.fv-star { position: relative; cursor: pointer; }
+.fv-star input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.fv-star span { display: grid; place-items: center; width: 40px; height: 40px; border: 1px solid var(--fv-border); border-radius: 50%; font-weight: 600; background: var(--fv-field); }
+.fv-star.on span { background: var(--fv-accent); border-color: var(--fv-accent); color: #fff; }
+.fv-err { color: var(--fv-danger); font-size: 13px; margin: 8px 0 0; }
+.fv-err:empty { display: none; }
+.fv-q.bad { border-color: var(--fv-danger); }
+.fv-actions { display: flex; gap: 10px; align-items: center; justify-content: space-between; }
+.fv-submit, .fv-clear { font: inherit; font-weight: 600; border-radius: 8px; padding: 9px 22px; cursor: pointer; }
+.fv-submit { background: var(--fv-accent); color: #fff; border: 1px solid var(--fv-accent); }
+.fv-submit:disabled { opacity: .6; cursor: progress; }
+.fv-clear { background: none; color: var(--fv-accent); border: 1px solid transparent; }
+.fv-done .fv-clear { align-self: flex-start; padding-left: 0; }
+.fv-status { margin: 0; color: var(--fv-subtle); font-size: 13px; min-height: 1em; }
+.fv-loading { color: var(--fv-subtle); text-align: center; }
+/* The answer page on its own */
+.form-page { margin: 0; min-height: 100vh; background: #eef3f0; }
+.form-page .fv { max-width: 680px; margin: 0 auto; padding: 24px 16px 8px; box-sizing: border-box; }
+.fv-foot { text-align: center; color: #5f6368; font: 12px system-ui, sans-serif; padding: 16px; }
+@media (prefers-color-scheme: dark) {
+  .form-page { background: #161a18; }
+  .form-page .fv { --fv-bg: #22262a; --fv-text: #e8eaed; --fv-subtle: #a8adb3; --fv-border: #3c4043; --fv-field: #2b3034; --fv-danger: #f2b8b5; }
+  .fv-foot { color: #a8adb3; }
+  .form-page .fv-clear { color: var(--fv-text); }
+}
+@media (max-width: 520px) { .fv-head, .fv-q { padding: 14px 16px; } .fv-form-title { font-size: 22px; } }
+@media (prefers-reduced-motion: no-preference) { .fv-star span { transition: background .12s, border-color .12s; } }

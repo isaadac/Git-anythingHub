@@ -1,0 +1,379 @@
+# Builds Isadek Office installers for Windows, macOS and Linux.
+# - Every push/PR touching office-suite/: runs tests and uploads installers as workflow artifacts.
+# - Pushing a tag like "office-v1.0.0": also attaches the installers to a GitHub Release (with
+#   SHA256SUMS.txt), publishes the download site, and sends store builds to the stores whose
+#   credentials are set up (see office-suite/SIGNING.md). Each store step is skipped without them.
+name: Isadek Office
+
+on:
+  push:
+    paths: ['office-suite/**', '.github/workflows/office-suite.yml']
+    tags: ['office-v*']
+  pull_request:
+    paths: ['office-suite/**', '.github/workflows/office-suite.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+defaults:
+  run:
+    working-directory: office-suite
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: office-suite/package-lock.json
+      - run: npm ci
+      - run: npm test
+
+  e2e:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: office-suite/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm ci
+      - name: Browser and tools for the end-to-end tests
+        run: |
+          npx playwright install --with-deps chromium
+          pip install openpyxl python-pptx python-docx
+          sudo apt-get install -y espeak-ng ffmpeg
+      - name: End-to-end tests (web pages and the desktop app)
+        run: xvfb-run -a npm run e2e
+      - name: Pictures of what changed (visual regression)
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: visual-diff
+          path: office-suite/e2e/visual/diff/
+          if-no-files-found: ignore
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            target: --win
+          - os: macos-latest
+            target: --mac
+          - os: ubuntu-latest
+            target: --linux
+    runs-on: ${{ matrix.os }}
+    env:
+      # Which store credentials are set up (a step can't test its own secrets in its "if").
+      HAS_MAS: ${{ secrets.MAS_CSC_LINK != '' && secrets.MAS_PROVISIONING_PROFILE != '' }}
+      HAS_SNAP: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: office-suite/package-lock.json
+      - run: npm ci
+      - name: Built-in cloud apps (optional repository variables, see README)
+        env:
+          ISADEK_GOOGLE_CLIENT_ID: ${{ vars.ISADEK_GOOGLE_CLIENT_ID }}
+          ISADEK_GOOGLE_CLIENT_SECRET: ${{ secrets.ISADEK_GOOGLE_CLIENT_SECRET }}
+          ISADEK_MICROSOFT_CLIENT_ID: ${{ vars.ISADEK_MICROSOFT_CLIENT_ID }}
+          ISADEK_MICROSOFT_TENANT: ${{ vars.ISADEK_MICROSOFT_TENANT }}
+          ISADEK_DROPBOX_APP_KEY: ${{ vars.ISADEK_DROPBOX_APP_KEY }}
+        run: node scripts/cloud-apps.js
+      - name: Release settings (optional repository variable ISADEK_CRASH_URL)
+        env:
+          ISADEK_CRASH_URL: ${{ vars.ISADEK_CRASH_URL }}
+        run: node scripts/release-config.js
+      - name: Build installers
+        shell: bash
+        env:
+          # Code signing is optional: add these repository secrets to sign (see office-suite/SIGNING.md).
+          WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
+          WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
+          MAC_CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          MAC_CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          args="${{ matrix.target }} --publish never"
+          case "${{ runner.os }}" in
+            Windows)
+              if [ -n "$WIN_CSC_LINK" ]; then export CSC_LINK="$WIN_CSC_LINK" CSC_KEY_PASSWORD="$WIN_CSC_KEY_PASSWORD"; signed=yes; fi ;;
+            macOS)
+              if [ -n "$MAC_CSC_LINK" ]; then export CSC_LINK="$MAC_CSC_LINK" CSC_KEY_PASSWORD="$MAC_CSC_KEY_PASSWORD"; signed=yes; fi
+              if [ -n "$signed" ] && [ -n "$APPLE_ID" ] && [ -n "$APPLE_APP_SPECIFIC_PASSWORD" ] && [ -n "$APPLE_TEAM_ID" ]; then
+                args="$args -c.mac.notarize=true"; echo "Notarizing with Apple"
+              fi ;;
+          esac
+          unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD MAC_CSC_LINK MAC_CSC_KEY_PASSWORD
+          if [ -z "$signed" ]; then
+            echo "::notice::Building unsigned installers (no signing secrets for ${{ runner.os }})"
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+          npx electron-builder $args
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isadek-office-${{ runner.os }}
+          path: |
+            office-suite/dist/*.exe
+            office-suite/dist/*.dmg
+            office-suite/dist/*.zip
+            office-suite/dist/*.AppImage
+            office-suite/dist/*.deb
+            office-suite/dist/*.blockmap
+            office-suite/dist/latest*.yml
+          if-no-files-found: error
+      # ---- Store packages ----
+      # Microsoft Store (MSIX): built on every run; Partner Center signs it when it is submitted.
+      - name: Microsoft Store package
+        if: runner.os == 'Windows'
+        shell: bash
+        env:
+          APPX_IDENTITY: ${{ vars.ISADEK_APPX_IDENTITY }}
+          APPX_PUBLISHER: ${{ vars.ISADEK_APPX_PUBLISHER }}
+          APPX_PUBLISHER_NAME: ${{ vars.ISADEK_APPX_PUBLISHER_NAME }}
+        run: |
+          args="--win appx --publish never"
+          [ -n "$APPX_IDENTITY" ] && args="$args -c.appx.identityName=$APPX_IDENTITY"
+          [ -n "$APPX_PUBLISHER" ] && args="$args -c.appx.publisher=$APPX_PUBLISHER"
+          [ -n "$APPX_PUBLISHER_NAME" ] && args="$args -c.appx.publisherDisplayName=$APPX_PUBLISHER_NAME"
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder $args
+      - name: Mac App Store package
+        if: runner.os == 'macOS' && env.HAS_MAS == 'true'
+        env:
+          MAS_CSC_LINK: ${{ secrets.MAS_CSC_LINK }}
+          MAS_CSC_KEY_PASSWORD: ${{ secrets.MAS_CSC_KEY_PASSWORD }}
+          MAS_INSTALLER_CSC_LINK: ${{ secrets.MAS_INSTALLER_CSC_LINK }}
+          MAS_INSTALLER_CSC_KEY_PASSWORD: ${{ secrets.MAS_INSTALLER_CSC_KEY_PASSWORD }}
+          MAS_PROVISIONING_PROFILE: ${{ secrets.MAS_PROVISIONING_PROFILE }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+        run: |
+          echo "$MAS_PROVISIONING_PROFILE" | base64 --decode > "$RUNNER_TEMP/mas.provisionprofile"
+          CSC_LINK="$MAS_CSC_LINK" CSC_KEY_PASSWORD="$MAS_CSC_KEY_PASSWORD" \
+          CSC_INSTALLER_LINK="$MAS_INSTALLER_CSC_LINK" CSC_INSTALLER_KEY_PASSWORD="$MAS_INSTALLER_CSC_KEY_PASSWORD" \
+            npx electron-builder --mac mas --universal --publish never -c.mas.provisioningProfile="$RUNNER_TEMP/mas.provisionprofile"
+          if [[ "$GITHUB_REF" == refs/tags/office-v* && -n "$APP_STORE_CONNECT_KEY" ]]; then
+            mkdir -p ~/.appstoreconnect/private_keys
+            printf '%s' "$APP_STORE_CONNECT_KEY" > ~/.appstoreconnect/private_keys/AuthKey_$APP_STORE_CONNECT_KEY_ID.p8
+            xcrun altool --upload-app -f dist/mas-universal/*.pkg -t macos --apiKey "$APP_STORE_CONNECT_KEY_ID" --apiIssuer "$APP_STORE_CONNECT_ISSUER_ID"
+          fi
+      - name: Snap Store package
+        if: runner.os == 'Linux' && env.HAS_SNAP == 'true'
+        env:
+          SNAPCRAFT_STORE_CREDENTIALS: ${{ secrets.SNAPCRAFT_STORE_CREDENTIALS }}
+        run: |
+          sudo snap install snapcraft --classic
+          npx electron-builder --linux snap --publish never
+          if [[ "$GITHUB_REF" == refs/tags/office-v* ]]; then snapcraft upload --release=stable dist/*.snap; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-${{ runner.os }}
+          path: |
+            office-suite/dist/*.appx
+            office-suite/dist/mas-universal/*.pkg
+            office-suite/dist/*.snap
+          if-no-files-found: ignore
+
+  android:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      HAS_PLAY: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            office-suite/package-lock.json
+            office-suite/mobile/package-lock.json
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Install the app's libraries
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - name: Install Capacitor
+        working-directory: office-suite/mobile
+        run: npm ci
+      - name: Built-in cloud apps (optional repository variables, see README)
+        env:
+          ISADEK_GOOGLE_CLIENT_ID: ${{ vars.ISADEK_GOOGLE_CLIENT_ID }}
+          ISADEK_GOOGLE_CLIENT_SECRET: ${{ secrets.ISADEK_GOOGLE_CLIENT_SECRET }}
+          ISADEK_MICROSOFT_CLIENT_ID: ${{ vars.ISADEK_MICROSOFT_CLIENT_ID }}
+          ISADEK_MICROSOFT_TENANT: ${{ vars.ISADEK_MICROSOFT_TENANT }}
+          ISADEK_DROPBOX_APP_KEY: ${{ vars.ISADEK_DROPBOX_APP_KEY }}
+        run: node scripts/cloud-apps.js
+      - name: Build the web app and the Android project
+        working-directory: office-suite/mobile
+        run: npm run android
+      - name: Build the APK (and, with a release keystore, the signed APK and Play bundle)
+        working-directory: office-suite/mobile/android
+        env:
+          ANDROID_KEYSTORE: ${{ secrets.ANDROID_KEYSTORE }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_VERSION_CODE: ${{ vars.ANDROID_VERSION_CODE }}
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/apk" "$GITHUB_WORKSPACE/aab"
+          version=$(node -p "require('../../package.json').version")
+          if [ -n "$ANDROID_KEYSTORE" ]; then
+            echo "$ANDROID_KEYSTORE" | base64 --decode > "$RUNNER_TEMP/release.keystore"
+            export ANDROID_KEYSTORE_FILE="$RUNNER_TEMP/release.keystore"
+            ./gradlew assembleRelease bundleRelease --no-daemon --stacktrace
+            mv app/build/outputs/apk/release/app-release.apk "$GITHUB_WORKSPACE/apk/Isadek-Office-$version-android-release.apk"
+            mv app/build/outputs/bundle/release/app-release.aab "$GITHUB_WORKSPACE/aab/Isadek-Office-$version-android.aab"
+            rm -f "$ANDROID_KEYSTORE_FILE"
+          else
+            echo "::notice::No release keystore: building the debug APK only (see office-suite/SIGNING.md)"
+            ./gradlew assembleDebug --no-daemon --stacktrace
+            mv app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/apk/Isadek-Office-${GITHUB_SHA::7}-debug.apk"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isadek-office-android
+          path: apk/*.apk
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-android
+          path: aab/*.aab
+          if-no-files-found: ignore
+      - name: Google Play (internal testing track)
+        if: startsWith(github.ref, 'refs/tags/office-v') && env.HAS_PLAY == 'true' && hashFiles('aab/*.aab') != ''
+        uses: r0adkll/upload-google-play@v1
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: io.github.isaadac.isadekoffice
+          releaseFiles: aab/*.aab
+          track: internal
+
+  ios:
+    needs: test
+    runs-on: macos-latest
+    env:
+      HAS_IOS_SIGNING: ${{ secrets.IOS_DIST_CERT_P12 != '' && secrets.IOS_PROVISIONING_PROFILE != '' && secrets.APPLE_TEAM_ID != '' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            office-suite/package-lock.json
+            office-suite/mobile/package-lock.json
+      - name: Install the app's libraries
+        run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: 1
+      - name: Install Capacitor
+        working-directory: office-suite/mobile
+        run: npm ci
+      - name: Built-in cloud apps (optional repository variables, see README)
+        env:
+          ISADEK_GOOGLE_CLIENT_ID: ${{ vars.ISADEK_GOOGLE_CLIENT_ID }}
+          ISADEK_GOOGLE_CLIENT_SECRET: ${{ secrets.ISADEK_GOOGLE_CLIENT_SECRET }}
+          ISADEK_MICROSOFT_CLIENT_ID: ${{ vars.ISADEK_MICROSOFT_CLIENT_ID }}
+          ISADEK_MICROSOFT_TENANT: ${{ vars.ISADEK_MICROSOFT_TENANT }}
+          ISADEK_DROPBOX_APP_KEY: ${{ vars.ISADEK_DROPBOX_APP_KEY }}
+        run: node scripts/cloud-apps.js
+      - name: Build the web app and the iOS project
+        working-directory: office-suite/mobile
+        run: npm run ios
+      # A simulator build needs no Apple signing certificate; an App Store or device build does.
+      - name: Build the app for the iOS Simulator
+        working-directory: office-suite/mobile/ios/App
+        run: |
+          xcodebuild -project App.xcodeproj -scheme App -configuration Debug -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' -derivedDataPath build CODE_SIGNING_ALLOWED=NO build
+          cd build/Build/Products/Debug-iphonesimulator
+          ditto -c -k --keepParent App.app "$GITHUB_WORKSPACE/Isadek-Office-${GITHUB_SHA::7}-ios-simulator.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isadek-office-ios-simulator
+          path: Isadek-Office-*-ios-simulator.zip
+          if-no-files-found: error
+      - name: App Store build (with an Apple distribution certificate)
+        if: env.HAS_IOS_SIGNING == 'true'
+        working-directory: office-suite/mobile
+        env:
+          IOS_DIST_CERT_P12: ${{ secrets.IOS_DIST_CERT_P12 }}
+          IOS_DIST_CERT_PASSWORD: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+          IOS_PROVISIONING_PROFILE: ${{ secrets.IOS_PROVISIONING_PROFILE }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_KEY: ${{ secrets.APP_STORE_CONNECT_KEY }}
+          UPLOAD: ${{ startsWith(github.ref, 'refs/tags/office-v') && '1' || '' }}
+        run: scripts/ios-release.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: store-ios
+          path: Isadek-Office-*-ios.ipa
+          if-no-files-found: ignore
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/office-v')
+    needs: [build, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          pattern: isadek-office-*
+          merge-multiple: true
+      - name: Checksums
+        working-directory: installers
+        run: |
+          rm -f *-debug.apk
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: installers/*
+          generate_release_notes: true
+
+  # The download site on GitHub Pages (Settings → Pages → Source: GitHub Actions, then set the
+  # repository variable ISADEK_PAGES to true).
+  site:
+    if: startsWith(github.ref, 'refs/tags/office-v') && vars.ISADEK_PAGES == 'true'
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: node scripts/build-site.js
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: office-suite/dist-site
+      - id: deploy
+        uses: actions/deploy-pages@v4

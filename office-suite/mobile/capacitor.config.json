@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.isaadac.isadekoffice",
+  "appName": "Isadek Office",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false,
+    "backgroundColor": "#f3f2f1"
+  },
+  "ios": {
+    "backgroundColor": "#f3f2f1",
+    "contentInset": "always"
+  }
+}

@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+<meta name="referrer" content="no-referrer">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#1b1b1f">
+<title>Isadek Remote</title>
+<link rel="stylesheet" href="css/remote.css">
+</head>
+<body>
+<header class="rm-top">
+  <span id="count" class="rm-count">Connecting…</span>
+  <span id="clock" class="rm-clock" aria-label="Time presenting">0:00</span>
+</header>
+<main class="rm-main">
+  <h1 id="title" class="rm-title"></h1>
+  <p id="next" class="rm-next"></p>
+  <section class="rm-notes" aria-label="Notes"><pre id="notes"></pre></section>
+</main>
+<nav class="rm-pad" aria-label="Slide show controls">
+  <button id="prev" class="rm-prev" aria-label="Previous">‹ Back</button>
+  <button id="nextBtn" class="rm-go" aria-label="Next">Next ›</button>
+  <div class="rm-row">
+    <button id="first" aria-label="First slide">First</button>
+    <button id="black" aria-label="Black screen" aria-pressed="false">Black</button>
+    <button id="last" aria-label="Last slide">Last</button>
+  </div>
+</nav>
+<p id="status" class="rm-status" role="status"></p>
+<script src="js/remote.js"></script>
+</body>
+</html>

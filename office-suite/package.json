@@ -1,0 +1,284 @@
+{
+  "name": "isadek-office",
+  "productName": "Isadek Office",
+  "version": "1.0.0",
+  "description": "A free, cross-platform office suite: Isadek Write (documents), Isadek Sheets (spreadsheets) and Isadek Slides (presentations).",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "isaadac",
+    "email": "isaac.a.adekanmi@gmail.com"
+  },
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/*.test.js",
+    "e2e": "node e2e/run.js",
+    "live-server": "node src/main/collab-server.js",
+    "web-server": "node src/server/web-server.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux",
+    "dist:appx": "electron-builder --win appx",
+    "dist:mas": "electron-builder --mac mas",
+    "dist:snap": "electron-builder --linux snap",
+    "site": "node scripts/build-site.js",
+    "load-test": "node scripts/collab-load.js",
+    "speech": "node scripts/build-speech.js",
+    "postinstall": "node scripts/build-speech.js --if-possible"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "1.3.0",
+    "cfb": "1.2.2",
+    "docx": "9.15.0",
+    "electron-updater": "6.8.11",
+    "jszip": "3.10.2",
+    "mammoth": "1.13.0",
+    "pdf-lib": "1.17.1",
+    "pdfjs-dist": "6.4.299",
+    "pptxgenjs": "4.0.1",
+    "pyodide": "314.0.7",
+    "qrcode-generator": "2.0.4",
+    "xlsx": "0.18.5"
+  },
+  "devDependencies": {
+    "@huggingface/transformers": "4.3.2",
+    "axe-core": "4.14.0",
+    "electron": "45.0.0",
+    "electron-builder": "26.18.0",
+    "esbuild": "0.25.10",
+    "lucide-static": "^1.63.0",
+    "playwright": "1.63.0",
+    "world-atlas": "^2.0.2"
+  },
+  "homepage": "https://github.com/isaadac/Git-anythingHub",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/isaadac/Git-anythingHub.git"
+  },
+  "build": {
+    "appId": "io.github.isaadac.isadekoffice",
+    "productName": "Isadek Office",
+    "copyright": "Copyright © 2026 isaadac",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "!src/server/**",
+      "!node_modules/@napi-rs/**",
+      "build/icon.png",
+      "package.json"
+    ],
+    "fileAssociations": [
+      {
+        "ext": "docx",
+        "name": "Word Document",
+        "description": "Word Document",
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+      },
+      {
+        "ext": "md",
+        "name": "Markdown Document",
+        "role": "Editor",
+        "mimeType": "text/markdown"
+      },
+      {
+        "ext": "xlsx",
+        "name": "Excel Workbook",
+        "description": "Excel Workbook",
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      },
+      {
+        "ext": "xls",
+        "name": "Excel 97-2003 Workbook",
+        "role": "Editor",
+        "mimeType": "application/vnd.ms-excel"
+      },
+      {
+        "ext": "ods",
+        "name": "OpenDocument Spreadsheet",
+        "role": "Editor",
+        "mimeType": "application/vnd.oasis.opendocument.spreadsheet"
+      },
+      {
+        "ext": "csv",
+        "name": "CSV File",
+        "role": "Editor",
+        "mimeType": "text/csv"
+      },
+      {
+        "ext": "pptx",
+        "name": "PowerPoint Presentation",
+        "description": "PowerPoint Presentation",
+        "role": "Editor",
+        "mimeType": "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+      },
+      {
+        "ext": "aslides",
+        "name": "Isadek Presentation",
+        "role": "Editor",
+        "mimeType": "application/x-atlas-slides"
+      },
+      {
+        "ext": "anote",
+        "name": "Isadek Notes Notebook",
+        "description": "Isadek Notes Notebook",
+        "role": "Editor",
+        "mimeType": "application/x-atlas-notebook"
+      },
+      {
+        "ext": "aboard",
+        "name": "Isadek Whiteboard",
+        "description": "Isadek Whiteboard",
+        "role": "Editor",
+        "mimeType": "application/x-isadek-board"
+      },
+      {
+        "ext": "pdf",
+        "name": "PDF Document",
+        "description": "PDF Document",
+        "role": "Viewer",
+        "mimeType": "application/pdf"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.png",
+      "signtoolOptions": {
+        "publisherName": "isaadac"
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Isadek Office",
+      "artifactName": "Isadek-Office-Setup-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Isadek-Office-${version}-portable.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "universal"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "universal"
+          ]
+        }
+      ],
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Isadek Office uses the microphone only while you record narration in Slides or an audio note in Notes."
+      }
+    },
+    "linux": {
+      "target": [
+        {
+          "target": "AppImage",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ],
+      "category": "Office",
+      "icon": "build/icon.png",
+      "maintainer": "isaadac <isaac.a.adekanmi@gmail.com>",
+      "synopsis": "Documents, spreadsheets and presentations",
+      "syncDesktopName": true
+    },
+    "publish": {
+      "provider": "generic",
+      "url": "https://github.com/isaadac/Git-anythingHub/releases/latest/download"
+    },
+    "artifactName": "Isadek-Office-${version}-${arch}.${ext}",
+    "appx": {
+      "identityName": "Isadek.IsadekOffice",
+      "publisher": "CN=isaadac",
+      "publisherDisplayName": "isaadac",
+      "applicationId": "IsadekOffice",
+      "displayName": "Isadek Office",
+      "backgroundColor": "#2b579a",
+      "languages": [
+        "en-US",
+        "es-ES",
+        "fr-FR",
+        "de-DE",
+        "pt-BR"
+      ],
+      "artifactName": "Isadek-Office-${version}-${arch}.${ext}"
+    },
+    "mas": {
+      "entitlements": "build/entitlements.mas.plist",
+      "entitlementsInherit": "build/entitlements.mas.inherit.plist",
+      "hardenedRuntime": false,
+      "category": "public.app-category.productivity",
+      "artifactName": "Isadek-Office-${version}-mas.${ext}"
+    },
+    "snap": {
+      "grade": "stable",
+      "confinement": "strict",
+      "summary": "Documents, spreadsheets and presentations",
+      "plugs": [
+        "default",
+        "home",
+        "removable-media",
+        "audio-record",
+        "network",
+        "network-bind"
+      ],
+      "artifactName": "Isadek-Office-${version}-${arch}.${ext}"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true
+    }
+  },
+  "desktopName": "atlas-office.desktop",
+  "overrides": {
+    "image-size": "2.0.4"
+  }
+}

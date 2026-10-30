@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Isadek Office Help</title>
+<link rel="stylesheet" href="css/office.css">
+<script src="js/theme.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/icons.js"></script>
+<style>
+  body { display: block; overflow: auto; background: var(--surface-3); }
+  header { background: var(--accent); color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 12px; position: sticky; top: 0; z-index: 2; }
+  header .logo { width: 26px; height: 26px; border-radius: 5px; background: #fff; color: var(--accent); display: grid; place-items: center; font-weight: 800; }
+  header h1 { font-size: 17px; margin: 0; font-weight: 600; }
+  header input { margin-left: auto; width: min(320px, 50vw); padding: 6px 10px; border: 0; border-radius: 4px; background: rgba(255,255,255,.95); color: #252423; }
+  .wrap { display: grid; grid-template-columns: 210px 1fr; max-width: 1100px; margin: 0 auto; }
+  nav.toc { position: sticky; top: 52px; align-self: start; padding: 18px 10px 18px 20px; }
+  nav.toc a { display: block; padding: 5px 8px; border-radius: 4px; color: var(--text); text-decoration: none; }
+  nav.toc a:hover, nav.toc a.on { background: var(--hover); }
+  main { padding: 8px 28px 60px; max-width: 820px; font-size: 14px; line-height: 1.6; }
+  main section { scroll-margin-top: 60px; border-bottom: 1px solid var(--border); padding-bottom: 10px; }
+  main h2 { font-size: 21px; margin: 22px 0 6px; font-weight: 600; }
+  main h3 { font-size: 15px; margin: 16px 0 4px; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 3px; padding: 0 4px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; margin: 6px 0; }
+  td, th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .muted { color: var(--muted); }
+  .hidden { display: none; }
+  .none { padding: 30px 0; color: var(--muted); }
+  .setting { margin: 10px 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+  @media (max-width: 720px) { .wrap { grid-template-columns: 1fr; } nav.toc { display: none; } main { padding: 8px 16px 40px; } }
+  @media print { header, nav.toc { display: none; } .wrap { display: block; } }
+</style>
+</head>
+<body>
+<header><div class="logo">I</div><h1>Isadek Office Help</h1><input type="search" id="q" placeholder="Search help" aria-label="Search help"></header>
+<div class="wrap">
+<nav class="toc" id="toc" aria-label="Contents"></nav>
+<main id="main">
+
+<section id="start">
+<h2>Getting started</h2>
+<p>Isadek Office is four apps that work like the Office apps you know: <b>Write</b> for documents, <b>Sheets</b> for spreadsheets, <b>Slides</b> for presentations and <b>Notes</b> for notebooks. Start from <b>Home</b> (File → Home), which lists templates, recent files, files on your cloud accounts and anything recovered after a crash.</p>
+<p>Each app has a ribbon of tabs (Home, Insert, …) and a <b>File</b> tab for opening, saving, printing, exporting, sharing and settings. Not sure where a command is? Press <kbd>Alt</kbd>+<kbd>Q</kbd> and type what you want to do.</p>
+<h3>Files</h3>
+<table>
+<tr><th>App</th><th>Opens and saves</th></tr>
+<tr><td>Write</td><td>Word (.docx), web pages (.html), Markdown (.md), plain text (.txt); exports PDF</td></tr>
+<tr><td>Sheets</td><td>Excel (.xlsx, .xls), OpenDocument (.ods), CSV and TSV; exports PDF</td></tr>
+<tr><td>Slides</td><td>PowerPoint (.pptx) and Isadek presentations (.aslides); exports PDF</td></tr>
+<tr><td>Notes</td><td>Notebooks (.anote); pages export as Markdown or web pages</td></tr>
+</table>
+<p>Files open in their own window by double-clicking them, by dragging them onto a window, or with File → Open.</p>
+</section>
+
+<section id="saving">
+<h2>Saving, AutoSave and versions</h2>
+<p><kbd>Ctrl</kbd>+<kbd>S</kbd> saves; File → Save As picks a new name or format. While you work, Isadek Office keeps a draft of every unsaved document; if the app or the computer stops unexpectedly, Home offers the drafts the next time it starts.</p>
+<p>Every save also keeps a <b>version</b> of the document — at most one every ten minutes, the latest thirty. File → <b>Version History</b> lists them: open one as a copy, or restore it (you can restore the newest again if you change your mind).</p>
+<p><b>Passwords.</b> File → Protect with Password encrypts a .docx, .xlsx or .pptx when you save it (AES-256, as Office does), so it opens only with the password — in Isadek Office, Word, Excel and PowerPoint. Protected files from Office open here too. A forgotten password can’t be recovered.</p>
+</section>
+
+<section id="write">
+<h2>Write</h2>
+<p>Styles and headings (Home), tables, pictures that wrap around text, page and section breaks, headers and footers with page numbers, footnotes and endnotes, citations and a bibliography, a table of contents, equations (Insert → Equation, in a linear syntax such as <code>x = (-b ± sqrt(b^2-4ac))/(2a)</code>) and fields that update themselves (<kbd>F9</kbd>).</p>
+<p>References → Sources is a reference manager: search the sources in your document and the ones you used before, add one by DOI, paste or import BibTeX and RIS from Zotero, Mendeley, EndNote or Google Scholar, cite with one click and export BibTeX. Styles: APA, MLA, Chicago, Harvard and IEEE.</p>
+<p>Review has spelling and grammar, track changes, comments, Compare (side by side, or as tracked changes) and Read Aloud. Mailings makes letters from a list of recipients. View → Navigation Pane jumps between headings.</p>
+<p>Forms: Insert → Form Field adds a text box, check box, drop-down list or date for people to fill in; Restrict to Filling In leaves only the fields editable (<kbd>Tab</kbd> moves between them). In Word they are content controls, and the protection carries over. Layout → Watermark puts faint text such as DRAFT behind every page, and Line Numbers numbers the lines (continuously, or again on each page). Insert → Drop Cap gives a paragraph a large first letter.</p>
+<p>View → Outline shows the headings: <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>↑</kbd>/<kbd>↓</kbd> moves a heading with everything under it, and <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd> promotes or demotes it. Mailings → Envelopes and Labels make an envelope or sheets of labels (Avery sizes), one per recipient from the mail-merge list. Review → Readability gives the reading ease and grade level and can highlight long sentences; Review → Translate translates the selection, or the whole document into a new window, with the Assistant.</p>
+</section>
+
+<section id="sheets">
+<h2>Sheets</h2>
+<p>Formulas start with <kbd>=</kbd> and use the functions Excel has (Formulas → Insert Function lists them), including dynamic arrays. Drag the fill handle to copy formulas or continue a series. Insert → Table turns a range into a table with filters, a total row and names like <code>Table1[Sales]</code> in formulas.</p>
+<p>Also: charts and sparklines, PivotTables, conditional formatting, data validation and drop-down lists, cell comments, protected sheets, named ranges (Name Manager), Goal Seek and Solver (Data → What-If Analysis), data from the web, and scripts (Automate).</p>
+<p>Data → Clean &amp; Transform tidies a range step by step (trim, change case, split and merge columns, fill down, filter, remove duplicates, group, unpivot…) with a live preview; the result goes to a new sheet, and Refresh All runs the steps again on new data. Charts include waterfall, funnel and map (countries shaded by value).</p>
+<p>Insert → Form builds a form people answer from a link, on any device: choose the questions (short or long answers, numbers, email, dates, multiple choice, checkboxes, drop-downs, ratings), then Publish and copy the link. Answers arrive as rows in a Form Responses sheet (Get Responses, or by themselves every minute while the workbook is open), with a summary in the Forms pane. In the desktop app, “This computer” collects answers from people on the same network while Isadek Office is open. Fill In types a response here; Stop Accepting closes the form. Whoever has the workbook can collect its forms’ answers.</p>
+<p><code>=PY("code", value…)</code> runs Python in a cell: <code>xl("A1:B10")</code> reads cells as a list of rows, <code>args</code> holds the values after the code, and a list of lists spills into the cells below. It runs on your device with no network or file access; Python in a workbook from someone else runs only after you choose Run Python.</p>
+</section>
+
+<section id="slides">
+<h2>Slides</h2>
+<p>Pick a layout for each new slide, a theme on Design, and transitions (including Morph) and animations for anything on a slide. Designer suggests layouts; SmartArt builds diagrams from a list. <kbd>F5</kbd> starts the show; Presenter View shows your notes, the next slide and a timer. Record Slide Show adds narration and timings. Print handouts with 1 to 9 slides per page.</p>
+<p>Draw lets you write and sketch on slides with a pen (pressure shapes the line), your finger or the mouse; Write → Draw → Drawing does the same in documents. Insert → Cameo puts your camera, live, in a slide while you present. Slide Show → Live Captions shows what you say at the foot of the slides (<kbd>C</kbd> during the show), and Rehearse with Coach listens to a practice run and reports your pace, filler words, slides you read aloud and the time on each slide.</p>
+<p>Insert → Poll puts a live poll on a slide: people scan its QR code (or open the link) and vote from their phones, and the bars grow on the slide as votes come in. Slide Show → Audience Q&amp;A lets people send questions during the show; press <kbd>Q</kbd> to see them. Phone Remote turns your phone into a clicker with your notes and the time. Insert → Zoom adds a preview of another slide: clicking it in the show goes there, and the show comes back afterwards. Captions in… translates live captions into another language with the Assistant. File → Export to Video saves the show as an MP4 video (transitions, animations, timings and sound).</p>
+</section>
+
+<section id="notes">
+<h2>Notes</h2>
+<p>Notebooks hold sections, sections hold pages. Pages take text anywhere, to-do tags, tables, pictures, files, audio recordings and drawing with a pen or highlighter. Notebooks save as you type; Sync keeps a notebook in your cloud storage so every device has the same pages.</p>
+</section>
+
+<section id="board">
+<h2>Whiteboard</h2>
+<p>Isadek Whiteboard is an endless board for ideas and diagrams. Add sticky notes (<kbd>N</kbd>), text (<kbd>T</kbd>, or double-click), shapes (<kbd>R</kbd>, <kbd>O</kbd>, <kbd>D</kbd>), frames (<kbd>F</kbd>) and pictures, draw with the pen (<kbd>P</kbd>) or highlighter, and join things with connectors (<kbd>L</kbd>) that follow them when they move. Scroll to move around, <kbd>Ctrl</kbd>+scroll or pinch to zoom, and hold <kbd>Space</kbd> to drag the board.</p>
+<p>Diagrams: select a shape or note and click a <b>+</b> beside it for a connected copy. In a mind map, <kbd>Tab</kbd> adds a branch and <kbd>Enter</kbd> a sibling; Arrange → Tidy Up lays it out. Insert → Templates start a flowchart, mind map, brainstorm, retrospective or Kanban board. Boards save as .aboard files, can be edited together live, and export as a picture (PNG), SVG or PDF.</p>
+</section>
+
+<section id="pdf">
+<h2>PDF</h2>
+<p>Isadek PDF opens PDF files to read, search (<kbd>Ctrl</kbd>+<kbd>F</kbd>) and print. Annotate highlights text (select it, or drag over an area), draws with a pen or finger, adds text and comments; the Eraser removes them. Fill &amp; Sign fills in the PDF's own form fields right on the page, adds today's date and a signature you draw once and reuse.</p>
+<p>Pages shows every page down the side: drag to reorder, rotate, delete, insert another PDF, extract the selected pages as a new PDF, or split the file. Edit in Write turns the text into an editable document. Saving writes a standard PDF that any reader opens; comments stay real PDF comments. PDFs protected with a password can be read but not saved.</p>
+</section>
+
+<section id="cloud">
+<h2>Cloud storage, sharing and live editing</h2>
+<p><b>Add a place</b> on Home (or File → Open from Cloud) connects Google Drive, OneDrive, Dropbox or a WebDAV server (Nextcloud, ownCloud). Files open from and save back to the account directly; Isadek Office has no server in between. <b>Share</b> sends a link, or starts <b>live editing</b> so several people can work on a document at once (each person's Undo undoes only their own changes).</p>
+<p><b>Offline.</b> Saving a cloud document without a connection keeps it on this device (the title bar says “Saved on this device”) and it goes up by itself when the connection is back. If someone changed the file in the meantime, nothing of theirs is overwritten: your version is saved next to it as a “conflicted copy”. Cloud files you have opened recently open offline from Home, and the web version opens without a connection once it has been used.</p>
+</section>
+
+<section id="assistant">
+<h2>Assistant</h2>
+<p>✨ Assistant (Home tab) drafts, rewrites, summarises and explains, using Anthropic's Claude. It needs an Anthropic API key (⚙ in the Assistant pane) or, on the web, a server that provides one. Only what you send it — your request and the text or cells you chose to include — leaves your computer.</p>
+</section>
+
+<section id="settings">
+<h2>Theme and language</h2>
+<p>File → <b>Office Theme</b> chooses light, dark or the system setting. File → <b>Language</b> shows the interface in English, Español, Français, Deutsch or Português; your documents are never changed. Spelling languages are set in Review → Language.</p>
+</section>
+
+<section id="keys">
+<h2>Keyboard shortcuts</h2>
+<table>
+<tr><td><kbd>Ctrl</kbd>+<kbd>N</kbd> / <kbd>O</kbd> / <kbd>S</kbd> / <kbd>P</kbd></td><td>New, Open, Save, Print</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>S</kbd></td><td>Save As</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Y</kbd></td><td>Undo, Redo</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Find and Replace</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>Q</kbd></td><td>Search for a command</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd> / <kbd>I</kbd> / <kbd>U</kbd></td><td>Bold, italic, underline</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Page break (Write)</td></tr>
+<tr><td><kbd>F9</kbd></td><td>Update fields (Write)</td></tr>
+<tr><td><kbd>Alt</kbd>+<kbd>=</kbd></td><td>AutoSum (Sheets)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>D</kbd></td><td>Fill down (Sheets)</td></tr>
+<tr><td><kbd>F5</kbd> / <kbd>Shift</kbd>+<kbd>F5</kbd></td><td>Slide show from the beginning / from this slide</td></tr>
+<tr><td><kbd>B</kbd> / <kbd>Esc</kbd></td><td>Black screen, end show (Slides)</td></tr>
+<tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd></td><td>To Do tag (Notes)</td></tr>
+<tr><td><kbd>F1</kbd></td><td>This help</td></tr>
+</table>
+</section>
+
+<section id="trouble">
+<h2>Troubleshooting</h2>
+<h3>A window stopped working</h3>
+<p>Choose <b>Reopen</b>: the window comes back with your unsaved changes. Drafts of other documents are on Home.</p>
+<h3>A file won't open, or looks different</h3>
+<p>Isadek Office reads and writes the Office formats, but a few features of other apps (macros, embedded objects from other programs) aren't supported; they are kept where possible and otherwise left out. If you can share the file, please report it.</p>
+<h3>Crash reports</h3>
+<p>When something goes wrong, a report is kept on your computer (Help → Show Crash Reports). It describes the error, not your documents. Turn on Help → <b>Send Crash Reports</b> to send these reports to the Isadek Office developers so they can fix the problem.</p>
+<div class="setting" id="crashSetting" hidden><label><input type="checkbox" id="crashToggle"> Send crash reports</label> <span class="muted" id="crashNote"></span></div>
+<h3>Updates</h3>
+<p>The desktop app checks for updates and installs them when you quit (Help → Update Automatically turns this off; Help → Check for Updates checks now).</p>
+</section>
+
+<section id="privacy" class="policy">
+<h2>Privacy</h2>
+<p class="muted">Isadek Office privacy policy · last updated 28 October 2026</p>
+<p>Isadek Office is made to keep your work yours. It has no accounts, no advertising and no analytics.</p>
+<h3>Your documents</h3>
+<p>Documents, notebooks, drafts and versions are stored on your device (in the desktop app's data folder, or in your browser for the web version). They are not sent to the developers of Isadek Office.</p>
+<h3>When something leaves your device</h3>
+<ul>
+<li><b>Cloud storage.</b> If you connect Google Drive, OneDrive, Dropbox or a WebDAV server, files you open or save there go directly between your device and that service, under its own privacy policy. The sign-in token stays on your device (encrypted where the system allows).</li>
+<li><b>Live editing.</b> When you start or join a live session, changes to that document go through the live-editing server the session uses, to the other people in it. The server keeps the session in memory only, and forgets it an hour after everyone has left.</li>
+<li><b>Assistant.</b> When you use ✨ Assistant, your request and the content you include are sent to Anthropic (directly with your own API key, or through the web server you use) to produce an answer. Anthropic's privacy policy applies to that data.</li>
+<li><b>Data from the web.</b> Sheets → From Web downloads the address you enter.</li>
+<li><b>Speech model.</b> Choosing speech recognition on this device downloads the model from Hugging Face (huggingface.co) once.</li>
+<li><b>Looking up a DOI.</b> Write → Sources → DOI asks Crossref (api.crossref.org) for that DOI's details.</li>
+<li><b>Updates.</b> The desktop app asks the release server whether a newer version exists. That request includes the app's version and your operating system, as any download does.</li>
+<li><b>Crash reports</b> are sent only if you turn them on (Help → Send Crash Reports; off by default). A report holds the error message and where in the program it happened, the app and system versions, and for a native crash a memory snapshot of the program that stopped. File paths are shortened so they don't include your user name. Reports are used only to fix problems and are deleted after 90 days.</li>
+</ul>
+<h3>Microphone and camera</h3>
+<p>The microphone is used only while you record narration in Slides or an audio note in Notes (the recording is stored in your file), or while you dictate, show live captions or rehearse with Coach. Dictation, captions and Coach can recognize speech on this device (File → Speech): the speech model (OpenAI's Whisper) is downloaded from Hugging Face once, when you choose it, and after that nothing you say leaves your computer, even without a connection. Or they can use your browser's own speech recognition, which sends the audio to its provider (Google for Chrome, Apple for Safari, Microsoft for Edge); nothing said is kept. The camera is used only to show you in a Cameo while you present in Slides; nothing is recorded or sent. Your screen is never used.</p>
+<h3>Children</h3>
+<p>Isadek Office does not knowingly collect any personal information, from children or anyone else.</p>
+<h3>Changes and contact</h3>
+<p>Changes to this policy are published with new versions of the app. Questions: open an issue at <a href="https://github.com/isaadac/Git-anythingHub/issues" target="_blank" rel="noopener">github.com/isaadac/Git-anythingHub</a>.</p>
+</section>
+
+<p class="none hidden" id="none">No help topics match your search.</p>
+</main>
+</div>
+<script src="js/help.js"></script>
+</body>
+</html>

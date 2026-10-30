@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; connect-src 'self' https: ws: wss:; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'">
+<title>Isadek Sheets</title>
+<link rel="stylesheet" href="css/office.css">
+<script src="js/theme.js"></script>
+<script src="js/i18n.js"></script>
+<script src="js/icons.js"></script>
+<link rel="stylesheet" href="css/sheets.css">
+<link rel="stylesheet" href="css/form.css">
+</head>
+<body class="app-sheets">
+<div class="titlebar">
+  <div class="brand"><div class="logo">S</div><span>Sheets</span></div>
+  <div class="qa">
+    <button data-cmd="save" title="Save (Ctrl+S)"><span class="ico" data-icon="save"></span></button>
+    <button data-cmd="undo" title="Undo (Ctrl+Z)"><span class="ico" data-icon="undo-2"></span></button>
+    <button data-cmd="redo" title="Redo (Ctrl+Y)"><span class="ico" data-icon="redo-2"></span></button>
+  </div>
+  <div class="docname"><input value="Book1" aria-label="Workbook name" spellcheck="false"></div>
+  <span class="status-saved"></span>
+  <button class="share-btn" data-cmd="share" title="Share with others">Share</button>
+</div>
+
+<div class="ribbon-tabs">
+  <button class="file-tab">File</button>
+  <button data-tab="home" class="active">Home</button>
+  <button data-tab="insert">Insert</button>
+  <button data-tab="formulas">Formulas</button>
+  <button data-tab="data">Data</button>
+  <button data-tab="review">Review</button>
+  <button data-tab="automate">Automate</button>
+  <button data-tab="view">View</button>
+</div>
+
+<div class="ribbon">
+  <div class="ribbon-panel active" data-panel="home">
+    <div class="group"><div class="controls">
+      <button class="btn big" data-cmd="paste-btn" title="Paste (Ctrl+V)"><span class="ico" data-icon="clipboard-paste"></span>Paste</button>
+      <div class="controls col">
+        <button class="btn" data-cmd="cut-btn"><span class="ico" data-icon="scissors"></span>Cut</button>
+        <button class="btn" data-cmd="copy-btn"><span class="ico" data-icon="copy"></span>Copy</button>
+      </div>
+    </div><div class="label">Clipboard</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <select class="ctl" id="fontName" style="width:130px">
+          <option>Calibri</option><option>Arial</option><option>Cambria</option><option>Georgia</option><option>Times New Roman</option>
+          <option>Verdana</option><option>Tahoma</option><option>Courier New</option><option>Consolas</option>
+        </select>
+        <select class="ctl" id="fontSize" style="width:52px">
+          <option>8</option><option>9</option><option>10</option><option selected>11</option><option>12</option><option>14</option><option>16</option><option>18</option><option>20</option><option>24</option><option>28</option><option>36</option>
+        </select>
+      </div>
+      <div class="row">
+        <button class="btn" data-style="b" title="Bold (Ctrl+B)"><span class="ico" data-icon="bold"></span></button>
+        <button class="btn" data-style="i" title="Italic (Ctrl+I)"><span class="ico" data-icon="italic"></span></button>
+        <button class="btn" data-style="u" title="Underline (Ctrl+U)"><span class="ico" data-icon="underline"></span></button>
+        <select class="ctl" id="borders" title="Borders"><option value="">Borders</option><option value="all">All borders</option><option value="outer">Outside borders</option><option value="bottom">Bottom border</option><option value="none">No border</option></select>
+        <span class="btn color-btn" title="Fill colour"><span class="ico" data-icon="paint-bucket"></span><span class="bar" style="background:#ffff00"></span><input type="color" id="fillColor" value="#ffff00"></span>
+        <span class="btn color-btn" title="Font colour"><b>A</b><span class="bar" style="background:#c00000"></span><input type="color" id="textColor" value="#c00000"></span>
+      </div>
+    </div><div class="label">Font</div></div>
+    <div class="group"><div class="controls col">
+      <div class="row">
+        <button class="btn" data-align="left" title="Align left"><span class="ico" data-icon="align-left"></span></button>
+        <button class="btn" data-align="center" title="Center"><span class="ico" data-icon="align-center"></span></button>
+        <button class="btn" data-align="right" title="Align right"><span class="ico" data-icon="align-right"></span></button>
+      </div>
+      <div class="row">
+        <button class="btn" data-style="wrap" title="Wrap text"><span class="ico" data-icon="wrap-text"></span>Wrap</button>
+        <button class="btn" id="merge" title="Merge &amp; Center"><span class="ico" data-icon="table-cells-merge"></span>Merge</button>
+      </div>
+    </div><div class="label">Alignment</div></div>
+    <div class="group"><div class="controls col">
+      <select class="ctl" id="numFmt" style="width:130px">
+        <option value="General">General</option>
+        <option value="0.00">Number</option>
+        <option value="$#,##0.00">Currency</option>
+        <option value="#,##0.00">Accounting</option>
+        <option value="m/d/yyyy">Short Date</option>
+        <option value="dddd, mmmm d, yyyy">Long Date</option>
+        <option value="h:mm:ss AM/PM">Time</option>
+        <option value="0.00%">Percentage</option>
+        <option value="0.00E+00">Scientific</option>
+        <option value="@">Text</option>
+      </select>
+      <div class="row">
+        <button class="btn" data-fmt="$#,##0.00" title="Currency"><span class="ico" data-icon="dollar-sign"></span></button>
+        <button class="btn" data-fmt="0%" title="Percent"><span class="ico" data-icon="percent"></span></button>
+        <button class="btn" data-fmt="#,##0" title="Comma style"><span class="ico" data-icon="tally-3"></span></button>
+        <button class="btn" id="incDec" title="Increase decimal"><span class="ico" data-icon="decimals-arrow-right"></span></button>
+        <button class="btn" id="decDec" title="Decrease decimal"><span class="ico" data-icon="decimals-arrow-left"></span></button>
+      </div>
+    </div><div class="label">Number</div></div>
+    <div class="group"><div class="controls col">
+      <select class="ctl" id="condFmt" title="Conditional Formatting" style="width:170px">
+        <option value="">Conditional Formatting…</option>
+        <optgroup label="Highlight Cells Rules">
+          <option value="gt">Greater Than…</option><option value="lt">Less Than…</option><option value="between">Between…</option>
+          <option value="eq">Equal To…</option><option value="text">Text that Contains…</option><option value="dup">Duplicate Values…</option>
+        </optgroup>
+        <optgroup label="Top/Bottom Rules">
+          <option value="top">Top 10 Items…</option><option value="toppct">Top 10%…</option><option value="bottom">Bottom 10 Items…</option>
+          <option value="bottompct">Bottom 10%…</option><option value="above">Above Average…</option><option value="below">Below Average…</option>
+        </optgroup>
+        <optgroup label="Data Bars">
+          <option value="bar:#638ec6">Blue Data Bar</option><option value="bar:#63c384">Green Data Bar</option>
+          <option value="bar:#ff555a">Red Data Bar</option><option value="bar:#ffb628">Orange Data Bar</option>
+        </optgroup>
+        <optgroup label="Color Scales">
+          <option value="scale:#63be7b,#ffeb84,#f8696b">Green - Yellow - Red</option><option value="scale:#f8696b,#ffeb84,#63be7b">Red - Yellow - Green</option>
+          <option value="scale:#63be7b,#ffffff">Green - White</option><option value="scale:#ffffff,#f8696b">White - Red</option>
+          <option value="scale:#5a8ac6,#ffffff,#f8696b">Blue - White - Red</option>
+        </optgroup>
+        <optgroup label="Icon Sets">
+          <option value="icons:3Arrows">3 Arrows ▲ ► ▼</option><option value="icons:3TrafficLights1">3 Traffic Lights ●</option>
+          <option value="icons:3Symbols">3 Symbols ✔ ! ✖</option><option value="icons:3Flags">3 Flags ⚑</option>
+        </optgroup>
+        <optgroup label="Rules">
+          <option value="formula">New Rule (formula)…</option><option value="manage">Manage Rules…</option>
+          <option value="clear-sel">Clear Rules from Selected Cells</option><option value="clear-sheet">Clear Rules from Entire Sheet</option>
+        </optgroup>
+      </select>
+      <button class="btn" id="cfManage"><span class="ico" data-icon="list-checks"></span>Manage Rules</button>
+    </div><div class="label">Styles</div></div>
+    <div class="group"><div class="controls col">
+      <button class="btn" id="insRow"><span class="ico" data-icon="between-horizontal-start"></span>Insert row</button>
+      <button class="btn" id="insCol"><span class="ico" data-icon="between-vertical-start"></span>Insert column</button>
+      <button class="btn" id="delRow"><span class="ico" data-icon="trash-2"></span>Delete row</button>
+      <button class="btn" id="delCol"><span class="ico" data-icon="trash-2"></span>Delete column</button>
+    </div><div class="label">Cells</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="autoSum" title="AutoSum (Alt+=)"><span class="ico" data-icon="sigma"></span>AutoSum</button>
+      <div class="controls col">
+        <button class="btn" id="fillDown" title="Fill down (Ctrl+D)"><span class="ico" data-icon="arrow-down-to-line"></span>Fill down</button>
+        <button class="btn" id="fillRight" title="Fill right (Ctrl+R)"><span class="ico" data-icon="arrow-right-to-line"></span>Fill right</button>
+        <button class="btn" id="fillSeries" title="Fill a linear, growth or date series"><span class="ico" data-icon="list-ordered"></span>Series…</button>
+        <select class="ctl" id="clear"><option value="">Clear…</option><option value="all">Clear all</option><option value="formats">Clear formats</option><option value="contents">Clear contents</option></select>
+      </div>
+      <div class="controls col">
+        <button class="btn" id="sortAsc"><span class="ico" data-icon="arrow-down-a-z"></span>Sort A to Z</button>
+        <button class="btn" id="sortDesc"><span class="ico" data-icon="arrow-down-z-a"></span>Sort Z to A</button>
+        <button class="btn" data-cmd="find"><span class="ico" data-icon="search"></span>Find</button>
+      </div>
+    </div><div class="label">Editing</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="insert">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insPivot" title="Summarize data with a PivotTable"><span class="ico" data-icon="table-properties"></span>PivotTable</button>
+      <button class="btn big" id="insTableBtn" title="Format the data as a table: filter buttons, banded rows, a total row and names for formulas (Ctrl+T)"><span class="ico" data-icon="table"></span>Table</button>
+      <div class="controls col">
+        <button class="btn" id="tableDesign" title="Name, size, style and total row of the table at the selection"><span class="ico" data-icon="table-2"></span>Table Design</button>
+        <button class="btn" id="tableToRange" title="Turn the table back into a normal range"><span class="ico" data-icon="grid-2x2"></span>Convert to Range</button>
+        <button class="btn" id="insSlicer" title="Buttons that filter a table column"><span class="ico" data-icon="sliders-horizontal"></span>Slicer</button>
+      </div>
+    </div><div class="label">Tables</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="sparkLine" title="A small line chart in a cell"><span class="ico" data-icon="chart-spline"></span>Line</button>
+      <button class="btn big" id="sparkColumn" title="Small columns in a cell"><span class="ico" data-icon="chart-column-increasing"></span>Column</button>
+      <button class="btn big" id="sparkWinLoss" title="Wins and losses in a cell"><span class="ico" data-icon="chart-candlestick"></span>Win/<br>Loss</button>
+      <div class="controls col"><button class="btn" id="sparkClear" title="Remove the sparklines in the selection"><span class="ico" data-icon="eraser"></span>Clear</button></div>
+    </div><div class="label">Sparklines</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" data-chart="bar"><span class="ico" data-icon="chart-column"></span>Column</button>
+      <button class="btn big" data-chart="line"><span class="ico" data-icon="chart-line"></span>Line</button>
+      <button class="btn big" data-chart="pie"><span class="ico" data-icon="chart-pie"></span>Pie</button>
+      <button class="btn big" data-chart="hbar"><span class="ico" data-icon="chart-bar"></span>Bar</button>
+      <button class="btn big" data-chart="area"><span class="ico" data-icon="chart-area"></span>Area</button>
+      <button class="btn big" data-chart="scatter"><span class="ico" data-icon="chart-scatter"></span>Scatter</button>
+      <button class="btn big" data-chart="doughnut"><span class="ico" data-icon="donut"></span>Doughnut</button>
+      <button class="btn big" data-chart="combo" title="Columns with the last series as a line"><span class="ico" data-icon="chart-no-axes-combined"></span>Combo</button>
+      <button class="btn big" data-chart="waterfall" title="How a value rises and falls to a total (a row named Total is a column from zero)"><span class="ico" data-icon="chart-column-decreasing"></span>Waterfall</button>
+      <button class="btn big" data-chart="funnel" title="Stages of a process, each as wide as its value"><span class="ico" data-icon="filter"></span>Funnel</button>
+      <button class="btn big" data-chart="map" title="Countries named in the first column, shaded by value"><span class="ico" data-icon="earth"></span>Map</button>
+    </div><div class="label">Charts</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="formBtn" title="A form people answer from a link; their answers arrive as rows in this workbook"><span class="ico" data-icon="clipboard-list"></span>Form</button>
+    </div><div class="label">Forms</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insFunction"><span class="ico" data-icon="square-function"></span>Function</button>
+      <button class="btn big" id="insSheet"><span class="ico" data-icon="plus"></span>Sheet</button>
+    </div><div class="label">Other</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="formulas">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insFunction2"><span class="ico" data-icon="square-function"></span>Insert<br>Function</button>
+      <button class="btn big" id="autoSum2"><span class="ico" data-icon="sigma"></span>AutoSum</button>
+    </div><div class="label">Function Library</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="showFormulas"><span class="ico" data-icon="braces"></span>Show<br>Formulas</button>
+      <button class="btn big" id="recalc"><span class="ico" data-icon="calculator"></span>Calculate<br>Now</button>
+    </div><div class="label">Calculation</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="nameManager" title="Names for ranges and values, to use in formulas"><span class="ico" data-icon="tags"></span>Name<br>Manager</button>
+      <div class="controls col"><button class="btn" id="defineName" title="Name the selection (or type a name in the Name Box)"><span class="ico" data-icon="tag"></span>Define Name</button></div>
+    </div><div class="label">Defined Names</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="data">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insPivot2" title="Summarize data with a PivotTable"><span class="ico" data-icon="table-properties"></span>PivotTable</button>
+      <button class="btn big" id="refreshAll" title="Refresh every PivotTable and web query"><span class="ico" data-icon="refresh-cw"></span>Refresh<br>All</button>
+      <button class="btn big" id="fromWeb" title="Get data from a CSV or JSON file, or the tables of a web page"><span class="ico" data-icon="globe"></span>From<br>Web</button>
+      <button class="btn big" id="cleanData" title="Clean and reshape the selected data step by step (trim, split, filter, remove duplicates, group…)"><span class="ico" data-icon="wand-sparkles"></span>Clean &amp;<br>Transform</button>
+    </div><div class="label">Get &amp; Transform Data</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="sortAsc2"><span class="ico" data-icon="arrow-down-a-z"></span>Sort<br>A to Z</button>
+      <button class="btn big" id="sortDesc2"><span class="ico" data-icon="arrow-down-z-a"></span>Sort<br>Z to A</button>
+      <button class="btn big" id="filter"><span class="ico" data-icon="filter"></span>Filter</button>
+      <button class="btn big" id="clearFilter"><span class="ico" data-icon="filter-x"></span>Clear<br>Filter</button>
+    </div><div class="label">Sort &amp; Filter</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="dedupe"><span class="ico" data-icon="copy-minus"></span>Remove<br>Duplicates</button>
+      <button class="btn big" id="textToCols"><span class="ico" data-icon="columns-3"></span>Text to<br>Columns</button>
+      <button class="btn big" id="dataValidation" title="Data Validation: allowed values, dropdown lists, input and error messages"><span class="ico" data-icon="list-checks"></span>Data<br>Validation</button>
+      <button class="btn big" id="circleInvalid" title="Circle cells whose values break their validation rule"><span class="ico" data-icon="circle-alert"></span>Circle<br>Invalid</button>
+    </div><div class="label">Data Tools</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="goalSeek" title="Find the input value that makes a formula give the result you want"><span class="ico" data-icon="target"></span>Goal<br>Seek</button>
+      <button class="btn big" id="solverBtn" title="Find the best values for several cells, with constraints"><span class="ico" data-icon="settings-2"></span>Solver</button>
+    </div><div class="label">What-If Analysis</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="automate">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="scriptsBtn" title="Scripts that change this workbook (JavaScript)"><span class="ico" data-icon="square-code"></span>Scripts</button>
+      <button class="btn big" id="newScript"><span class="ico" data-icon="file-code"></span>New<br>Script</button>
+    </div><div class="label">Scripting</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="review">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="proofEditor" title="Spelling &amp; Grammar (F7)"><span class="ico" data-icon="spell-check"></span>Spelling</button>
+      <button class="btn big" id="proofLang" title="Proofing language"><span class="ico" data-icon="languages"></span>Language</button>
+    </div><div class="label">Proofing</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="a11yCheck" title="Find things that make the workbook hard to use for people with disabilities"><span class="ico" data-icon="accessibility"></span>Check<br>Accessibility</button>
+    </div><div class="label">Accessibility</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="noteNew" title="New or edit note (Shift+F2)"><span class="ico" data-icon="sticky-note"></span>New/Edit<br>Note</button>
+      <div class="controls col">
+        <button class="btn" id="noteDel"><span class="ico" data-icon="trash-2"></span>Delete</button>
+        <button class="btn" id="notePrev"><span class="ico" data-icon="chevron-up"></span>Previous</button>
+        <button class="btn" id="noteNext"><span class="ico" data-icon="chevron-down"></span>Next</button>
+      </div>
+      <button class="btn big" id="noteShowAll"><span class="ico" data-icon="notebook-text"></span>Show All<br>Notes</button>
+    </div><div class="label">Notes</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="protectSheet" title="Only unlocked cells can be changed while the sheet is protected"><span class="ico" data-icon="shield-check"></span><span class="lbl">Protect Sheet</span></button>
+      <button class="btn big" id="lockCell" title="Locked cells can't be changed when the sheet is protected"><span class="ico" data-icon="lock"></span>Lock<br>Cell</button>
+    </div><div class="label">Protect</div></div>
+  </div>
+
+  <div class="ribbon-panel" data-panel="view">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="freezeRow"><span class="ico" data-icon="panel-top-close"></span>Freeze<br>Top Row</button>
+      <button class="btn big" id="freezeCol"><span class="ico" data-icon="panel-left-close"></span>Freeze First<br>Column</button>
+      <button class="btn big" id="gridlines"><span class="ico" data-icon="grid-3x3"></span>Gridlines</button>
+    </div><div class="label">Show</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="zoom100"><span class="ico" data-icon="zoom-in"></span>100%</button>
+    </div><div class="label">Zoom</div></div>
+  </div>
+</div>
+
+<div class="formula-bar">
+  <input id="nameBox" class="namebox" value="A1" aria-label="Name box" spellcheck="false">
+  <span class="fx">ƒx</span>
+  <input id="fx" class="fx-input" aria-label="Formula bar" spellcheck="false" autocomplete="off">
+</div>
+<div class="py-bar" id="pyBar" role="status" hidden>
+  <span class="ico" data-icon="shield-alert"></span>
+  <span><b>Python</b> This workbook has Python formulas. They run on this device, with no network or file access.</span>
+  <button id="pyAllow" class="primary">Run Python</button>
+</div>
+
+<div class="workspace">
+  <div class="grid-wrap" id="gridWrap" tabindex="0" role="application" aria-roledescription="spreadsheet" aria-label="Spreadsheet grid. Arrow keys move between cells; type to edit, F2 to edit the current cell.">
+    <div class="grid-inner" id="gridInner">
+      <table class="grid" id="grid"><thead></thead><tbody></tbody></table>
+      <div class="sel-box" id="selBox"></div>
+      <textarea class="cell-editor" id="cellEditor" spellcheck="false" data-app-editor="1" hidden></textarea>
+      <div class="charts-layer" id="chartsLayer"></div>
+      <button class="dv-arrow" id="dvArrow" tabindex="-1" title="Choose from the list (Alt+Down)" hidden><span class="ico" data-icon="chevron-down"></span></button>
+      <div class="dv-list" id="dvList" role="listbox" hidden></div>
+      <div class="dv-prompt" id="dvPrompt" hidden><b></b><span></span></div>
+    </div>
+  </div>
+  <div class="findbar" id="findbar">
+    <input id="findText" placeholder="Find">
+    <input id="replaceText" placeholder="Replace with">
+    <button class="btn" id="findNext">Find next</button>
+    <button class="btn" id="replaceAll">Replace all</button>
+    <button class="btn" id="findClose" aria-label="Close"><span class="ico" data-icon="x"></span></button>
+  </div>
+  <div class="fn-hint" id="fnHint" hidden></div>
+  <aside class="pivot-pane" id="pivotPane" aria-label="PivotTable Fields" hidden></aside>
+</div>
+
+<div class="sheet-tabs">
+  <button class="btn" id="addSheet" title="New sheet"><span class="ico" data-icon="plus"></span></button>
+  <div class="tabs" id="sheetTabs"></div>
+</div>
+
+<div class="statusbar">
+  <span id="stMode">Ready</span>
+  <span class="spacer"></span>
+  <span id="stAgg"></span>
+  <button class="btn" id="zoomOut" aria-label="Zoom out"><span class="ico" data-icon="minus"></span></button>
+  <input type="range" id="zoom" min="50" max="200" value="100">
+  <button class="btn" id="zoomIn" aria-label="Zoom in"><span class="ico" data-icon="plus"></span></button>
+  <span id="zoomLabel">100%</span>
+</div>
+
+<div class="backstage">
+  <nav>
+    <button class="back" title="Back"><span class="ico" data-icon="arrow-left"></span></button>
+    <button data-cmd="new">New</button>
+    <button data-cmd="open">Open</button>
+    <button data-cmd="open-cloud">Open from Cloud</button>
+    <button data-cmd="save">Save</button>
+    <button data-cmd="save-as">Save As</button>
+    <button data-cmd="save-cloud">Save to Cloud</button>
+    <button data-cmd="share">Share</button>
+    <button data-cmd="version-history" title="Earlier versions of this document, kept each time you save">Version History</button>
+    <button data-cmd="protect" title="Require a password to open this document (.docx, .xlsx, .pptx)">Protect with Password</button>
+    <hr>
+    <button data-cmd="export-csv">Export sheet to CSV</button>
+    <button data-cmd="export-pdf">Export to PDF</button>
+    <button data-cmd="print">Print</button>
+    <hr>
+    <button data-cmd="theme">Office Theme</button>
+    <button data-cmd="language">Language</button>
+    <button data-cmd="help">Help</button>
+    <button data-cmd="home">Isadek Office Home</button>
+  </nav>
+  <main><h1>Isadek Sheets</h1><p>Open and save Excel workbooks (.xlsx, .xls), OpenDocument spreadsheets (.ods) and CSV/TSV files.</p></main>
+</div>
+
+<div class="print-area" id="printArea"></div>
+
+<script src="../../node_modules/xlsx/dist/xlsx.full.min.js"></script>
+<script src="../../node_modules/cfb/dist/cfb.min.js"></script>
+<script src="js/office-crypto.js"></script>
+<script src="js/platform.js"></script>
+<script src="js/a11y.js"></script>
+<script src="js/mobile.js"></script>
+<script src="js/cloud.js"></script>
+<script src="js/offline.js"></script>
+<script src="js/merge3.js"></script>
+<script src="js/collab.js"></script>
+<script src="js/assistant.js"></script>
+<script src="js/proofing.js"></script>
+<script src="../../node_modules/jszip/dist/jszip.min.js"></script>
+<script src="js/formula.js"></script>
+<script src="js/xlsx-patch.js"></script>
+<script src="js/sheets-styles.js"></script>
+<script src="js/sheets-cf.js"></script>
+<script src="js/sheets-pivot.js"></script>
+<script src="js/sheets-dv.js"></script>
+<script src="js/sheets-fill.js"></script>
+<script src="js/sheets-charts.js"></script>
+<script src="js/sheets-protect.js"></script>
+<script src="js/sheets-tables.js"></script>
+<script src="js/sheets-whatif.js"></script>
+<script src="js/sheets-spark.js"></script>
+<script src="js/sheets-web.js"></script>
+<script src="js/sheets-clean.js"></script>
+<script src="js/sheets-python.js"></script>
+<script src="js/sheets-data.js"></script>
+<script src="js/forms-core.js"></script>
+<script src="js/forms-view.js"></script>
+<script src="js/forms-client.js"></script>
+<script src="js/sheets-forms.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/sheets.js"></script>
+</body>
+</html>
