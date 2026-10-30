@@ -127,7 +127,7 @@
     return {
       selectRecipients, insertField, setPreview, finish, prepareForDocx, refresh: showRecord,
       next: () => go(1), previous: () => go(-1), first: () => go(-Infinity), last: () => go(Infinity),
-      get fields() { return fields; }, get count() { return records.length; }, get index() { return index; },
+      get fields() { return fields; }, get records() { return records.map(r => ({ ...r })); }, get count() { return records.length; }, get index() { return index; },
       get previewing() { return previewing; }, get source() { return sourceName; },
       fieldsInDocument: () => [...new Set(fieldEls().map(e => e.dataset.field))]
     };

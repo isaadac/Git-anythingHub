@@ -346,5 +346,25 @@
     return String(res.text || '').trim();
   }
 
-  window.Assistant = { attach, otherFiles, dictate, dictateButton, spaced, translate };
+  /**
+   * Translates pieces of HTML (a document's paragraphs, a few at a time), keeping their tags:
+   * resolves to as many pieces, in order. The result is untrusted HTML: callers sanitize it.
+   */
+  async function translateHtml(pieces, language) {
+    const st = await backend.status();
+    if (!st.ready) throw new Error(st.message || 'Set up the Assistant to translate');
+    const res = await backend.ask({
+      id: 'trh' + Date.now().toString(36) + (++trSeq),
+      system: `You translate documents into ${String(language).slice(0, 40)}. The user sends a JSON array of HTML fragments. Reply with only a JSON array of the same length, each fragment translated: keep every tag and attribute exactly as it is, translate only the text between tags, and keep names, numbers, code and «merge fields» unchanged.`,
+      messages: [{ role: 'user', content: JSON.stringify(pieces) }]
+    }, () => {});
+    if (!res || res.error || res.cancelled) throw new Error((res && res.error) || 'The translation was cancelled');
+    const text = String(res.text || '').trim().replace(/^```(?:json)?\s*|\s*```$/g, '');
+    let out;
+    try { out = JSON.parse(text.slice(text.indexOf('['), text.lastIndexOf(']') + 1)); } catch { throw new Error('The translation came back in a form that could not be read. Try again.'); }
+    if (!Array.isArray(out) || out.length !== pieces.length || out.some(x => typeof x !== 'string')) throw new Error('The translation didn’t match the document. Try again.');
+    return out;
+  }
+
+  window.Assistant = { attach, otherFiles, dictate, dictateButton, spaced, translate, translateHtml };
 })();

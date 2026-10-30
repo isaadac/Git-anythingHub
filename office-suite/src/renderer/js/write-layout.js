@@ -206,6 +206,8 @@
         frag.appendChild(bg);
       }
       bgs.replaceChildren(frag);
+      // Watermarks and line numbers (write-tools.js).
+      if (o.decorate) o.decorate(bgs, g, pitch);
       // Place the editable headers/footers on their host pages.
       const place = (el, key, kind) => {
         const pageIdx = host[key];

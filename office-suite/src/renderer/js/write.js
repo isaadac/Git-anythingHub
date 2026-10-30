@@ -16,14 +16,14 @@
     { name: 'Plain Text', extensions: ['txt'] }
   ];
   const OPEN_FILTERS = [{ name: 'Documents', extensions: ['docx', 'html', 'htm', 'md', 'txt'] }, ...FILTERS];
-  const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14] }; // inches
-  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false, citeStyle: 'apa', lang: '', styles: {} };
+  const PAGE_SIZES = { letter: [8.5, 11], a4: [8.27, 11.69], legal: [8.5, 14], env10: [4.125, 9.5], dl: [4.33, 8.66], c5: [6.38, 9.02] }; // inches
+  const DEFAULT_SETUP = { margin: '1in', orientation: 'portrait', size: 'letter', columns: 1, color: '#ffffff', differentFirst: false, trackChanges: false, citeStyle: 'apa', lang: '', styles: {}, watermark: null, lineNumbers: 'none', formsOnly: false };
   const setup = { ...DEFAULT_SETUP };
   /** Page setup read from a file is untrusted: keep only values the ribbon itself can produce. */
   function validSetup(v) {
     const out = { ...DEFAULT_SETUP };
     if (!v || typeof v !== 'object') return out;
-    if (['1in', '0.5in', '0.75in', '1.5in'].includes(v.margin)) out.margin = v.margin;
+    if (['1in', '0.5in', '0.75in', '1.5in', '0in'].includes(v.margin)) out.margin = v.margin;
     if (['portrait', 'landscape'].includes(v.orientation)) out.orientation = v.orientation;
     if (Object.prototype.hasOwnProperty.call(PAGE_SIZES, v.size)) out.size = v.size;
     if ([1, 2, 3].includes(+v.columns)) out.columns = +v.columns;
@@ -32,6 +32,9 @@
     out.trackChanges = v.trackChanges === true;
     if (['apa', 'mla', 'chicago', 'harvard', 'ieee'].includes(v.citeStyle)) out.citeStyle = v.citeStyle;
     out.styles = WriteExtras.cleanStyles(v.styles);
+    out.watermark = WriteTools.cleanWatermark(v.watermark);
+    if (WriteTools.LINE_MODES.includes(v.lineNumbers)) out.lineNumbers = v.lineNumbers;
+    out.formsOnly = v.formsOnly === true;
     return out;
   }
 
@@ -453,6 +456,8 @@
     document.getElementById('differentFirst').checked = !!setup.differentFirst;
     if (review.tracking !== !!setup.trackChanges) setTracking(setup.trackChanges);
     document.getElementById('citeStyle').value = setup.citeStyle;
+    document.getElementById('lineNumbers').value = setup.lineNumbers || 'none';
+    if (forms) forms.setFormsOnly(setup.formsOnly);
     // The proofing language: the browser's own spellchecker follows lang too.
     if (setup.lang) { doc.lang = setup.lang; HF.forEach(h => { h.lang = setup.lang; }); } else { doc.removeAttribute('lang'); HF.forEach(h => h.removeAttribute('lang')); }
     document.getElementById('stLang').textContent = Proofing.langName(setup.lang || navigator.language);
@@ -796,7 +801,7 @@
 
   // ---------- Status & change tracking ----------
   // ---------- Pages ----------
-  let toc = null;
+  let toc = null, forms = null, tools = null;
   const layout = WriteLayout({
     page, doc, bgs: document.getElementById('pageBgs'),
     hf: { header, footer, firstHeader, firstFooter },
@@ -808,6 +813,7 @@
     // Narrow windows (phones) and Web Layout show one continuous page.
     isPaged: () => !document.body.classList.contains('view-web') && window.innerWidth >= 900,
     onLayout: () => { updateCaretPage(); if (toc) toc.refreshPages(); if (extras) extras.updateFields(); },
+    decorate: (bgs, g, pitch) => { if (tools) tools.decoratePages(bgs, g, pitch); },
     footnotes: () => notes.footnotes()
   });
   toc = WriteToc({
@@ -833,6 +839,46 @@
   const merge = WriteMerge({
     doc, extraRoots: () => HF, restoreSelection, changed: () => changed(),
     onChange: () => updateMailings(), buildHtml: fn => toHtml(fn), docName: () => state.name
+  });
+  // ---------- Form fields, watermark, line numbers, drop caps, outline, envelopes, labels, readability, translation ----------
+  // Their changes to the document are undone as one step each (before/after copies, as appEdit).
+  let pendingBefore = null;
+  const snapshotApp = () => { if (pendingBefore === null) pendingBefore = docState(); };
+  const changedApp = () => {
+    if (pendingBefore !== null) {
+      const after = docState();
+      if (after !== pendingBefore) { appEdits.push({ before: pendingBefore, after }); if (appEdits.length > 20) appEdits.shift(); appRedos.length = 0; }
+      pendingBefore = null;
+    }
+    changed();
+  };
+  forms = WriteForms({ doc, snapshot: snapshotApp, changed: changedApp, insertInline: html => { restoreSelection(); Platform.insertInline(html); } });
+  tools = WriteTools({
+    doc, page, get setup() { return setup; }, snapshot: snapshotApp, snapshotSetup: () => {}, changed: changedApp, applySetup: () => applySetup(),
+    currentBlock: () => { restoreSelection(); return currentBlock(); }, relayout: () => layout.run(), name: () => state.name,
+    placeCaret: el => { const r = document.createRange(); r.selectNodeContents(el); r.collapse(false); const sel = getSelection(); sel.removeAllRanges(); sel.addRange(r); },
+    cleanHtml: () => cleanHtmlFor(doc), mergeRecords: () => merge.records, mergeFields: () => merge.fields
+  });
+  document.getElementById('insFormField').addEventListener('click', () => { captureSelection(); forms.insert(); });
+  document.getElementById('formsOnly').addEventListener('click', () => { setup.formsOnly = !setup.formsOnly; forms.setFormsOnly(setup.formsOnly); changed(); UI.toast(setup.formsOnly ? 'Only the form fields can be changed now (Tab moves between them)' : 'The whole document can be edited again'); });
+  document.getElementById('dropCapBtn').addEventListener('click', () => tools.toggleDropCap());
+  document.getElementById('wmBtn').addEventListener('click', () => tools.watermarkDialog());
+  document.getElementById('lineNumbers').addEventListener('change', e => { setup.lineNumbers = e.target.value; applySetup(); changed(); });
+  document.getElementById('envBtn').addEventListener('click', () => tools.envelopes());
+  document.getElementById('labelsBtn').addEventListener('click', () => tools.labels());
+  document.getElementById('readabilityBtn').addEventListener('click', () => tools.readability());
+  document.getElementById('translateBtn').addEventListener('click', () => { captureSelection(); restoreSelection(); tools.translate(); });
+  document.getElementById('viewOutline').addEventListener('click', () => tools.setOutline(!document.body.classList.contains('view-outline')));
+  document.getElementById('olPromote').addEventListener('click', () => tools.shiftLevel(-1));
+  document.getElementById('olDemote').addEventListener('click', () => tools.shiftLevel(1));
+  document.getElementById('olUp').addEventListener('click', () => tools.moveSection(-1));
+  document.getElementById('olDown').addEventListener('click', () => tools.moveSection(1));
+  document.getElementById('outlineLevel').addEventListener('change', () => { tools.drawOutline(); layout.run(); });
+  // Word's outline keys: Alt+Shift+arrows move and promote/demote headings.
+  doc.addEventListener('keydown', e => {
+    if (!(e.altKey && e.shiftKey) || e.ctrlKey || e.metaKey) return;
+    const act = { ArrowUp: () => tools.moveSection(-1), ArrowDown: () => tools.moveSection(1), ArrowLeft: () => tools.shiftLevel(-1), ArrowRight: () => tools.shiftLevel(1) }[e.key];
+    if (act) { e.preventDefault(); captureSelection(); act(); }
   });
   function updateMailings() {
     const sel = document.getElementById('mmField');
@@ -895,6 +941,8 @@
   function changed() {
     state.markDirty();
     if (extras) extras.renderEquations();
+    if (forms) forms.render();
+    if (tools && document.body.classList.contains('view-outline')) tools.drawOutline();
     notes.renumber();
     layout.schedule();
     updateStatus(true);
@@ -1031,8 +1079,15 @@
       let pre = { bytes: f.data, meta: null };
       try { pre = await review.preprocessDocx(f.data); } catch (err) { console.info('Could not read revisions:', err); }
       // Equations, fields, section breaks, wrapped pictures and styles.
-      let pre2 = { bytes: pre.bytes, meta: null };
-      try { pre2 = await extras.preprocessDocx(pre.bytes); } catch (err) { console.info('Could not read equations and sections:', err); }
+      // Content controls (form fields), drop caps, the watermark and line numbers.
+      let preF = { bytes: pre.bytes, meta: null };
+      try { preF = await forms.preprocessDocx(pre.bytes); } catch (err) { console.info('Could not read form fields:', err); }
+      let preT = { bytes: preF.bytes, meta: null };
+      try { preT = await tools.preprocessDocx(preF.bytes); } catch (err) { console.info('Could not read the watermark and drop caps:', err); }
+      if (preT.meta) { nextSetup.watermark = preT.meta.watermark; nextSetup.lineNumbers = preT.meta.lineNumbers; }
+      if (preF.meta) nextSetup.formsOnly = preF.meta.formsOnly;
+      let pre2 = { bytes: preT.bytes, meta: null };
+      try { pre2 = await extras.preprocessDocx(preT.bytes); } catch (err) { console.info('Could not read equations and sections:', err); }
       if (pre2.meta) {
         nextSetup.styles = pre2.meta.styles || {};
         if (pre2.meta.first) { nextSetup.orientation = pre2.meta.first.orient; nextSetup.columns = pre2.meta.first.cols; }
@@ -1044,6 +1099,7 @@
       });
       html = WriteToc.importHtml(notes.importMammothNotes(review.postprocessHtml(res.value, pre.meta)));
       if (pre2.meta) html = extras.postprocessHtml(html, pre2.meta);
+      html = tools.postprocessHtml(forms.postprocessHtml(html, preF.meta));
       if (res.messages.some(m => m.type === 'warning')) console.info('Import notes:', res.messages);
     } else if (ext === 'html' || ext === 'htm' || /^\s*(<!doctype html|<html)/i.test(Platform.bytesToText(f.data.slice(0, 200)))) {
       const d = new DOMParser().parseFromString(Platform.bytesToText(f.data), 'text/html');
@@ -1080,6 +1136,7 @@
     doc.innerHTML = sanitize(html) || '<p><br></p>';
     fixFields(doc);
     extras.renderEquations();
+    forms.render();
     notes.loadSources(nextSources);
     notes.renumber();
     notes.refreshCitations();
@@ -1214,6 +1271,7 @@
     notes.clean(clone);
     clone.querySelectorAll('span.mergefield').forEach(m => { m.textContent = `«${m.dataset.field}»`; m.classList.remove('preview'); });
     clone.querySelectorAll('.selected').forEach(n => n.classList.remove('selected'));
+    clone.querySelectorAll('.ol-hide, [data-ol]').forEach(n => { n.classList.remove('ol-hide'); if (!n.className) n.removeAttribute('class'); delete n.dataset.ol; });
     clone.querySelectorAll('[contenteditable]').forEach(n => n.removeAttribute('contenteditable'));
     clone.querySelectorAll('hr.page-break').forEach(n => { const d = document.createElement('div'); d.style.pageBreakAfter = 'always'; n.replaceWith(d); });
     return clone.innerHTML;
@@ -1226,7 +1284,9 @@
     const textWidth = (setup.orientation === 'landscape' ? h : w) - 2 * parseFloat(setup.margin);
     // The document's own styles come after the defaults, so they win.
     const opts = { stylesheet: DOCX_STYLESHEET + '\n' + extras.styleCss(''), maxImageWidth: Math.round(textWidth / setup.columns * 96) };
+    const lineNums = setup.lineNumbers && setup.lineNumbers !== 'none' ? { countBy: 1, restart: setup.lineNumbers === 'page' ? D.LineNumberRestartFormat.NEW_PAGE : D.LineNumberRestartFormat.CONTINUOUS } : undefined;
     const pageProps = (orient, cols) => ({
+      lineNumbers: lineNums,
       page: {
         size: { width: twip(w), height: twip(h), orientation: orient === 'landscape' ? D.PageOrientation.LANDSCAPE : D.PageOrientation.PORTRAIT },
         margin: { top: margin, right: margin, bottom: margin, left: margin }
@@ -1239,7 +1299,8 @@
           size: { width: twip(w), height: twip(h), orientation: setup.orientation === 'landscape' ? D.PageOrientation.LANDSCAPE : D.PageOrientation.PORTRAIT },
           margin: { top: margin, right: margin, bottom: margin, left: margin }
         },
-        column: setup.columns > 1 ? { count: setup.columns, space: 720 } : undefined
+        column: setup.columns > 1 ? { count: setup.columns, space: 720 } : undefined,
+        lineNumbers: lineNums
       },
       children: []
     };
@@ -1253,18 +1314,22 @@
     notes.prepareForDocx(body);
     merge.prepareForDocx(body);
     const objects = extras.prepareForDocx(body);
+    const formFields = forms.prepareForDocx(body);
+    const dropCaps = tools.prepareForDocx(body);
     // Each section break starts a Word section with its own orientation and columns.
     const parts = extras.splitSections(body);
     section.children = [...docxHtml.htmlToContent(parts[0].html, { ...opts, trackChanges: { author: getAuthor() } })];
     const more = parts.slice(1).map(p => ({ properties: pageProps(p.orient, p.cols), children: [...docxHtml.htmlToContent(p.html, { ...opts, trackChanges: { author: getAuthor() } })] }));
     const has = el => el.textContent.trim() !== '' || !!el.querySelector('img');
     const headers = {}, footers = {};
-    if (has(header)) headers.default = new D.Header({ children: hfToDocx(header, opts) });
+    // A watermark sits in the header (marked here, drawn by tools.patchDocx).
+    const wmPara = () => (setup.watermark ? [new D.Paragraph({ children: [new D.TextRun(WriteTools.MK.wm)] })] : []);
+    if (has(header) || setup.watermark) headers.default = new D.Header({ children: [...(has(header) ? hfToDocx(header, opts) : []), ...wmPara()] });
     if (has(footer)) footers.default = new D.Footer({ children: hfToDocx(footer, opts) });
     if (setup.differentFirst) {
       section.properties.titlePage = true;
       // An empty first-page header must still exist, or Word repeats the default one.
-      headers.first = new D.Header({ children: has(firstHeader) ? hfToDocx(firstHeader, opts) : [new D.Paragraph('')] });
+      headers.first = new D.Header({ children: [...(has(firstHeader) ? hfToDocx(firstHeader, opts) : setup.watermark ? [] : [new D.Paragraph('')]), ...wmPara()] });
       footers.first = new D.Footer({ children: has(firstFooter) ? hfToDocx(firstFooter, opts) : [new D.Paragraph('')] });
     }
     if (Object.keys(headers).length) section.headers = headers;
@@ -1282,7 +1347,9 @@
     const blob = await D.Packer.toBlob(document_);
     const tabPos = Math.round(textWidth / setup.columns * 1440) - (setup.columns > 1 ? 360 : 0);
     const patched = await WriteToc.patchDocx(await review.patchDocx(new Uint8Array(await blob.arrayBuffer())), { tabPos });
-    return extras.patchDocx(patched, objects);
+    const withObjects = await extras.patchDocx(patched, objects);
+    const withForms = await forms.patchDocx(withObjects, formFields, setup.formsOnly);
+    return tools.patchDocx(withForms, { dropCaps, watermark: setup.watermark, lineNumbers: setup.lineNumbers });
   }
   /** Word's default and heading styles, with the document's own changes to them. */
   function docxDefaultStyles() {
@@ -1341,6 +1408,7 @@ ${rules}</style></head>
     if (ext === 'md') {
       const clone = doc.cloneNode(true);
       extras.prepareForText(clone);
+      forms.prepareForText(clone);
       const defs = notes.toMarkdownNotes(clone);
       return htmlToMarkdown(clone) + (defs.length ? '\n' + defs.join('\n') + '\n' : '');
     }
@@ -1831,5 +1899,5 @@ ${rules}</style></head>
     return { kind: 'write', blocks };
   };
 
-  window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; }, get notes() { return notes; } };
+  window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; }, get notes() { return notes; }, get forms() { return forms; }, get tools() { return tools; }, get setup() { return setup; } };
 })();

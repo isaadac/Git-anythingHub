@@ -159,8 +159,13 @@
       <button class="btn big" id="insDate"><span class="ico" data-icon="calendar-clock"></span>Date &amp;<br>Time</button>
       <button class="btn big" id="insSymbol"><span class="ico" data-icon="omega"></span>Symbol</button>
       <button class="btn big" id="insEquation" title="Insert an equation"><span class="ico" data-icon="pi"></span>Equation</button>
+      <button class="btn big" id="dropCapBtn" title="Drop Cap: a large first letter for this paragraph"><span class="ico" data-icon="a-large-small"></span>Drop<br>Cap</button>
       <button class="btn big" id="insField" title="Insert a field: date, time, author, file name, page, pages or words (F9 updates fields)"><span class="ico" data-icon="braces"></span>Field</button>
     </div><div class="label">Text</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="insFormField" title="A field people fill in: text, a check box, a drop-down list or a date"><span class="ico" data-icon="text-cursor-input"></span>Form<br>Field</button>
+      <button class="btn big" id="formsOnly" aria-pressed="false" title="Restrict editing: only the form fields can be filled in (Tab moves between them)"><span class="ico" data-icon="lock"></span>Restrict to<br>Filling In</button>
+    </div><div class="label">Forms</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="insToc" title="Insert a table of contents (links to each heading, with page numbers)"><span class="ico" data-icon="list-tree"></span>Contents</button>
       <div class="controls col"><button class="btn" id="updToc" title="Update the table of contents from the headings"><span class="ico" data-icon="refresh-cw"></span>Update Table</button></div>
@@ -201,18 +206,26 @@
   </div>
   <div class="ribbon-panel" data-panel="layout">
     <div class="group"><div class="controls col">
-      <label class="row">Margins <select class="ctl" id="margins"><option value="1in">Normal (1")</option><option value="0.5in">Narrow (0.5")</option><option value="0.75in">Moderate (0.75")</option><option value="1.5in">Wide (1.5")</option></select></label>
+      <label class="row">Margins <select class="ctl" id="margins"><option value="1in">Normal (1")</option><option value="0.5in">Narrow (0.5")</option><option value="0.75in">Moderate (0.75")</option><option value="0in">None (0")</option><option value="1.5in">Wide (1.5")</option></select></label>
       <label class="row">Orientation <select class="ctl" id="orientation"><option value="portrait">Portrait</option><option value="landscape">Landscape</option></select></label>
-      <label class="row">Size <select class="ctl" id="pageSize"><option value="letter">Letter (8.5" × 11")</option><option value="a4">A4 (210 × 297 mm)</option><option value="legal">Legal (8.5" × 14")</option></select></label>
+      <label class="row">Size <select class="ctl" id="pageSize"><option value="letter">Letter (8.5" × 11")</option><option value="a4">A4 (210 × 297 mm)</option><option value="legal">Legal (8.5" × 14")</option><option value="env10">Envelope #10</option><option value="dl">Envelope DL</option><option value="c5">Envelope C5</option></select></label>
     </div><div class="label">Page Setup</div></div>
     <div class="group"><div class="controls col">
       <label class="row">Columns <select class="ctl" id="columns"><option value="1">One</option><option value="2">Two</option><option value="3">Three</option></select></label>
       <label class="row">Page colour <input type="color" class="ctl" id="pageColor" value="#ffffff"></label>
     </div><div class="label">Arrange</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="wmBtn" title="Faint text behind every page: CONFIDENTIAL, DRAFT…"><span class="ico" data-icon="stamp"></span>Watermark</button>
+      <div class="controls col"><label class="row" title="Numbers beside each line, as in legal documents and manuscripts">Line Numbers <select class="ctl" id="lineNumbers"><option value="none">None</option><option value="continuous">Continuous</option><option value="page">Restart each page</option></select></label></div>
+    </div><div class="label">Page Background</div></div>
   </div>
 
   <!-- MAILINGS -->
   <div class="ribbon-panel" data-panel="mailings">
+    <div class="group"><div class="controls">
+      <button class="btn big" id="envBtn" title="An envelope with the delivery and return addresses"><span class="ico" data-icon="mail"></span>Envelopes</button>
+      <button class="btn big" id="labelsBtn" title="Sheets of address labels (Avery and others), one address or one per recipient"><span class="ico" data-icon="tags"></span>Labels</button>
+    </div><div class="label">Create</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="mmRecipients"><span class="ico" data-icon="users"></span>Select<br>Recipients</button>
       <div class="controls col">
@@ -242,8 +255,10 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="proofEditor" title="Spelling &amp; Grammar (F7)"><span class="ico" data-icon="spell-check"></span>Spelling &amp;<br>Grammar</button>
       <button class="btn big" id="proofLang" title="Proofing language"><span class="ico" data-icon="languages"></span>Language</button>
+      <button class="btn big" id="translateBtn" title="Translate the selection, or the whole document into a new window (with the Assistant)"><span class="ico" data-icon="globe"></span>Translate</button>
       <button class="btn big" id="spellToggle" title="Show or hide red underlines"><span class="ico" data-icon="underline"></span>Underline<br>Mistakes</button>
       <button class="btn big" id="wordCount"><span class="ico" data-icon="hash"></span>Word<br>Count</button>
+      <button class="btn big" id="readabilityBtn" title="Reading ease, grade level, long and passive sentences"><span class="ico" data-icon="book-open-check"></span>Readability</button>
     </div><div class="label">Proofing</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="a11yCheck" title="Find things that make the document hard to read for people with disabilities"><span class="ico" data-icon="accessibility"></span>Check<br>Accessibility</button>
@@ -289,9 +304,17 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="viewPrint"><span class="ico" data-icon="file-text"></span>Print<br>Layout</button>
       <button class="btn big" id="viewWeb"><span class="ico" data-icon="globe"></span>Web<br>Layout</button>
+      <button class="btn big" id="viewOutline" title="Outline: the headings, to reorganize the document (Alt+Shift+arrows)"><span class="ico" data-icon="list-tree"></span>Outline</button>
       <button class="btn big" id="viewFocus"><span class="ico" data-icon="focus"></span>Focus</button>
       <button class="btn big" id="viewDark"><span class="ico" data-icon="moon"></span>Dark<br>Mode</button>
     </div><div class="label">Views</div></div>
+    <div class="group" id="outlineTools" hidden><div class="controls">
+      <button class="btn" id="olPromote" title="Promote (Alt+Shift+Left)"><span class="ico" data-icon="arrow-left"></span>Promote</button>
+      <button class="btn" id="olDemote" title="Demote (Alt+Shift+Right)"><span class="ico" data-icon="arrow-right"></span>Demote</button>
+      <button class="btn" id="olUp" title="Move the section up (Alt+Shift+Up)"><span class="ico" data-icon="arrow-up"></span>Move Up</button>
+      <button class="btn" id="olDown" title="Move the section down (Alt+Shift+Down)"><span class="ico" data-icon="arrow-down"></span>Move Down</button>
+      <label class="row">Show <select class="ctl" id="outlineLevel"><option value="1">Level 1</option><option value="2">Levels 1–2</option><option value="3">Levels 1–3</option><option value="9" selected>All text</option></select></label>
+    </div><div class="label">Outline</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="zoom100"><span class="ico" data-icon="zoom-in"></span>100%</button>
       <button class="btn big" id="zoomWidth"><span class="ico" data-icon="move-horizontal"></span>Page<br>Width</button>
@@ -404,6 +427,8 @@
 <script src="js/write-merge.js"></script>
 <script src="js/write-math.js"></script>
 <script src="js/write-extras.js"></script>
+<script src="js/write-forms.js"></script>
+<script src="js/write-tools.js"></script>
 <script src="js/templates.js"></script>
 <script src="js/ink.js"></script>
 <script src="js/write.js"></script>
