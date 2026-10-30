@@ -376,7 +376,10 @@
         const back = document.createElement('div');
         back.className = 'modal-backdrop';
         back.innerHTML = '<div class="modal" role="alertdialog"><h2></h2><p style="white-space:pre-wrap"></p><div class="actions"></div></div>';
-        back.querySelector('h2').textContent = (icon ? icon + ' ' : '') + title;
+        // An icon from the set (by name) or an emoji, before the title.
+        const h2 = back.querySelector('h2');
+        if (icon && window.Icons && Icons.has(icon)) { const i = document.createElement('span'); i.className = 'ico'; i.dataset.icon = icon; h2.append(i, ' ' + title); }
+        else h2.textContent = (icon ? icon + ' ' : '') + title;
         back.querySelector('p').textContent = message;
         const row = back.querySelector('.actions');
         const done = i => { back.remove(); resolve(i); };

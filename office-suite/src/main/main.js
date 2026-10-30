@@ -18,6 +18,7 @@ require('./notes-store');
 require('./versions');
 const os = require('os');
 const { createCollabServer } = require('./collab-server');
+const { createFormsStore, createFormsServer } = require('./forms-server');
 
 const APPS = {
   home: { page: 'index.html', title: 'Isadek Office', width: 1100, height: 720 },
@@ -292,6 +293,38 @@ ipcMain.handle('collab:join', (_e, appName, link) => {
   return true;
 });
 ipcMain.handle('collab:pending', e => { const l = pendingCollab.get(e.sender.id) || null; pendingCollab.delete(e.sender.id); return l; });
+// ---------- Forms: collecting answers on this computer, from people on the same network ----------
+let formsStore = null, formsHost = null;
+const forms = () => formsStore || (formsStore = createFormsStore({ dir: path.join(app.getPath('userData'), 'forms') }));
+ipcMain.handle('forms:host', async () => {
+  try {
+    if (!formsHost) {
+      const srv = createFormsServer({ store: forms() });
+      try { await listen(srv, 8788); } catch { await listen(srv, 0); }
+      formsHost = srv;
+    }
+    const port = formsHost.address().port;
+    const ips = Object.values(os.networkInterfaces()).flat().filter(i => i && i.family === 'IPv4' && !i.internal).map(i => i.address);
+    return { urls: [...ips, '127.0.0.1'].map(ip => `http://${ip}:${port}`) };
+  } catch (err) {
+    return { error: String(err.message || err) };
+  }
+});
+// The workbook's own calls, straight to the store (no network, no key on the wire).
+ipcMain.handle('forms:call', (_e, op, a) => {
+  const ok = v => typeof v === 'string' && v.length <= 100;
+  try {
+    a = a && typeof a === 'object' ? a : {};
+    if (op === 'create') return forms().create(a.form);
+    if (op === 'update' && ok(a.id) && ok(a.key)) return forms().update(a.id, a.key, { form: a.form, open: a.open });
+    if (op === 'remove' && ok(a.id) && ok(a.key)) return forms().remove(a.id, a.key);
+    if (op === 'responses' && ok(a.id) && ok(a.key)) return forms().responses(a.id, a.key, a.after, a.limit);
+    if (op === 'respond' && ok(a.id)) return forms().respond(a.id, a.answers);
+    return { error: 'Unknown request', status: 400 };
+  } catch (err) {
+    return { error: String(err.message || err), status: err.status || 500, ...(err.errors ? { errors: err.errors } : {}) };
+  }
+});
 // ---------- Theme ----------
 // The pages keep the choice in their shared storage; this side makes native menus, dialogs and
 // window backgrounds match it.

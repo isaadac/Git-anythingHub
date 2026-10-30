@@ -61,6 +61,20 @@ The web server and the live-editing server (`src/server/web-server.js`,
   `Cross-Origin-Resource-Policy` and `Permissions-Policy` with every response, and serve only the
   app's own files.
 
+Forms (`src/main/forms-server.js`, on the web server and on the desktop app's "This computer"
+server):
+
+- A form's id (128 random bits) is its public link; its owner key (256 bits) is needed to read
+  answers, change or delete the form, and only the key's SHA-256 is stored. The key is kept in the
+  workbook, so anyone with the file can collect the answers.
+- Every answer is checked against the form (types, options, lengths) before it is kept; answers
+  per address per minute, forms per address per hour, and answers per form (count and bytes) are
+  limited.
+- Answers that look like formulas (`=`, `+`, `-`, `@`…) are written to cells as text.
+- The desktop app's server serves the answer page and the forms API only (no other files); the
+  answer page has a strict CSP (no inline script, connects only to its own server).
+- A workbook from someone else asks before fetching answers from its form's server.
+
 Run them behind HTTPS (a reverse proxy) when they are reachable from the internet. A live
 session's link is its key: share it only with the people meant to join.
 

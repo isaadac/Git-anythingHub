@@ -5,7 +5,7 @@
   "Clean & Transform": "Nettoyer et transformer", "Applied steps": "Étapes appliquées",
   "Waterfall": "Cascade", "Funnel": "Entonnoir", "Map": "Carte", "Run Python": "Exécuter Python",
   "Cameo": "Caméo", "Rehearse with Coach": "Répéter avec le coach", "Live Captions": "Sous-titres en direct", "Speaking": "Prise de parole",
-  "Annotate": "Annoter", "Fill & Sign": "Remplir et signer", "Hand": "Main", "Tools": "Outils", "Edit in Write": "Modifier dans Write", "Add Text": "Ajouter du texte", "Comment": "Commentaire", "Colour": "Couleur", "Sign": "Signer", "Date": "Date", "Form Fields": "Champs de formulaire", "Forms": "Formulaires", "Rotate Left": "Faire pivoter à gauche", "Rotate Right": "Faire pivoter à droite", "Move Up": "Monter", "Move Down": "Descendre", "Organize": "Organiser", "Insert PDF": "Insérer un PDF", "Extract": "Extraire", "Combine": "Combiner",
+  "Annotate": "Annoter", "Fill & Sign": "Remplir et signer", "Hand": "Main", "Tools": "Outils", "Edit in Write": "Modifier dans Write", "Add Text": "Ajouter du texte", "Comment": "Commentaire", "Colour": "Couleur", "Sign": "Signer", "Date": "Date", "Form Fields": "Champs de formulaire", "Form": "Formulaire", "Forms": "Formulaires", "Rotate Left": "Faire pivoter à gauche", "Rotate Right": "Faire pivoter à droite", "Move Up": "Monter", "Move Down": "Descendre", "Organize": "Organiser", "Insert PDF": "Insérer un PDF", "Extract": "Extraire", "Combine": "Combiner",
   "Speech": "Voix",
   "Protect with Password": "Protéger par mot de passe", "Password": "Mot de passe",
   "Select": "Sélectionner", "Draw with Touch": "Dessiner avec la fonction tactile", "Touch": "Tactile", "Touch mode": "Mode tactile",

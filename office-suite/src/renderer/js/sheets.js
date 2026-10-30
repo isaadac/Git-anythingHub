@@ -35,8 +35,9 @@
 
   // ---------- Model ----------
   const newSheet = name => ({ name, cells: {}, rows: 100, cols: 26, colWidths: {}, rowHeights: {}, merges: [], charts: [], hiddenRows: [], cf: [], pivots: [], dv: [], tables: [], sparklines: [], slicers: [], queries: [] });
-  let book = { sheets: [newSheet('Sheet1')], active: 0, names: [], scripts: [] };
+  let book = { sheets: [newSheet('Sheet1')], active: 0, names: [], scripts: [], forms: [] };
   let data = null; // tables, names, what-if, sparklines, slicers, scripts, web data (sheets-data.js)
+  let forms = null; // forms people answer from a link (sheets-forms.js)
   const sheet = () => book.sheets[book.active];
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
   const rawAt = (r, c, s = sheet()) => (s.cells[addr(r, c)] || {}).v ?? '';
@@ -2024,7 +2025,7 @@
   }
   document.getElementById('insPivot').addEventListener('click', insertPivot);
   document.getElementById('insPivot2').addEventListener('click', insertPivot);
-  document.getElementById('refreshAll').addEventListener('click', async () => { commitEdit(); refreshPivots(false); if (data) { const n = data.refreshCleans(); if (n) UI.toast(`${n} cleaned table${n === 1 ? '' : 's'} refreshed`); await data.refreshQueries(); } });
+  document.getElementById('refreshAll').addEventListener('click', async () => { commitEdit(); refreshPivots(false); if (data) { const n = data.refreshCleans(); if (n) UI.toast(`${n} cleaned table${n === 1 ? '' : 's'} refreshed`); await data.refreshQueries(); } if (forms && (book.forms || []).some(f => f.id)) { const n = await forms.refreshAll(false); if (n) UI.toast(`${n} new form response${n === 1 ? '' : 's'}`); } });
 
   // ---------- Editing group ----------
   function clearRange(what) {
@@ -2845,7 +2846,9 @@
     uniqueName,
     addSheetNamed: name => { const s = newSheet(uniqueName(cleanSheetName(name) || 'Sheet' + (book.sheets.length + 1))); book.sheets.push(s); book.active = book.sheets.length - 1; active = anchor = { r: 0, c: 0 }; return s; }
   });
+  forms = SheetsForms({ book: () => book, sheetByName, newSheet, uniqueName, setCell, snapshot, state, engine, buildGrid: () => { commitEdit(); buildGrid(); } });
   const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
+  on('formBtn', () => { commitEdit(); forms.formsPane(); });
   on('insTableBtn', () => data.insertTable());
   on('tableDesign', () => data.tableDesign());
   on('tableToRange', () => data.convertToRange());
@@ -3123,7 +3126,8 @@
       .map(n => SheetsTables.cleanName({ name: n.Name, ref: F.fromExcelFormula(String(n.Ref || '')) })).filter(Boolean)
       .filter((n, i, all) => all.findIndex(x => x.name.toLowerCase() === n.name.toLowerCase()) === i).slice(0, 5000);
     const scripts = meta && Array.isArray(meta.scripts) ? meta.scripts.filter(x => x && typeof x.name === 'string' && typeof x.code === 'string').map(x => ({ name: x.name.slice(0, 60), code: x.code.slice(0, 200000) })).slice(0, 100) : [];
-    return { sheets, active: Math.max(0, Math.min(act, sheets.length - 1)), names, scripts };
+    const formList = meta ? SheetsForms.cleanList(meta.forms) : [];
+    return { sheets, active: Math.max(0, Math.min(act, sheets.length - 1)), names, scripts, forms: formList };
   }
 
   function toWorkbook() {
@@ -3186,6 +3190,8 @@
         tables: s.tables || [], sparklines: s.sparklines || [], slicers: s.slicers || [], queries: s.queries || [], cleans: s.cleans || [], solver: s.solver || null });
     });
     meta.scripts = book.scripts || [];
+    // Forms keep their owner key, so whoever has the file can collect the answers.
+    if ((book.forms || []).length) meta.forms = book.forms.map(f => ({ uid: f.uid, def: f.def, server: f.server, id: f.id, key: f.key, got: f.got, sheet: f.sheet, cols: f.cols }));
     // Workbook names, as Excel's defined names.
     if ((book.names || []).length) {
       const opts = data ? data.excelFormulaOpts(book.sheets[0], -1, -1) : undefined;
@@ -3323,6 +3329,7 @@
     book.sheets.forEach((s, i) => { book.active = i; rebuildCols(); fitRowsFor(s); });
     book.active = keep;
     buildGrid();
+    forms.opened();
   }
   /** Like fitRows(null) but keeps heights that came from the file. */
   function fitRowsFor(s) {
@@ -3733,6 +3740,7 @@
   window.AtlasSheets = {
     loadFile, serialize, select, refreshPivots, get live() { return live; },
     get book() { return book; },
+    get forms() { return forms; },
     setCell: (ref, v) => { const p = parseRef(ref); setCell(p.row, p.col, { v }); ensureSize(p.row, p.col); changed(); },
     valueOf: ref => { const p = parseRef(ref); return valueAt(p.row, p.col); },
     rawOf: ref => { const p = parseRef(ref); return rawAt(p.row, p.col); },

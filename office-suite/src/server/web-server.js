@@ -15,6 +15,8 @@
 //   ASSISTANT_MODEL        the default model
 //   ISADEK_GOOGLE_CLIENT_ID, ISADEK_MICROSOFT_CLIENT_ID, ISADEK_DROPBOX_APP_KEY, …
 //                          your cloud app registrations, offered to every page (scripts/cloud-apps.js)
+//   FORMS_DIR              keep Isadek Forms and their responses in this folder (without it they are
+//                          kept in memory and lost when the server stops)
 //   CRASH_DIR              keep crash reports the desktop app sends to /api/crash in this folder
 //                          (build the app with ISADEK_CRASH_URL=https://this-server/api/crash)
 const http = require('http');
@@ -25,6 +27,7 @@ const { Anthropic, MODELS, validModel, cleanMessages, ask } = require('../main/a
 const { createCollabServer } = require('../main/collab-server');
 const { fromEnv: cloudAppsFromEnv } = require('../../scripts/cloud-apps');
 const { createCrashCollector } = require('./crash-collector');
+const { createFormsStore } = require('../main/forms-server');
 
 const ROOT = path.resolve(__dirname, '../..');
 const RENDERER = path.join(ROOT, 'src/renderer');
@@ -72,6 +75,9 @@ function createWebServer(opts = {}) {
   const enabled = () => !!client && (cfg.open || cfg.codes.length > 0);
   const crashDir = opts.crashDir !== undefined ? opts.crashDir : env.CRASH_DIR;
   const crashes = crashDir ? createCrashCollector({ dir: path.resolve(crashDir) }) : null;
+  // Forms people answer at /f/<id>, with their responses kept for the workbook that made them.
+  const formsDir = opts.formsDir !== undefined ? opts.formsDir : env.FORMS_DIR;
+  const forms = opts.forms === false ? null : createFormsStore({ dir: formsDir || null, limits: opts.formsLimits });
 
   // Questions per minute, per access code (or address when the Assistant is open).
   const hits = new Map();
@@ -167,6 +173,7 @@ function createWebServer(opts = {}) {
   function route(req, res) {
     let url;
     try { url = new URL(req.url, 'http://x'); } catch { res.writeHead(400); return res.end(); }
+    if (forms && forms.handle(req, res, url)) return;
     if (url.pathname.startsWith('/api/')) {
       cors(req, res);
       if (req.method === 'OPTIONS') { res.writeHead(204); return res.end(); }
@@ -192,6 +199,7 @@ function createWebServer(opts = {}) {
   server.requestTimeout = 120000;
   server.keepAliveTimeout = 10000;
   if (opts.live !== false) createCollabServer({ server });
+  if (forms) server.on('close', () => forms.close());
   return server;
 }
 
@@ -205,5 +213,6 @@ if (require.main === module) {
     console.log(`Isadek Office on http://${host}:${port}/  (live editing: ws://${host}:${port}/)`);
     if (!process.env.ANTHROPIC_API_KEY) console.log('Assistant: off (set ANTHROPIC_API_KEY to turn it on)');
     else if (process.env.ASSISTANT_OPEN !== '1' && !process.env.ASSISTANT_CODES) console.log('Assistant: off until you set ASSISTANT_CODES (or ASSISTANT_OPEN=1)');
+    if (!process.env.FORMS_DIR) console.log('Forms: responses are kept in memory (set FORMS_DIR to keep them on disk)');
   });
 }

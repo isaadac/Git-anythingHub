@@ -42,7 +42,9 @@ test('the dictionaries cover the ribbons of every app', () => {
 });
 
 test('every page loads the language script', () => {
-  for (const f of fs.readdirSync(R).filter(f => f.endsWith('.html'))) assert.match(fs.readFileSync(path.join(R, f), 'utf8'), /<script src="js\/i18n\.js"><\/script>/, f);
+  // form.html is the public page people answer a form on: the form's own words, in the
+  // language its author wrote them, and none of the app's.
+  for (const f of fs.readdirSync(R).filter(f => f.endsWith('.html') && f !== 'form.html')) assert.match(fs.readFileSync(path.join(R, f), 'utf8'), /<script src="js\/i18n\.js"><\/script>/, f);
 });
 
 test('the native menus are translated in every language', () => {
