@@ -2,7 +2,8 @@
 // SheetJS 0.20.3 is published by SheetJS on cdn.sheetjs.com, not on the npm registry, so the app
 // installs an npm republish of it (@e965/xlsx, built with provenance from that tarball). This
 // checks the installed files are exactly SheetJS's own: every file in the official tarball must
-// be in node_modules/xlsx with the same contents (package.json aside, which names the republish).
+// be in node_modules/xlsx with the same contents (package.json and README.md aside: the republish
+// names itself in them; neither is code).
 //   node scripts/verify-sheetjs.js            (skips if cdn.sheetjs.com can't be reached)
 //   node scripts/verify-sheetjs.js --required (CI: fails instead)
 const fs = require('fs');
@@ -48,7 +49,7 @@ function files(dir, base = dir) {
   fs.writeFileSync(path.join(dir, 'x.tgz'), tgz);
   execFileSync('tar', ['xzf', 'x.tgz'], { cwd: dir });
   const official = path.join(dir, 'package');
-  const list = files(official).filter(f => f !== 'package.json');
+  const list = files(official).filter(f => !['package.json', 'README.md'].includes(f));
   const bad = [];
   for (const f of list) {
     const mine = path.join(installed, f);
