@@ -190,6 +190,7 @@
       if (!mode) return null;
       if (mode === 'browser') return browserListen(onText, onError, lang);
       if (!(await hasModel())) {
+        if (window.Platform && Platform.policy.DisableSpeechDownload) { if (onError) onError('Downloading the speech model was turned off by your organisation'); return null; }
         // Download progress, as a toast that updates.
         let last = 0;
         Speech.onProgress = p => { if (Date.now() - last > 400 && p.total) { last = Date.now(); UI.toast(`Downloading the speech model… ${Math.round(100 * p.loaded / p.total)}% (${p.file.split('/').pop()})`, 2000); } };

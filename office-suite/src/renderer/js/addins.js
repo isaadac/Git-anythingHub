@@ -149,6 +149,7 @@
     let runSeq = 0;
     /** Runs a command (or a pane button) of an add-in, starting it if needed. A minute at most. */
     async function run(id, kind, cmd, values) {
+      if (Platform.policy.DisableAddins) return;
       const addin = load().find(a => a.id === id && a.enabled !== false);
       if (!addin) return;
       const r = running.get(id) || start(addin);
@@ -164,7 +165,7 @@
     }
 
     // ---- Ribbon: the Add-ins group on the Insert tab
-    const panel = document.querySelector('.ribbon-panel[data-panel="insert"]');
+    const panel = Platform.policy.DisableAddins ? null : document.querySelector('.ribbon-panel[data-panel="insert"]');
     const group = document.createElement('div');
     group.className = 'group addins-group';
     group.innerHTML = '<div class="controls"><button class="btn big" id="addinsBtn" title="Install, turn on or remove add-ins"><span class="ico" data-icon="puzzle"></span>Add-ins</button></div><div class="label">Add-ins</div>';
@@ -192,6 +193,7 @@
     window.addEventListener('storage', e => { if (e.key === KEY) { renderButtons(); for (const id of [...running.keys()]) if (!load().some(a => a.id === id && a.enabled !== false)) stop(id); } });
 
     async function install(text) {
+      if (Platform.policy.DisableAddins) { UI.toast('Add-ins were turned off by your organisation', 4000); return null; }
       let a;
       try { a = check(text); } catch (err) { UI.toast(err.message, 6000); return null; }
       const list = load(), old = list.find(x => x.id === a.id);

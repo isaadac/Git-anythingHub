@@ -54,6 +54,7 @@ function updater() {
 /** Updates only apply to installed builds, not to `npm start`, the portable .exe or store copies. */
 function supported() {
   if (!app.isPackaged) return false;
+  if (require('./policy').policy.DisableAutoUpdate) return false; // the organisation deploys updates
   // Store copies (Microsoft Store, Mac App Store, Snap Store) are updated by the store.
   if (process.windowsStore || process.mas || process.env.SNAP) return false;
   if (process.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_DIR) return false;
@@ -73,7 +74,7 @@ function isDeb() {
 
 function check(isManual) {
   if (!supported()) {
-    if (isManual) dialog.showMessageBox({ type: 'info', message: 'Updates are not available for this copy', detail: app.isPackaged ? 'Download the installer from the Releases page to get automatic updates.' : 'Automatic updates only work in installed builds.' });
+    if (isManual) dialog.showMessageBox({ type: 'info', message: 'Updates are not available for this copy', detail: require('./policy').policy.DisableAutoUpdate ? 'Your organisation installs updates on this computer.' : app.isPackaged ? 'Download the installer from the Releases page to get automatic updates.' : 'Automatic updates only work in installed builds.' });
     return;
   }
   manual = !!isManual;

@@ -90,6 +90,8 @@
    *          buttons: [{label, run(text), selection?}], beforeAsk?() })
    */
   function attach(o) {
+    // Turned off by the organisation: no button or pane (the main process refuses requests too).
+    if (Platform.policy.DisableAssistant) return { toggle() { UI.toast('The Assistant was turned off by your organisation'); }, ask() {}, addFile() {}, get files() { return []; } };
     const bar = document.querySelector('.titlebar');
     const btn = el('button', 'share-btn ai-btn');
     btn.innerHTML = '<span class="ico" data-icon="sparkles"></span>Assistant';
@@ -432,7 +434,7 @@
     if (!res || res.error || res.cancelled) throw new Error((res && res.error) || 'Cancelled');
     return String(res.text || '').trim();
   }
-  const ready = async () => { try { return !!(await backend.status()).ready; } catch { return false; } };
+  const ready = async () => { if (Platform.policy.DisableAssistant) return false; try { return !!(await backend.status()).ready; } catch { return false; } };
 
   window.Assistant = { attach, otherFiles, dictate, dictateButton, spaced, translate, translateHtml, readImage, ready };
 })();

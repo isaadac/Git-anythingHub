@@ -3,6 +3,8 @@
 const { contextBridge, ipcRenderer, webFrame } = require('electron');
 
 contextBridge.exposeInMainWorld('atlas', {
+  // What the organisation turned off (ENTERPRISE.md); the main process enforces it too.
+  policy: Object.freeze(ipcRenderer.sendSync('policy:get') || {}),
   isDesktop: true,
   // How the window is framed (system, mac, overlay or mica): the pages lay out their title bar for it.
   frame: (() => { try { return ipcRenderer.sendSync('app:frame'); } catch { return 'system'; } })(),

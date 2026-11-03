@@ -11,7 +11,9 @@
   const ATTRS = ['title', 'aria-label', 'placeholder'];
   // The document and anything typed: never translated (a text box's placeholder and tooltip are).
   const SKIP = '[data-no-i18n],[contenteditable="true"],[contenteditable=""],textarea,script,style,#doc,#canvas,#grid,#sheetTabs,#stage,#thumbs,#presentSlide,#notes,#pages,#sections,.el,.handout-page';
-  const read = () => { try { const v = localStorage.getItem(KEY); return LANGS[v] ? v : 'en'; } catch { return 'en'; } };
+  // The person's choice, else the organisation's default (desktop policy), else English.
+  const fallback = () => { const p = window.atlas && window.atlas.policy && window.atlas.policy.DefaultLanguage; return LANGS[p] ? p : 'en'; };
+  const read = () => { try { const v = localStorage.getItem(KEY); return LANGS[v] ? v : fallback(); } catch { return fallback(); } };
   const dicts = (window.ISADEK_I18N = window.ISADEK_I18N || {});
   let lang = read();
 

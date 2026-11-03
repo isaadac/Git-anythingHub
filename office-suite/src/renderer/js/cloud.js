@@ -425,6 +425,7 @@
     async accounts() { return (await loadStore()).accounts.map(a => ({ id: a.id, provider: a.provider, label: a.label })); },
     /** Signs in to a service and remembers the account. */
     async connect(provider, opts = {}) {
+      if (Platform.policy.DisableCloudStorage) throw new Error(Platform.OFF);
       const st = await loadStore();
       const cfg = await getConfig();
       let a;
@@ -615,6 +616,7 @@
 
   /** Asks which service to add and signs in. Resolves to the new account or null. */
   Cloud.addAccountDialog = async function () {
+    if (Platform.policy.DisableCloudStorage) { UI.toast('Cloud storage was turned off by your organisation', 4000); return null; }
     const keys = Object.keys(PROVIDERS);
     const i = await UI.choose('Add a place', 'Where are your documents?', [...keys.map(k => PROVIDERS[k].label), 'Cancel']);
     if (i < 0 || i >= keys.length) return null;

@@ -605,6 +605,8 @@
     }
     session.showTalk = showTalk;
 
+    /** The organisation's list of live-editing servers, if it has one (address prefixes). */
+    const serverAllowed = url => { const list = Platform.policy.LiveServers; return !list || list.some(p => p !== 'local' && String(url).toLowerCase().startsWith(p.toLowerCase())); };
     async function askName() {
       let name = userName();
       if (!name) {
@@ -627,7 +629,9 @@
         if (acts[i]) await acts[i].run();
         return;
       }
-      const opts = Platform.desktop ? ['Start on this computer', 'Start on a server…', 'Join…', 'Cancel'] : ['Start on a server…', 'Join…', 'Cancel'];
+      if (Platform.policy.DisableLiveEditing) return UI.toast('Live editing was turned off by your organisation', 4000);
+      const servers = Platform.policy.LiveServers;
+      const opts = Platform.desktop && (!servers || servers.includes('local')) ? ['Start on this computer', 'Start on a server…', 'Join…', 'Cancel'] : ['Start on a server…', 'Join…', 'Cancel'];
       const i = await UI.choose('Edit together', 'Start a live session for this document and invite others, or join one with the link you were sent.' +
         (Platform.desktop ? '\n\n“This computer” lets people on the same network join.' : ''), opts);
       const pick = opts[i];
@@ -654,6 +658,7 @@
         const u = parseInvite(v.replace(/[?#].*$/, '') + '?room=' + 'x'.repeat(16));
         if (!u) return UI.toast('Enter a ws:// or wss:// address', 4000);
         server = u.server;
+        if (!serverAllowed(server)) return UI.toast('Your organisation doesn’t allow that live-editing server', 5000);
         try { localStorage.setItem('atlas-collab-server', server); } catch { /* ignore */ }
       }
       session.open({ server, inviteServer, create: true, name, color: userColor() });
@@ -671,6 +676,8 @@
     async function join(link, name) {
       const inv = parseInvite(link);
       if (!inv) return UI.toast('That is not an Isadek Office live link', 4000);
+      if (Platform.policy.DisableLiveEditing) return UI.toast('Live editing was turned off by your organisation', 4000);
+      if (!serverAllowed(inv.server)) return UI.toast('Your organisation doesn’t allow that live-editing server', 5000);
       if (inv.app && inv.app !== adapter.app) {
         // A link for another app: open that app and join there.
         if (Platform.desktop) return window.atlas.collabJoin(inv.app, link);

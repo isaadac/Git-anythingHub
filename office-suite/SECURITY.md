@@ -61,6 +61,9 @@ changes from other people in a live session.
   the engine has loaded. Recorded macros are ordinary scripts and run in the script worker.
 - Permissions: clipboard, full screen and microphone; the camera only in Slides (Cameo).
 - API keys and cloud tokens are encrypted with the operating system's keychain.
+- Organisation policies (ENTERPRISE.md) are read only from administrator-owned places (a file under
+  ProgramData, /Library or /etc, Group Policy, managed preferences); what they turn off is refused
+  in the main process, whatever a page asks.
 - Packaged builds set Electron fuses: no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`;
   encrypted cookies; ASAR integrity checking; the app only loads from its ASAR.
 - Updates come from GitHub Releases (or an https feed) and are verified by electron-updater.

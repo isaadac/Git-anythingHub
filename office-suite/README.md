@@ -68,6 +68,10 @@ Installed copies (Windows installer, macOS app, Linux AppImage and `.deb`) check
 
 To ship an update, raise `version` in `package.json` and push a tag such as `office-v1.0.1`. The release gets every installer and `SHA256SUMS.txt`; the workflow also publishes the download site (`site/`, built by `npm run site`) and sends store builds — Microsoft Store, Mac App Store, App Store, Google Play, Snap Store — wherever their credentials are set up ([SIGNING.md](SIGNING.md)). Store copies are updated by their store.
 
+### For organisations
+
+The MSI installs per machine for deployment with Intune, Configuration Manager or Group Policy, and policies (a JSON file, Group Policy with the ADMX template in [`policies/`](policies/), or a macOS configuration profile) turn off the Assistant, cloud storage, live editing (or limit it to your servers), forms, add-ins, web downloads, automatic updates and crash reports, and set the default language. See [ENTERPRISE.md](ENTERPRISE.md).
+
 ## Develop
 
 ```bash

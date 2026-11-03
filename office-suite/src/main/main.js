@@ -3,6 +3,7 @@
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, screen, session, shell } = require('electron');
 require('./ipc-guard'); // before any handler: only the app's own pages may call the main process
+const { policy } = require('./policy'); // what the organisation turned off (before the handlers too)
 const { writeAtomic, readJson, safeGet } = require('./safe-io');
 const { LANGS, menuText } = require('./menu-i18n');
 const path = require('path');
@@ -514,7 +515,7 @@ function send(cmd) {
 
 function buildMenu() {
   const isMac = process.platform === 'darwin';
-  const L = menuText(settings.get('language'));
+  const L = menuText(settings.get('language') || policy.DefaultLanguage);
   const template = [
     ...(isMac ? [{ role: 'appMenu' }] : []),
     {
@@ -573,6 +574,7 @@ function buildMenu() {
         label: L('Send Crash Reports'),
         type: 'checkbox',
         checked: crash.enabled(),
+        enabled: !policy.DisableCrashReports,
         click: item => crash.setEnabled(item.checked)
       }, {
         label: L('Show Crash Reports'),
@@ -583,7 +585,8 @@ function buildMenu() {
       }, {
         label: L('Update Automatically'),
         type: 'checkbox',
-        checked: !!settings.get('autoUpdate'),
+        checked: !!settings.get('autoUpdate') && !policy.DisableAutoUpdate,
+        enabled: !policy.DisableAutoUpdate,
         click: item => updater.setEnabled(item.checked)
       }, { type: 'separator' }, {
         label: L('About Isadek Office'),

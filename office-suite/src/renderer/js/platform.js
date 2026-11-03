@@ -40,6 +40,9 @@
 
   const Platform = {
     desktop,
+    /** What the organisation turned off (desktop: ENTERPRISE.md policies; enforced in the main process too). */
+    policy: Object.freeze({ ...((window.atlas && window.atlas.policy) || {}) }),
+    OFF: 'This was turned off by your organisation',
     async open(filters) {
       return desktop ? window.atlas.openDialog(filters) : pickFileWeb(filters);
     },

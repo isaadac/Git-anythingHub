@@ -22,7 +22,7 @@ const reportUrl = () => {
   const u = String(process.env.ISADEK_CRASH_URL || releaseConfig().crashUrl || '').trim();
   return /^https?:\/\//i.test(u) ? u : '';
 };
-const enabled = () => !!settings.get('crashReports');
+const enabled = () => !!settings.get('crashReports') && !require('./policy').policy.DisableCrashReports;
 const dir = () => path.join(app.getPath('userData'), 'crash-reports');
 const logFile = () => path.join(dir(), 'errors.jsonl');
 
