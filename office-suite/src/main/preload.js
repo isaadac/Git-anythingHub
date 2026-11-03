@@ -45,6 +45,7 @@ contextBridge.exposeInMainWorld('atlas', {
   collabJoin: (appName, link) => ipcRenderer.invoke('collab:join', appName, link),
   collabPending: () => ipcRenderer.invoke('collab:pending'),
   formsHost: () => ipcRenderer.invoke('forms:host'),
+  readFolder: dir => ipcRenderer.invoke('folder:read', dir),
   formsCall: (op, args) => ipcRenderer.invoke('forms:call', op, args),
   aiStatus: () => ipcRenderer.invoke('ai:status'),
   aiSetKey: k => ipcRenderer.invoke('ai:set-key', k),

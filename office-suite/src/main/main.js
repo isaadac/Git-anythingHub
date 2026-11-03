@@ -301,6 +301,44 @@ ipcMain.handle('collab:join', (_e, appName, link) => {
   return true;
 });
 ipcMain.handle('collab:pending', e => { const l = pendingCollab.get(e.sender.id) || null; pendingCollab.delete(e.sender.id); return l; });
+// ---------- Sheets: From Folder ----------
+// Reads the spreadsheets, CSV and JSON files in a folder the person picks. A workbook can name a
+// folder to read again (Refresh All); a folder not picked in this session is read only after asking.
+const pickedFolders = new Set();
+ipcMain.handle('folder:read', async (e, wanted) => {
+  const win = BrowserWindow.fromWebContents(e.sender);
+  let dir;
+  if (wanted === null || wanted === undefined) {
+    const r = await dialog.showOpenDialog(win, { title: 'Get Data from Folder', properties: ['openDirectory'] });
+    if (r.canceled || !r.filePaths[0]) return null;
+    dir = r.filePaths[0];
+  } else {
+    if (typeof wanted !== 'string' || wanted.length > 1000 || !path.isAbsolute(wanted)) return { error: 'That is not a folder' };
+    dir = path.resolve(wanted);
+    if (!pickedFolders.has(dir)) {
+      const r = await dialog.showMessageBox(win, { type: 'question', buttons: ['Read the Files', 'Cancel'], defaultId: 1, cancelId: 1, message: 'This workbook reads the files in a folder', detail: `${dir}
+
+Read the spreadsheets, CSV and JSON files in it into the workbook?` });
+      if (r.response !== 0) return null;
+    }
+  }
+  try {
+    if (!fs.statSync(dir).isDirectory()) return { error: 'That is not a folder' };
+    pickedFolders.add(dir);
+    const files = [];
+    let total = 0;
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (!ent.isFile() || !/\.(csv|tsv|txt|json|xlsx|xls|xlsm|ods)$/i.test(ent.name) || ent.name.startsWith('~$')) continue;
+      const fp = path.join(dir, ent.name);
+      const size = fs.statSync(fp).size;
+      if (size > 50e6 || total + size > 300e6 || files.length >= 500) continue;
+      total += size;
+      files.push({ name: ent.name, data: new Uint8Array(fs.readFileSync(fp)) });
+    }
+    files.sort((a, b) => a.name.localeCompare(b.name));
+    return { path: dir, files };
+  } catch (err) { return { error: String(err.message || err) }; }
+});
 // ---------- Forms: collecting answers on this computer, from people on the same network ----------
 let formsStore = null, formsHost = null;
 const forms = () => formsStore || (formsStore = createFormsStore({ dir: path.join(app.getPath('userData'), 'forms') }));

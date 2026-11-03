@@ -40,6 +40,10 @@ changes from other people in a live session.
   never leaves half a document.
 - "Get data from the web" can't reach this computer, link-local addresses or cloud metadata
   services, also after redirects and DNS tricks, and is size- and time-limited.
+- Sheets → From Folder reads only a folder the person picks; a workbook that names a folder for
+  Refresh All asks before it is read. Reads are limited to 500 files, 50 MB each and 300 MB.
+- SQLite databases are opened in a worker with sql.js, read-only, with no network access once
+  the engine has loaded. Recorded macros are ordinary scripts and run in the script worker.
 - Permissions: clipboard, full screen and microphone; the camera only in Slides (Cameo).
 - API keys and cloud tokens are encrypted with the operating system's keychain.
 - Packaged builds set Electron fuses: no `ELECTRON_RUN_AS_NODE`, `NODE_OPTIONS` or `--inspect`;

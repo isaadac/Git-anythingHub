@@ -39,6 +39,7 @@
     "pptxgenjs": "4.0.1",
     "pyodide": "314.0.7",
     "qrcode-generator": "2.0.4",
+    "sql.js": "1.14.2",
     "xlsx": "0.18.5"
   },
   "devDependencies": {

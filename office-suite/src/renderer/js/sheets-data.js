@@ -745,6 +745,17 @@ function main(workbook) {
       ta.value = list[curScript] ? list[curScript].code : '';
       ta.disabled = !list.length;
     }
+    /** A script made elsewhere in the app (the action recorder): kept, trusted and shown. */
+    function addScript(name, code) {
+      const list = book().scripts = book().scripts || [];
+      let n = name, i = 2;
+      while (list.some(sc => sc.name === n)) n = `${name} ${i++}`;
+      list.push({ name: n.slice(0, 60), code });
+      trusted.add(code);
+      curScript = list.length - 1;
+      ctx.state.markDirty();
+      if (!pane || pane.hidden) scriptsPane(true); else drawPane();
+    }
     function newScript() {
       const list = book().scripts = book().scripts || [];
       let i = list.length + 1;
@@ -1025,7 +1036,7 @@ function main(workbook) {
       // sparklines and slicers
       insertSparklines, clearSparklines, sparkAt, sparkCells, insertSlicer, renderSlicers,
       // scripts and web data
-      scriptsPane, newScript, fromWeb, refreshQueries, cleanData, refreshCleans,
+      scriptsPane, newScript, addScript, fromWeb, refreshQueries, cleanData, refreshCleans,
       // files
       excelFormulaOpts, tablesXml
     };

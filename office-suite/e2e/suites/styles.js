@@ -32,7 +32,7 @@ const BASE = process.env.E2E_BASE + '/src/renderer/';
   await p.click('.chart .bar button[data-a="style"]'); // clicks land on the icon inside
   check('the style button opens the styles menu', await p.isVisible('.chart-styles'));
   const items = await p.$$eval('.chart-styles [role=menuitemradio]', bs => bs.map(b => b.textContent + ':' + b.getAttribute('aria-checked')));
-  check('…with seven palettes, the current one checked', items.length === 7 && items[0] === 'Modern:true', items.join());
+  check('…with seven palettes, the current one checked', items.slice(0, 7).length === 7 && items[0] === 'Modern:true' && items.slice(1, 7).every(t => t.endsWith(':false')) && items.includes('None:true'), items.join());
   await p.click('.chart-styles [data-style="sunset"]');
   check('choosing one restyles the chart', (await ch()).style === 'sunset' && await has([209, 73, 91]) && !(await has([59, 111, 216])));
   await p.click('.chart-styles .labels-toggle');

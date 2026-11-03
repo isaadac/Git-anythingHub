@@ -59,7 +59,8 @@ self.onmessage = e => {
       getOffsetRange: (dr, dc) => Range({ s: g.s, r1: g.r1 + dr, c1: g.c1 + dc, r2: g.r2 + dr, c2: g.c2 + dc }),
       getResizedRange: (dr, dc) => Range({ ...g, r2: g.r2 + dr, c2: g.c2 + dc }),
       getFormat: () => ({
-        setBold: b => style({ b: !!b }), setItalic: b => style({ i: !!b }),
+        setBold: b => style({ b: !!b }), setItalic: b => style({ i: !!b }), setUnderline: b => style({ u: !!b }),
+        setFontName: f => style({ font: String(f).slice(0, 64) }), setFontSize: n => style({ size: Math.max(1, Math.min(409, +n || 11)) }),
         setFill: color => style({ bg: String(color) }), setFontColor: color => style({ color: String(color) }),
         setNumberFormat: f => style({ fmt: String(f) }), setHorizontalAlignment: a => style({ align: String(a).toLowerCase() })
       }),

@@ -28,9 +28,19 @@
     return cAx + `<c:valAx><c:axId val="500000002"/><c:scaling><c:orientation val="minMax"/></c:scaling><c:delete val="0"/><c:axPos val="${horizontal ? 'b' : 'l'}"/><c:majorGridlines/><c:numFmt formatCode="General" sourceLinked="1"/><c:tickLblPos val="nextTo"/><c:crossAx val="500000001"/><c:crosses val="autoZero"/><c:crossBetween val="${scatter ? 'midCat' : 'between'}"/></c:valAx>`;
   };
   const AX = '<c:axId val="500000001"/><c:axId val="500000002"/>';
+  // A trendline (dashed, in the series' colour): Excel draws it from its type.
+  const TREND_TYPES = { linear: 'linear', exp: 'exp', log: 'log', poly: 'poly', power: 'power', movavg: 'movingAvg' };
+  let trendOf = () => '';
+  const trendXml = (spec, s) => {
+    const t = TREND_TYPES[spec.trend];
+    if (!t) return '';
+    return `<c:trendline><c:spPr><a:ln w="19050" cap="rnd"><a:solidFill><a:srgbClr val="${hex(s.color)}"/></a:solidFill><a:prstDash val="sysDash"/></a:ln></c:spPr><c:trendlineType val="${t}"/>` +
+      (t === 'poly' ? '<c:order val="2"/>' : t === 'movingAvg' ? `<c:period val="${spec.trendPeriod || 2}"/>` : '') +
+      `<c:dispRSqr val="${spec.trendEq ? 1 : 0}"/><c:dispEq val="${spec.trendEq ? 1 : 0}"/></c:trendline>`;
+  };
   const ser = (s, i, body) => `<c:ser><c:idx val="${i}"/><c:order val="${i}"/>${tx(s)}${body}</c:ser>`;
-  const barSer = (s, i) => ser(s, i, fill(s.color) + '<c:invertIfNegative val="0"/>' + cat(s) + val(s));
-  const lineSer = (s, i) => ser(s, i, lineSp(s.color) + `<c:marker><c:symbol val="circle"/><c:size val="5"/>${fill(s.color)}</c:marker>` + cat(s) + val(s) + '<c:smooth val="0"/>');
+  const barSer = (s, i) => ser(s, i, fill(s.color) + '<c:invertIfNegative val="0"/>' + trendOf(s) + cat(s) + val(s));
+  const lineSer = (s, i) => ser(s, i, lineSp(s.color) + `<c:marker><c:symbol val="circle"/><c:size val="5"/>${fill(s.color)}</c:marker>` + trendOf(s) + cat(s) + val(s) + '<c:smooth val="0"/>');
 
   /**
    * spec: { type: bar|hbar|line|area|pie|doughnut|scatter|combo, title, series: [{ name, nameRef, color,
@@ -38,10 +48,11 @@
    */
   function toXml(spec) {
     const S = spec.series;
+    trendOf = s => trendXml(spec, s);
     let plot;
     switch (spec.type) {
       case 'line': plot = `<c:lineChart><c:grouping val="standard"/><c:varyColors val="0"/>${S.map(lineSer).join('')}<c:marker val="1"/>${AX}</c:lineChart>` + axes(false); break;
-      case 'area': plot = `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${S.map((s, i) => ser(s, i, fill(s.color) + cat(s) + val(s))).join('')}${AX}</c:areaChart>` + axes(false); break;
+      case 'area': plot = `<c:areaChart><c:grouping val="standard"/><c:varyColors val="0"/>${S.map((s, i) => ser(s, i, fill(s.color) + trendOf(s) + cat(s) + val(s))).join('')}${AX}</c:areaChart>` + axes(false); break;
       case 'pie': case 'doughnut': {
         const s = S[0];
         const pts = (s.values || []).map((_, i) => `<c:dPt><c:idx val="${i}"/><c:bubble3D val="0"/>${fill(spec.palette[i % spec.palette.length])}</c:dPt>`).join('');
@@ -52,7 +63,7 @@
         break;
       }
       case 'scatter': {
-        const body = S.map((s, i) => ser(s, i, `<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="6"/>${fill(s.color)}</c:marker>` +
+        const body = S.map((s, i) => ser(s, i, `<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr><c:marker><c:symbol val="circle"/><c:size val="6"/>${fill(s.color)}</c:marker>` + trendOf(s) +
           `<c:xVal>${numRef(s.catRef, s.cats)}</c:xVal><c:yVal>${numRef(s.valRef, s.values)}</c:yVal><c:smooth val="0"/>`)).join('');
         plot = `<c:scatterChart><c:scatterStyle val="lineMarker"/><c:varyColors val="0"/>${body}${AX}</c:scatterChart>` + axes(false, true);
         break;
@@ -111,7 +122,15 @@
     }));
     const titleEl = deep(doc.documentElement, 'title')[0];
     const title = titleEl ? deep(titleEl, 't').map(t => t.textContent).join('') : '';
-    return { type, title: title.slice(0, 200), series: series.filter(s => s.valRef).slice(0, 50) };
+    // A trendline on the first series that has one.
+    const tl = deep(doc.documentElement, 'trendline')[0];
+    let trend = null, trendEq = false;
+    if (tl) {
+      const t = (kid(tl, 'trendlineType') || { getAttribute: () => '' }).getAttribute('val');
+      trend = Object.keys(TREND_TYPES).find(k => TREND_TYPES[k] === t) || null;
+      trendEq = ['1', 'true'].includes((kid(tl, 'dispEq') || { getAttribute: () => '' }).getAttribute('val'));
+    }
+    return { type, title: title.slice(0, 200), series: series.filter(s => s.valRef).slice(0, 50), ...(trend ? { trend, trendEq } : {}) };
   }
   /** The placement of each chart in a drawing part, with the relationship id of its chart. */
   function anchorsFromDrawing(xml) {

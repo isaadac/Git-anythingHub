@@ -1345,12 +1345,218 @@
     HYPERLINK: a => (a[1] !== undefined ? scalar(a[1]) : toStr(a[0]))
   });
 
+  // ---------- Forecasting: exponential smoothing (Excel's FORECAST.ETS, AAA) and trend fits ----------
+  /** Values on an even timeline: sorted by time, equal times aggregated, gaps filled. */
+  function etsSeries(valuesArg, timelineArg, completion = 1, aggregation = 1) {
+    const vs = asRange(valuesArg).flat(), ts = asRange(timelineArg).flat();
+    if (vs.length !== ts.length) throw ERR.NA;
+    const pts = [];
+    vs.forEach((v, i) => { if (isErr(v)) throw v; if (isErr(ts[i])) throw ts[i]; if (typeof ts[i] !== 'number') throw ERR.VALUE; if (typeof v === 'number') pts.push([ts[i], v]); });
+    if (pts.length < 3) throw ERR.NUM;
+    pts.sort((a, b) => a[0] - b[0]);
+    // Equal times become one point (AVERAGE by default, as Excel; 2 COUNT … 7 SUM).
+    const agg = { 1: a => mean(a), 2: a => a.length, 3: a => a.length, 4: a => Math.max(...a), 5: a => percentile(a, 0.5), 6: a => Math.min(...a), 7: a => a.reduce((x, y) => x + y, 0) }[aggregation];
+    if (!agg) throw ERR.NUM;
+    const groups = [];
+    for (const [t, v] of pts) { const g = groups[groups.length - 1]; if (g && g.t === t) g.v.push(v); else groups.push({ t, v: [v] }); }
+    const times = groups.map(g => g.t), vals = groups.map(g => agg(g.v));
+    let step = Infinity;
+    for (let i = 1; i < times.length; i++) step = Math.min(step, times[i] - times[i - 1]);
+    if (!(step > 0)) throw ERR.NUM;
+    const n = Math.round((times[times.length - 1] - times[0]) / step) + 1;
+    if (n > 100000) throw ERR.NUM;
+    const ys = new Array(n).fill(null);
+    times.forEach((t, i) => { const k = Math.round((t - times[0]) / step); if (Math.abs(times[0] + k * step - t) > step * 1e-6) throw ERR.NUM; ys[k] = vals[i]; });
+    // Missing points: halfway between their neighbours (completion 1), or zero (0).
+    for (let i = 0; i < n; i++) if (ys[i] === null) {
+      if (!completion) { ys[i] = 0; continue; }
+      let j = i; while (ys[j] === null) j++;
+      const a = ys[i - 1], b = ys[j];
+      for (let k = i; k < j; k++) ys[k] = a + (b - a) * (k - i + 1) / (j - i + 1);
+    }
+    return { t0: times[0], step, ys };
+  }
+  /** The season length that repeats most clearly (autocorrelation), or 1 for none. */
+  function etsSeasonality(ys) {
+    const n = ys.length, m = mean(ys);
+    const v = ys.reduce((s, y) => s + (y - m) ** 2, 0);
+    if (!v || n < 8) return 1;
+    // Seasons are looked for in the changes, so a trend doesn't hide them.
+    const d = ys.slice(1).map((y, i) => y - ys[i]), dm = mean(d), dv = d.reduce((s, y) => s + (y - dm) ** 2, 0);
+    if (!dv) return 1;
+    const acf = lag => { let s = 0; for (let i = lag; i < d.length; i++) s += (d[i] - dm) * (d[i - lag] - dm); return s / dv; };
+    let best = 1, bestR = 0.3;
+    for (let lag = 2; lag <= Math.min(8760, Math.floor(d.length / 2)); lag++) {
+      const r = acf(lag);
+      if (r > bestR && r >= acf(lag - 1) && r >= acf(lag + 1)) { best = lag; bestR = r; }
+    }
+    return best;
+  }
+  /** Additive Holt-Winters fitted to the series (smoothing found by search); forecast(h) and sigma. */
+  function etsFit(ys, m) {
+    const n = ys.length;
+    if (m > 1 && n < 2 * m) m = 1;
+    const run = (al, be, ga, keep) => {
+      let l, b, season;
+      if (m > 1) {
+        const a1 = mean(ys.slice(0, m)), a2 = mean(ys.slice(m, 2 * m));
+        l = a1; b = (a2 - a1) / m; season = ys.slice(0, m).map(y => y - a1);
+      } else { l = ys[0]; b = ys[1] - ys[0]; season = [0]; }
+      let sse = 0, count = 0;
+      const start = m > 1 ? m : 1;
+      for (let t = start; t < n; t++) {
+        const si = t % m, s = season[si];
+        const e = ys[t] - (l + b + s);
+        sse += e * e; count++;
+        const nl = al * (ys[t] - s) + (1 - al) * (l + b);
+        b = be * (nl - l) + (1 - be) * b;
+        l = nl;
+        if (m > 1) season[si] = ga * (ys[t] - l) + (1 - ga) * s;
+      }
+      return keep ? { l, b, season, sse, count } : sse;
+    };
+    let best = { sse: Infinity };
+    const grid = [0.05, 0.15, 0.3, 0.5, 0.7, 0.9];
+    for (const al of grid) for (const be of grid) for (const ga of m > 1 ? grid : [0]) { const sse = run(al, be, ga); if (sse < best.sse) best = { sse, al, be, ga }; }
+    // Refine around the best point.
+    for (let step = 0.05; step >= 0.0125; step /= 2) {
+      let moved = true;
+      while (moved) {
+        moved = false;
+        for (const [k, d] of [['al', step], ['al', -step], ['be', step], ['be', -step], ...(m > 1 ? [['ga', step], ['ga', -step]] : [])]) {
+          const t = { ...best, [k]: Math.min(0.999, Math.max(0.001, best[k] + d)) };
+          const sse = run(t.al, t.be, t.ga);
+          if (sse < best.sse - 1e-12) { best = { ...t, sse }; moved = true; }
+        }
+      }
+    }
+    const fin = run(best.al, best.be, best.ga, true);
+    const sigma = Math.sqrt(fin.sse / Math.max(1, fin.count));
+    return {
+      m, alpha: best.al, beta: best.be, gamma: best.ga, sigma,
+      forecast: h => fin.l + h * fin.b + (m > 1 ? fin.season[(n - 1 + Math.ceil(h)) % m] : 0),
+      spread: h => { let v = 1; for (let j = 1; j < Math.ceil(h); j++) v += (best.al * (1 + j * best.be) + (m > 1 && j % m === 0 ? best.ga : 0)) ** 2; return sigma * Math.sqrt(v); }
+    };
+  }
+  function etsArgs(a, at) {
+    const seasonality = optN(a[at], 1), completion = optN(a[at + 1], 1), aggregation = optN(a[at + 2], 1);
+    if (seasonality < 0 || seasonality > 8760 || seasonality !== Math.floor(seasonality)) throw ERR.NUM;
+    const ser = etsSeries(a[1], a[2], completion, aggregation);
+    const m = seasonality === 1 ? etsSeasonality(ser.ys) : seasonality === 0 ? 1 : seasonality;
+    return { ser, m };
+  }
+  /** A trend fitted through points: linear, exponential, logarithmic, power or polynomial (order 2–6). */
+  function trendFit(xs, ys, kind = 'linear', order = 2) {
+    const pts = xs.map((x, i) => [x, ys[i]]).filter(([x, y]) => typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y));
+    if (pts.length < 2) return null;
+    const lin = P => { const mx = mean(P.map(p => p[0])), my = mean(P.map(p => p[1])); let sxy = 0, sxx = 0; for (const [x, y] of P) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; } const k = sxx ? sxy / sxx : 0; return [k, my - k * mx]; };
+    let f, eq;
+    const r = v => +v.toPrecision(4);
+    if (kind === 'exp') {
+      const P = pts.filter(p => p[1] > 0).map(([x, y]) => [x, Math.log(y)]);
+      if (P.length < 2) return null;
+      const [k, c] = lin(P); f = x => Math.exp(c) * Math.exp(k * x); eq = `y = ${r(Math.exp(c))}e^${r(k)}x`;
+    } else if (kind === 'log') {
+      const P = pts.filter(p => p[0] > 0).map(([x, y]) => [Math.log(x), y]);
+      if (P.length < 2) return null;
+      const [k, c] = lin(P); f = x => k * Math.log(x) + c; eq = `y = ${r(k)}ln(x) ${c < 0 ? '−' : '+'} ${r(Math.abs(c))}`;
+    } else if (kind === 'power') {
+      const P = pts.filter(p => p[0] > 0 && p[1] > 0).map(([x, y]) => [Math.log(x), Math.log(y)]);
+      if (P.length < 2) return null;
+      const [k, c] = lin(P); f = x => Math.exp(c) * x ** k; eq = `y = ${r(Math.exp(c))}x^${r(k)}`;
+    } else if (kind === 'poly') {
+      const d = Math.max(2, Math.min(6, order, pts.length - 1));
+      // Least squares by the normal equations, solved by Gaussian elimination.
+      const A = Array.from({ length: d + 1 }, (_, i) => Array.from({ length: d + 1 }, (_, j) => pts.reduce((s, [x]) => s + x ** (i + j), 0)));
+      const bv = Array.from({ length: d + 1 }, (_, i) => pts.reduce((s, [x, y]) => s + y * x ** i, 0));
+      for (let c = 0; c <= d; c++) {
+        let p = c; for (let q = c + 1; q <= d; q++) if (Math.abs(A[q][c]) > Math.abs(A[p][c])) p = q;
+        [A[c], A[p]] = [A[p], A[c]]; [bv[c], bv[p]] = [bv[p], bv[c]];
+        if (!A[c][c]) return null;
+        for (let q = 0; q <= d; q++) if (q !== c) { const k = A[q][c] / A[c][c]; for (let j = c; j <= d; j++) A[q][j] -= k * A[c][j]; bv[q] -= k * bv[c]; }
+      }
+      const co = bv.map((v, i) => v / A[i][i]);
+      f = x => co.reduce((s, c, i) => s + c * x ** i, 0);
+      eq = 'y = ' + co.map((c, i) => [c, i]).reverse().map(([c, i], k) => `${k ? (c < 0 ? ' − ' : ' + ') : c < 0 ? '−' : ''}${r(Math.abs(c))}${i ? 'x' + (i > 1 ? '^' + i : '') : ''}`).join('');
+    } else {
+      const [k, c] = lin(pts); f = x => k * x + c; eq = `y = ${r(k)}x ${c < 0 ? '−' : '+'} ${r(Math.abs(c))}`;
+    }
+    const my = mean(pts.map(p => p[1]));
+    const ssTot = pts.reduce((s, [, y]) => s + (y - my) ** 2, 0), ssRes = pts.reduce((s, [x, y]) => s + (y - f(x)) ** 2, 0);
+    return { f, eq, r2: ssTot ? 1 - ssRes / ssTot : 1 };
+  }
+  const xsDefault = ys => asRange(ys).flat().map((_, i) => i + 1);
+  Object.assign(FN, {
+    'FORECAST.ETS': a => {
+      const { ser, m } = etsArgs(a, 3);
+      const h = (toNum(a[0]) - (ser.t0 + (ser.ys.length - 1) * ser.step)) / ser.step;
+      if (toNum(a[0]) < ser.t0) throw ERR.NUM;
+      const fit = etsFit(ser.ys, m);
+      if (h <= 0) { const i = Math.round((toNum(a[0]) - ser.t0) / ser.step); return ser.ys[Math.min(ser.ys.length - 1, Math.max(0, i))]; }
+      return fit.forecast(h);
+    },
+    'FORECAST.ETS.CONFINT': a => {
+      const conf = optN(a[3], 0.95);
+      if (!(conf > 0 && conf < 1)) throw ERR.NUM;
+      const { ser, m } = etsArgs(a, 4);
+      const h = (toNum(a[0]) - (ser.t0 + (ser.ys.length - 1) * ser.step)) / ser.step;
+      if (h <= 0) throw ERR.NUM;
+      return normInv((1 + conf) / 2) * etsFit(ser.ys, m).spread(h);
+    },
+    'FORECAST.ETS.SEASONALITY': a => { const ser = etsSeries(a[0], a[1], optN(a[2], 1), optN(a[3], 1)); const m = etsSeasonality(ser.ys); return m > 1 && ser.ys.length >= 2 * m ? m : 0; },
+    TREND: a => {
+      const ys = asRange(a[0]).flat().map(v => (typeof v === 'number' ? v : NaN));
+      const xs = a[1] === undefined || a[1] === '' ? ys.map((_, i) => i + 1) : asRange(a[1]).flat();
+      const fit = optB(a[3], true) ? trendFit(xs, ys) : (() => { let sxy = 0, sxx = 0; xs.forEach((x, i) => { sxy += x * ys[i]; sxx += x * x; }); const k = sxx ? sxy / sxx : 0; return { f: x => k * x }; })();
+      if (!fit) throw ERR.VALUE;
+      const nx = a[2] === undefined || a[2] === '' ? (a[1] === undefined || a[1] === '' ? asRange(a[0]) : asRange(a[1])) : asRange(a[2]);
+      return arrOut(nx.rows.map(row => row.map(x => fit.f(toNum(x)))));
+    },
+    GROWTH: a => {
+      const ys = asRange(a[0]).flat();
+      const xs = a[1] === undefined || a[1] === '' ? xsDefault(a[0]) : asRange(a[1]).flat();
+      if (ys.some(y => typeof y === 'number' && y <= 0)) throw ERR.NUM;
+      const fit = trendFit(xs, ys, 'exp');
+      if (!fit) throw ERR.VALUE;
+      const nx = a[2] === undefined || a[2] === '' ? (a[1] === undefined || a[1] === '' ? new Range(xsDefault(a[0]).map(x => [x])) : asRange(a[1])) : asRange(a[2]);
+      return arrOut(nx.rows.map(row => row.map(x => fit.f(toNum(x)))));
+    },
+    LINEST: a => {
+      const ys = asRange(a[0]).flat();
+      const xs = a[1] === undefined || a[1] === '' ? xsDefault(a[0]) : asRange(a[1]).flat();
+      if (xs.length !== ys.length) throw ERR.REF;
+      const P = xs.map((x, i) => [x, ys[i]]).filter(([x, y]) => typeof x === 'number' && typeof y === 'number');
+      if (P.length < 2) throw ERR.DIV0;
+      const withConst = optB(a[2], true), n = P.length;
+      const mx = withConst ? mean(P.map(p => p[0])) : 0, my = withConst ? mean(P.map(p => p[1])) : 0;
+      let sxy = 0, sxx = 0;
+      for (const [x, y] of P) { sxy += (x - mx) * (y - my); sxx += (x - mx) ** 2; }
+      if (!sxx) throw ERR.DIV0;
+      const k = sxy / sxx, c = my - k * mx;
+      if (!optB(a[3], false)) return arrOut([[k, c]]);
+      const df = n - (withConst ? 2 : 1);
+      const ssRes = P.reduce((s, [x, y]) => s + (y - (k * x + c)) ** 2, 0);
+      const ssTot = P.reduce((s, [, y]) => s + (y - (withConst ? mean(P.map(q => q[1])) : 0)) ** 2, 0);
+      const ssReg = ssTot - ssRes, sey = df > 0 ? Math.sqrt(ssRes / df) : 0;
+      const seK = sey / Math.sqrt(sxx), seC = withConst ? sey * Math.sqrt(1 / n + mx * mx / sxx) : ERR.NA;
+      return arrOut([[k, c], [seK, seC], [ssTot ? ssReg / ssTot : 1, sey], [ssRes && df > 0 ? (ssReg / 1) / (ssRes / df) : ERR.NUM, df], [ssReg, ssRes]]);
+    },
+    LOGEST: a => {
+      const ys = asRange(a[0]).flat();
+      const xs = a[1] === undefined || a[1] === '' ? xsDefault(a[0]) : asRange(a[1]).flat();
+      const fit = trendFit(xs, ys, 'exp');
+      if (!fit) throw ERR.NUM;
+      const b = fit.f(0), m = fit.f(1) / b;
+      return arrOut([[m, b]]);
+    }
+  });
+
   // ---------- Excel file names for newer functions ----------
   // Functions added after Excel 2007 are stored with an _xlfn. prefix (FILTER and SORT also
   // _xlws.), and LET's names with _xlpm.; without them Excel shows #NAME?.
   const XLFN = new Set(('AGGREGATE ARABIC BASE BITAND BITLSHIFT BITOR BITRSHIFT BITXOR CEILING.MATH CEILING.PRECISE CHOOSECOLS CHOOSEROWS COMBINA ' +
     'CONCAT CONFIDENCE.NORM CONFIDENCE.T COT COTH COVARIANCE.P COVARIANCE.S CSC CSCH DAYS DECIMAL DROP ERF.PRECISE ERFC.PRECISE EXPAND EXPON.DIST ' +
-    'FILTER FLOOR.MATH FLOOR.PRECISE FORECAST.LINEAR FORMULATEXT HSTACK IFNA IFS ISFORMULA ISOWEEKNUM LET MAXIFS MINIFS MODE.MULT MODE.SNGL ' +
+    'FILTER FLOOR.MATH FLOOR.PRECISE FORECAST.ETS FORECAST.ETS.CONFINT FORECAST.ETS.SEASONALITY FORECAST.LINEAR FORMULATEXT HSTACK IFNA IFS ISFORMULA ISOWEEKNUM LET MAXIFS MINIFS MODE.MULT MODE.SNGL ' +
     'NETWORKDAYS.INTL NORM.DIST NORM.INV NORM.S.DIST NORM.S.INV NUMBERVALUE PERCENTILE.EXC PERCENTILE.INC PERCENTRANK.INC POISSON.DIST QUARTILE.EXC ' +
     'QUARTILE.INC RANDARRAY RANK.AVG RANK.EQ SEC SECH SEQUENCE SHEET SHEETS SORT SORTBY STDEV.P STDEV.S SWITCH TAKE TEXTAFTER TEXTBEFORE TEXTJOIN ' +
     'TEXTSPLIT TOCOL TOROW UNICHAR UNICODE UNIQUE VAR.P VAR.S VSTACK WORKDAY.INTL WRAPCOLS WRAPROWS XLOOKUP XMATCH XOR BINOM.DIST').split(' '));
@@ -2285,7 +2491,7 @@
     });
   }
 
-  const api = { Engine, FormulaError, ERR, FORMULA_CELL, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, generalText, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, parseStructured, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
+  const api = { Engine, FormulaError, ERR, FORMULA_CELL, parse, tokenize, parseRef, addr, colToIndex, indexToCol, formatValue, formatGeneral, generalText, parseLiteral, shiftFormula, adjustForInsert, rewriteRefs, parseStructured, dateToSerial, serialToDate, toExcelFormula, fromExcelFormula, Range, trendFit, etsSeries, etsSeasonality, etsFit, FUNCTIONS: [...Object.keys(FN), ...Object.keys(LAZY)].sort() };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.Formula = api;
 })(typeof window !== 'undefined' ? window : globalThis);

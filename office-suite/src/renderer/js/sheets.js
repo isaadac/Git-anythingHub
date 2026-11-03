@@ -38,6 +38,7 @@
   let book = { sheets: [newSheet('Sheet1')], active: 0, names: [], scripts: [], forms: [] };
   let data = null; // tables, names, what-if, sparklines, slicers, scripts, web data (sheets-data.js)
   let forms = null; // forms people answer from a link (sheets-forms.js)
+  let insights = null, connect = null; // Analyze Data and Forecast Sheet; From Folder and From Database
   const sheet = () => book.sheets[book.active];
   const cellAt = (r, c, s = sheet()) => s.cells[addr(r, c)];
   const rawAt = (r, c, s = sheet()) => (s.cells[addr(r, c)] || {}).v ?? '';
@@ -726,6 +727,32 @@
     editor.style.width = 'auto';
     editor.style.width = Math.max(parseFloat(editor.style.minWidth), Math.min(600, editor.scrollWidth + 8)) + 'px';
   }
+  // ---------- Recording actions as a script (Automate → Record Actions) ----------
+  const recorder = { on: false, lines: [], sheet: null, start: null };
+  const jsStr = v => JSON.stringify(String(v));
+  function rec(line, g = selRange()) {
+    if (!recorder.on) return;
+    if (recorder.sheet !== sheet().name) { recorder.sheet = sheet().name; recorder.lines.push(`  sheet = workbook.getWorksheet(${jsStr(sheet().name)});`); }
+    const ref = addr(g.r1, g.c1) + (g.r1 === g.r2 && g.c1 === g.c2 ? '' : ':' + addr(g.r2, g.c2));
+    recorder.lines.push(`  sheet.getRange(${jsStr(ref)})${line};`);
+  }
+  function toggleRecording() {
+    commitEdit();
+    const btn = document.getElementById('recordBtn');
+    if (!recorder.on) {
+      Object.assign(recorder, { on: true, lines: [], sheet: sheet().name, start: sheet().name });
+      btn.classList.add('on'); btn.setAttribute('aria-pressed', 'true'); btn.querySelector('.lbl').textContent = 'Stop Recording';
+      document.body.classList.add('recording');
+      UI.toast('Recording: what you type and format becomes a script', 3500);
+      return;
+    }
+    recorder.on = false;
+    btn.classList.remove('on'); btn.setAttribute('aria-pressed', 'false'); btn.querySelector('.lbl').textContent = 'Record Actions';
+    document.body.classList.remove('recording');
+    if (!recorder.lines.length) return UI.toast('Nothing was recorded');
+    const code = `// Recorded ${new Date().toLocaleString()}. Run it again from Automate → Scripts.\nfunction main(workbook) {\n  let sheet = workbook.getWorksheet(${jsStr(recorder.start)});\n${recorder.lines.join('\n')}\n}\n`;
+    data.addScript('Recorded Script', code);
+  }
   function commitEdit(moveR = 0, moveC = 0) {
     if (!editing) return;
     editing = false;
@@ -739,6 +766,7 @@
       const prev = before ? JSON.parse(JSON.stringify(before)) : null;
       snapshot();
       setCell(active.r, active.c, { v });
+      rec(v[0] === '=' ? `.setFormula(${jsStr(v)})` : `.setValue(${jsStr(v)})`, { r1: active.r, c1: active.c, r2: active.r, c2: active.c });
       autoFormat(active.r, active.c, v);
       if (data && data.afterEdit(active.r, active.c, v, prev ? prev.v : '')) data.applyFilters();
       // A line break typed with Alt+Enter turns on wrapping, as in Excel.
@@ -1043,7 +1071,7 @@
       select(active.r + (k === 'PageDown' ? page : -page), active.c);
       return;
     }
-    if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); clearRange('contents'); return; }
+    if (k === 'Delete' || k === 'Backspace') { e.preventDefault(); clearRange('contents'); rec('.clear()'); return; }
     if (mod && k.toLowerCase() === 'a') { e.preventDefault(); anchor = { r: 0, c: 0 }; active = { r: s.rows - 1, c: s.cols - 1 }; drawSelection(); return; }
     if (mod && k.toLowerCase() === 'b') { e.preventDefault(); toggleStyle('b'); return; }
     if (mod && k.toLowerCase() === 'i') { e.preventDefault(); toggleStyle('i'); return; }
@@ -1173,20 +1201,23 @@
   function toggleStyle(k) {
     const on = !((cellAt(active.r, active.c) || {}).s || {})[k];
     styleRange(s => { s[k] = on; });
+    const fn = { b: 'setBold', i: 'setItalic', u: 'setUnderline' }[k];
+    if (fn) rec(`.getFormat().${fn}(${on})`); else if (recorder.on) recorder.lines.push(`  // (${k} formatting isn't recorded)`);
   }
   document.querySelectorAll('[data-style]').forEach(b => b.addEventListener('click', () => toggleStyle(b.dataset.style)));
   document.querySelectorAll('[data-align]').forEach(b => b.addEventListener('click', () => {
     const a = b.dataset.align;
     const cur = ((cellAt(active.r, active.c) || {}).s || {}).align;
     styleRange(s => { s.align = cur === a ? '' : a; });
+    rec(`.getFormat().setHorizontalAlignment(${jsStr(cur === a ? 'General' : a)})`);
   }));
-  document.getElementById('fontName').addEventListener('change', e => { styleRange(s => { s.font = e.target.value === 'Calibri' ? '' : e.target.value; }); wrap.focus(); });
-  document.getElementById('fontSize').addEventListener('change', e => { styleRange(s => { s.size = e.target.value === '11' ? '' : +e.target.value; }); wrap.focus(); });
+  document.getElementById('fontName').addEventListener('change', e => { styleRange(s => { s.font = e.target.value === 'Calibri' ? '' : e.target.value; }); rec(`.getFormat().setFontName(${jsStr(e.target.value)})`); wrap.focus(); });
+  document.getElementById('fontSize').addEventListener('change', e => { styleRange(s => { s.size = e.target.value === '11' ? '' : +e.target.value; }); rec(`.getFormat().setFontSize(${+e.target.value})`); wrap.focus(); });
   function colorPicker(id, key) {
     const input = document.getElementById(id);
     const bar = input.parentElement.querySelector('.bar');
     input.addEventListener('input', () => { bar.style.background = input.value; });
-    input.addEventListener('change', () => { styleRange(s => { s[key] = input.value; }); wrap.focus(); });
+    input.addEventListener('change', () => { styleRange(s => { s[key] = input.value; }); rec(`.getFormat().${key === 'bg' ? 'setFill' : 'setFontColor'}(${jsStr(input.value)})`); wrap.focus(); });
   }
   colorPicker('fillColor', 'bg');
   colorPicker('textColor', 'color');
@@ -1205,8 +1236,8 @@
     });
     wrap.focus();
   });
-  document.getElementById('numFmt').addEventListener('change', e => { styleRange(s => { s.fmt = e.target.value === 'General' ? '' : e.target.value; }); wrap.focus(); });
-  document.querySelectorAll('[data-fmt]').forEach(b => b.addEventListener('click', () => styleRange(s => { s.fmt = b.dataset.fmt; })));
+  document.getElementById('numFmt').addEventListener('change', e => { styleRange(s => { s.fmt = e.target.value === 'General' ? '' : e.target.value; }); rec(`.getFormat().setNumberFormat(${jsStr(e.target.value)})`); wrap.focus(); });
+  document.querySelectorAll('[data-fmt]').forEach(b => b.addEventListener('click', () => { styleRange(s => { s.fmt = b.dataset.fmt; }); rec(`.getFormat().setNumberFormat(${jsStr(b.dataset.fmt)})`); }));
   function changeDecimals(delta) {
     styleRange((s, r, c) => {
       let f = s.fmt;
@@ -1834,7 +1865,67 @@
     for (let c = g.c1; c <= c2; c++) { const h = at(g.r1, c); headers.push(h === '' ? 'Column' + (c - g.c1 + 1) : String(h)); }
     const rows = [];
     for (let r = g.r1 + 1; r <= r2; r++) { const row = []; for (let c = g.c1; c <= c2; c++) row.push(at(r, c)); rows.push(row); }
+    joinRelated(src, g, headers, rows);
     return { headers, rows };
+  }
+  // ---------- The data model: relationships between tables ----------
+  // A PivotTable on a table gets the columns of the tables it is related to (Data →
+  // Relationships), as "Table.Column", looked up through the related key, as Excel's data model.
+  const tableNamed = n => { for (const s of book.sheets) for (const t of s.tables || []) if (t.name.toLowerCase() === String(n).toLowerCase()) return { s, t }; return null; };
+  function tableRows(s, t) {
+    const at = (r, c) => { const v = engine.value(s.name, r, c); return v instanceof F.FormulaError ? v.error : v; };
+    const headers = [];
+    for (let c = t.c1; c <= t.c2; c++) headers.push(String(at(t.r1, c)));
+    const rows = [];
+    for (let r = t.r1 + 1; r <= t.r2 - (t.totals ? 1 : 0); r++) { const row = []; for (let c = t.c1; c <= t.c2; c++) row.push(at(r, c)); rows.push(row); }
+    return { headers, rows };
+  }
+  function joinRelated(src, g, headers, rows) {
+    const own = (src.tables || []).find(t => t.r1 === g.r1 && t.c1 === g.c1 && t.c2 === g.c2 && t.r2 >= g.r2 - 1);
+    if (!own || !(book.relationships || []).length) return;
+    const key = v => (typeof v === 'string' ? v.trim().toLowerCase() : String(v));
+    for (const rel of book.relationships) {
+      if (rel.from.table.toLowerCase() !== own.name.toLowerCase()) continue;
+      const other = tableNamed(rel.to.table);
+      const fc = headers.findIndex(h => h.toLowerCase() === rel.from.column.toLowerCase());
+      if (!other || fc < 0) continue;
+      const t = tableRows(other.s, other.t);
+      const tc = t.headers.findIndex(h => h.toLowerCase() === rel.to.column.toLowerCase());
+      if (tc < 0) continue;
+      const look = new Map();
+      t.rows.forEach(r => { const k = key(r[tc]); if (!look.has(k)) look.set(k, r); });
+      const add = t.headers.map((h, i) => [h, i]).filter(([, i]) => i !== tc);
+      add.forEach(([h]) => headers.push(`${other.t.name}.${h}`));
+      rows.forEach(r => { const m = look.get(key(r[fc])); add.forEach(([, i]) => r.push(m ? m[i] : '')); });
+    }
+  }
+  const cleanRelationships = list => (Array.isArray(list) ? list : []).filter(r => r && r.from && r.to && [r.from.table, r.from.column, r.to.table, r.to.column].every(x => typeof x === 'string' && x.trim() && x.length <= 255))
+    .map(r => ({ from: { table: r.from.table, column: r.from.column }, to: { table: r.to.table, column: r.to.column } })).slice(0, 100);
+  async function relationshipsDialog() {
+    const tables = book.sheets.flatMap(s => (s.tables || []).map(t => ({ s, t })));
+    if (tables.length < 2) return UI.toast('Relationships join two tables: make your data into tables first (Insert → Table)');
+    const rels = book.relationships || [];
+    const v = await UI.form('Relationships', [
+      ...(rels.length ? [{ name: 'remove', label: 'Current relationships (choose one to delete it)', type: 'select', options: [{ value: '', label: `${rels.length} relationship${rels.length === 1 ? '' : 's'}: keep them` }, ...rels.map((r, i) => ({ value: String(i), label: `Delete: ${r.from.table}[${r.from.column}] → ${r.to.table}[${r.to.column}]` }))] }] : []),
+      { name: 'ft', label: 'Table (with many rows, e.g. Sales)', type: 'select', options: ['', ...tables.map(x => x.t.name)] },
+      { name: 'fc', label: 'Its column (e.g. ProductID)' },
+      { name: 'tt', label: 'Related table (one row per key, e.g. Products)', type: 'select', options: ['', ...tables.map(x => x.t.name)] },
+      { name: 'tc', label: 'Its column (e.g. ID)' }
+    ], 'OK');
+    if (!v) return;
+    snapshot();
+    book.relationships = rels.filter((_, i) => String(i) !== v.remove);
+    if (v.ft && v.tt) {
+      const a = tableNamed(v.ft), b = tableNamed(v.tt);
+      const ha = tableRows(a.s, a.t).headers, hb = tableRows(b.s, b.t).headers;
+      const fc = ha.find(h => h.toLowerCase() === v.fc.trim().toLowerCase()), tc = hb.find(h => h.toLowerCase() === v.tc.trim().toLowerCase());
+      if (!fc || !tc) { UI.toast(`Choose columns the tables have (${v.ft}: ${ha.join(', ')}; ${v.tt}: ${hb.join(', ')})`, 7000); return; }
+      if (v.ft === v.tt) { UI.toast('Choose two different tables'); return; }
+      book.relationships.push({ from: { table: a.t.name, column: fc }, to: { table: b.t.name, column: tc } });
+      UI.toast(`Related: ${a.t.name}[${fc}] → ${b.t.name}[${tc}]. PivotTables on ${a.t.name} can now use ${b.t.name}'s columns.`, 5000);
+    }
+    refreshPivots(true);
+    state.markDirty();
   }
   const rawFor = v => (typeof v === 'number' ? String(v) : typeof v === 'boolean' ? (v ? 'TRUE' : 'FALSE') : (v && (v[0] === '=' || typeof F.parseLiteral(v) !== 'string') ? "'" + v : String(v)));
   /** Recomputes a pivot and rewrites the cells it occupies. */
@@ -1913,6 +2004,21 @@
     renderPivot(p, host);
     book.active = book.sheets.indexOf(host);
     active = anchor = { r: at.r, c: at.c };
+    buildGrid();
+    changed();
+  }
+  /** A PivotTable on a new sheet from a source range, with its rows and values chosen (Analyze Data). */
+  function createPivot(srcSheet, ref, rows, vals) {
+    snapshot();
+    const host = newSheet(uniqueName('PivotTable'));
+    book.sheets.splice(book.active + 1, 0, host);
+    let n = 1;
+    while (book.sheets.some(x => (x.pivots || []).some(p => p.name === 'PivotTable' + n))) n++;
+    const p = SheetsPivot.clean({ name: 'PivotTable' + n, src: { sheet: srcSheet, ref }, r: 2, c: 0, rows, cols: [], vals, filters: [] });
+    host.pivots = [p];
+    renderPivot(p, host);
+    book.active = book.sheets.indexOf(host);
+    active = anchor = { r: 2, c: 0 };
     buildGrid();
     changed();
   }
@@ -2025,7 +2131,7 @@
   }
   document.getElementById('insPivot').addEventListener('click', insertPivot);
   document.getElementById('insPivot2').addEventListener('click', insertPivot);
-  document.getElementById('refreshAll').addEventListener('click', async () => { commitEdit(); refreshPivots(false); if (data) { const n = data.refreshCleans(); if (n) UI.toast(`${n} cleaned table${n === 1 ? '' : 's'} refreshed`); await data.refreshQueries(); } if (forms && (book.forms || []).some(f => f.id)) { const n = await forms.refreshAll(false); if (n) UI.toast(`${n} new form response${n === 1 ? '' : 's'}`); } });
+  document.getElementById('refreshAll').addEventListener('click', async () => { commitEdit(); refreshPivots(false); if (data) { const n = data.refreshCleans(); if (n) UI.toast(`${n} cleaned table${n === 1 ? '' : 's'} refreshed`); await data.refreshQueries(); } if (connect && book.sheets.some(s => s.folder)) { const n = await connect.refreshFolders(); if (n) UI.toast(`${n} folder${n === 1 ? '' : 's'} read again`); } if (forms && (book.forms || []).some(f => f.id)) { const n = await forms.refreshAll(false); if (n) UI.toast(`${n} new form response${n === 1 ? '' : 's'}`); } });
 
   // ---------- Editing group ----------
   function clearRange(what) {
@@ -2416,8 +2522,8 @@
   };
   const chartColors = ch => (CHART_STYLES[ch.style] || CHART_STYLES.office).colors;
   const CHART_TYPES = ['bar', 'line', 'pie', 'hbar', 'area', 'scatter', 'doughnut', 'combo', 'waterfall', 'funnel', 'map'];
-  function insertChart(type) {
-    const g = opRange();
+  function insertChart(type, range) {
+    const g = range || opRange();
     if (!guardSheet('objects')) return;
     if (g.r1 === g.r2 && g.c1 === g.c2) return UI.toast('Select the data for the chart first (include labels)');
     if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 20000) return UI.toast('Select a smaller range for the chart');
@@ -2438,7 +2544,8 @@
     const rows = [];
     for (let r = p.row; r <= q.row; r++) { const row = []; for (let c = p.col; c <= q.col; c++) row.push(engine.value(src.name, r, c)); rows.push(row); }
     const scatter = ch.type === 'scatter';
-    const hasRowLabels = scatter ? rows[0].length > 1 : rows.slice(1).some(r => typeof r[0] === 'string' && r[0] !== '') || (rows.length > 1 && rows.every(r => typeof r[0] !== 'number'));
+    // The first column labels the points when it holds text, or when the chart says so (a timeline of numbers, as in a forecast).
+    const hasRowLabels = scatter ? rows[0].length > 1 : !!ch.catCol || rows.slice(1).some(r => typeof r[0] === 'string' && r[0] !== '') || (rows.length > 1 && rows.every(r => typeof r[0] !== 'number'));
     const hasHeader = rows[0].slice(hasRowLabels ? 1 : 0).some(v => typeof v === 'string' && v !== '');
     const body = hasHeader ? rows.slice(1) : rows;
     const labels = body.map((r, i) => hasRowLabels ? String(r[0]) : String(i + 1));
@@ -2454,6 +2561,8 @@
       series.push({
         name: hasHeader ? String(rows[0][ci]) : 'Series ' + (k + 1),
         values: body.map(r => (typeof r[ci] === 'number' ? r[ci] : 0)),
+        // Blank cells: a gap in a line (a forecast's actual values end where the forecast starts).
+        raw: body.map(r => (typeof r[ci] === 'number' ? r[ci] : null)),
         nameRef: hasHeader ? ref(col, p.row, col, p.row) : null,
         valRef: ref(col, r1, col, r2)
       });
@@ -2516,8 +2625,8 @@
       });
       return;
     }
-    if (ch.type === 'scatter') return drawScatter(ctx, data, W, H, C);
-    const all = data.series.flatMap(s => s.values);
+    if (ch.type === 'scatter') return drawScatter(ctx, data, W, H, C, ch);
+    const all = data.series.flatMap(s => (s.raw && s.raw.some(v => v === null) && (ch.type === 'line' || ch.type === 'area') ? s.raw.filter(v => v !== null) : s.values));
     let max = Math.max(0, ...all), min = Math.min(0, ...all);
     if (max === min) max = min + 1;
     const step = niceStep((max - min) / 5);
@@ -2556,6 +2665,15 @@
       ctx.fillStyle = ctx.strokeStyle = col;
       const asLine = ch.type === 'line' || (ch.type === 'combo' && si === data.series.length - 1 && data.series.length > 1);
       const yOf = v => B - (v - min) / (max - min) * (B - T);
+      if ((ch.type === 'area' || asLine) && s.raw && s.raw.some(v => v === null) && s.raw.some(v => v !== null)) {
+        // A series with blanks: drawn in pieces, with nothing where the cells are empty.
+        ctx.strokeStyle = col; ctx.lineWidth = 2.5; ctx.beginPath();
+        let on = false;
+        s.raw.forEach((v, i) => { if (v === null) { on = false; return; } const x = L + band * i + band / 2, y = yOf(v); if (on) ctx.lineTo(x, y); else ctx.moveTo(x, y); on = true; });
+        ctx.stroke();
+        if (s.raw.filter(v => v !== null).length <= 60) s.raw.forEach((v, i) => { if (v === null) return; ctx.beginPath(); ctx.arc(L + band * i + band / 2, yOf(v), 3, 0, Math.PI * 2); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke(); });
+        return;
+      }
       if (ch.type === 'area' || asLine) {
         const pts = s.values.map((v, i) => [L + band * i + band / 2, yOf(v)]);
         if (ch.type === 'area') {
@@ -2587,6 +2705,14 @@
         });
       }
     });
+    if (ch.trend && TREND_CHARTS.includes(ch.type)) {
+      data.series.forEach((s, si) => {
+        // Categories are numbered from 1, as Excel does for a trendline.
+        const col = C[si % C.length], xs = s.values.map((_, i) => i + 1);
+        if (horizontal) drawTrend(ctx, ch, xs, s.values, i => T + band * (i - 1) + band / 2, v => L + (v - min) / (max - min) * (R - L), col, si, true);
+        else drawTrend(ctx, ch, xs, s.values, i => L + band * (i - 1) + band / 2, v => B - (v - min) / (max - min) * (B - T), col, si);
+      });
+    }
     if (legendH) legend(ctx, data.series.map(s => s.name), C, W, H);
   }
   /**
@@ -2714,7 +2840,7 @@
   }
   const hexAlpha = (hex, a) => { const m = /^#?([0-9a-f]{6})$/i.exec(hex); if (!m) return hex; const n = parseInt(m[1], 16); return `rgba(${n >> 16},${(n >> 8) & 255},${n & 255},${a})`; };
   /** Scatter: numeric x and y axes, a point per row. */
-  function drawScatter(ctx, data, W, H, C) {
+  function drawScatter(ctx, data, W, H, C, ch) {
     const pts = data.series.map(s => s.values.map((y, i) => [data.xs[i], y]).filter(([x]) => typeof x === 'number'));
     const xsAll = pts.flat().map(p => p[0]), ysAll = pts.flat().map(p => p[1]);
     if (!xsAll.length) return;
@@ -2727,12 +2853,39 @@
     for (let v = y0; v <= y1 + ys / 1e6; v += ys) { ctx.strokeStyle = Math.abs(v) < ys / 1e6 ? BASE : GRID; const y = Math.round(Y(v)) + 0.5; ctx.beginPath(); ctx.moveTo(L, y); ctx.lineTo(R, y); ctx.stroke(); ctx.textAlign = 'right'; ctx.fillText(fmtNum(v), L - 8, y + 4); }
     for (let v = x0; v <= x1 + xs / 1e6; v += xs) { ctx.textAlign = 'center'; ctx.fillText(fmtNum(v), X(v), B + 16); }
     pts.forEach((list, si) => list.forEach(([x, y]) => { ctx.beginPath(); ctx.arc(X(x), Y(y), 4, 0, Math.PI * 2); ctx.fillStyle = hexAlpha(C[si % C.length], 0.8); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1; ctx.stroke(); }));
+    if (ch && ch.trend) pts.forEach((list, si) => drawTrend(ctx, ch, list.map(p => p[0]), list.map(p => p[1]), X, Y, C[si % C.length], si));
     if (legendH) legend(ctx, data.series.map(s => s.name), C, W, H);
   }
   function niceStep(raw) {
     const p = Math.pow(10, Math.floor(Math.log10(raw || 1)));
     const f = raw / p;
     return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 5 ? 5 : 10) * p;
+  }
+  // Trendlines: through each series, dashed in its colour, with the equation and R² if asked.
+  const TRENDS = { linear: 'Linear', exp: 'Exponential', log: 'Logarithmic', poly: 'Polynomial', movavg: 'Moving average' };
+  const TREND_CHARTS = ['bar', 'hbar', 'line', 'area', 'scatter', 'combo'];
+  function drawTrend(ctx, ch, xs, ys, X0, Y0, col, k, flip) {
+    // Horizontal bars: the categories run down and the values across.
+    const X = flip ? (x, y) => Y0(y) : x => X0(x), Y = flip ? (y, x) => X0(x) : y => Y0(y);
+    const pts = xs.map((x, i) => [x, ys[i]]).filter(p => typeof p[0] === 'number' && typeof p[1] === 'number');
+    if (pts.length < 2) return;
+    ctx.save();
+    ctx.strokeStyle = col; ctx.lineWidth = 1.75; ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    let label = '';
+    if (ch.trend === 'movavg') {
+      // A two-point moving average, as Excel's default.
+      pts.slice(1).forEach(([x, y], i) => { const v = (y + pts[i][1]) / 2; if (i) ctx.lineTo(X(x, v), Y(v, x)); else ctx.moveTo(X(x, v), Y(v, x)); });
+    } else {
+      const fit = F.trendFit(pts.map(p => p[0]), pts.map(p => p[1]), ch.trend, 2);
+      if (!fit) { ctx.restore(); return; }
+      const x0 = Math.min(...pts.map(p => p[0])), x1 = Math.max(...pts.map(p => p[0]));
+      for (let i = 0; i <= 60; i++) { const x = x0 + (x1 - x0) * i / 60, y = fit.f(x); if (!isFinite(y)) continue; if (i) ctx.lineTo(X(x, y), Y(y, x)); else ctx.moveTo(X(x, y), Y(y, x)); }
+      label = `${fit.eq}   R² = ${fit.r2.toFixed(4)}`;
+    }
+    ctx.stroke();
+    ctx.restore();
+    if (ch.trendEq && label) { ctx.save(); ctx.fillStyle = col; ctx.font = `600 11px ${FONT}`; ctx.textAlign = 'right'; ctx.fillText(label, ch.w - 18, 40 + k * 14); ctx.restore(); }
   }
   /** Chart styles: a palette per style (shown as swatches), and data labels on or off. */
   // icons: tag check
@@ -2765,6 +2918,29 @@
     lab.innerHTML = '<span class="ico" data-icon="tag"></span><span>Data labels</span><span class="ico check" data-icon="check"></span>';
     lab.addEventListener('click', () => { snapshot(); ch.labels = !ch.labels; lab.setAttribute('aria-checked', String(ch.labels)); redraw(); });
     menu.appendChild(lab);
+    if (TREND_CHARTS.includes(ch.type)) {
+      const head = document.createElement('div');
+      head.className = 'menu-head';
+      head.textContent = 'Trendline';
+      menu.appendChild(head);
+      [['', 'None'], ...Object.entries(TRENDS)].forEach(([id, name]) => {
+        const b = document.createElement('button');
+        b.setAttribute('role', 'menuitemradio');
+        b.dataset.trend = id;
+        b.setAttribute('aria-checked', String((ch.trend || '') === id));
+        b.innerHTML = '<span class="ico check" data-icon="check"></span><span></span>';
+        b.lastChild.textContent = name;
+        b.addEventListener('click', () => { snapshot(); if (id) ch.trend = id; else { delete ch.trend; delete ch.trendEq; } menu.querySelectorAll('[data-trend]').forEach(x => x.setAttribute('aria-checked', String(x === b))); redraw(); });
+        menu.appendChild(b);
+      });
+      const eq = document.createElement('button');
+      eq.setAttribute('role', 'menuitemcheckbox');
+      eq.setAttribute('aria-checked', String(!!ch.trendEq));
+      eq.className = 'labels-toggle';
+      eq.innerHTML = '<span class="ico" data-icon="sigma"></span><span>Equation and R²</span><span class="ico check" data-icon="check"></span>';
+      eq.addEventListener('click', () => { if (!ch.trend) return UI.toast('Choose a trendline first'); snapshot(); ch.trendEq = !ch.trendEq; eq.setAttribute('aria-checked', String(ch.trendEq)); redraw(); });
+      menu.appendChild(eq);
+    }
     const r = btn.getBoundingClientRect();
     menu.style.top = Math.round(r.bottom + 6) + 'px';
     menu.style.left = Math.round(Math.min(r.left, window.innerWidth - 240)) + 'px';
@@ -2846,6 +3022,40 @@
     uniqueName,
     addSheetNamed: name => { const s = newSheet(uniqueName(cleanSheetName(name) || 'Sheet' + (book.sheets.length + 1))); book.sheets.push(s); book.active = book.sheets.length - 1; active = anchor = { r: 0, c: 0 }; return s; }
   });
+  insights = SheetsInsights({
+    dataRegion, sheet, selRange, uniqueName, createPivot,
+    value: (s, r, c) => { const v = engine.value(s.name, r, c); return v instanceof F.FormulaError ? v.error : v; },
+    selectRange: g => { anchor = { r: g.r1, c: g.c1 }; active = { r: g.r2, c: g.c2 }; scrollIntoView(g.r1, g.c1); drawSelection(); },
+    insertChart: (type, g) => insertChart(type, g),
+    freeColumnRight: g => { const u = usedBounds(); return Math.max(u.c, g.c2) + 2; },
+    copyColumns: (g, cols, at) => { snapshot(); cols.forEach((c, k) => { for (let r = g.r1; r <= g.r2; r++) { const cell = cellAt(r, c); setCell(r, at + k, { v: cell ? cell.v : '', ...(cell && cell.s ? { s: { ...cell.s } } : {}) }); } }); changed(); },
+    createSheetWith: (name, cells, opts) => {
+      snapshot();
+      const s = newSheet(name);
+      book.sheets.splice(book.active + 1, 0, s);
+      cells.forEach(([r, c, v, st]) => setCell(r, c, st ? { v, s: st } : { v }, s));
+      s.freezeRow = true;
+      if (opts.colWidths) s.colWidths = opts.colWidths;
+      book.active = book.sheets.indexOf(s);
+      active = anchor = { r: 0, c: 0 };
+      wrap.scrollTop = wrap.scrollLeft = 0;
+      if (opts.chart) s.charts.push({ ...opts.chart, x: 60 + Object.values(s.colWidths).reduce((a, b) => a + b, 0) + 30, y: 30, w: 560, h: 320, style: 'modern' });
+      buildGrid();
+      changed();
+    }
+  });
+  connect = SheetsConnect({
+    book: () => book, parseSpreadsheet, rawFor, snapshot,
+    setCell: (r, c, props, s) => setCell(r, c, props, s),
+    addSheet: name => { const s = newSheet(uniqueName(cleanSheetName(name) || 'Data')); book.sheets.splice(book.active + 1, 0, s); book.active = book.sheets.indexOf(s); active = anchor = { r: 0, c: 0 }; return s; },
+    done: () => { buildGrid(); changed(); }
+  });
+  document.getElementById('analyzeBtn').addEventListener('click', () => { commitEdit(); insights.analyzePane(); });
+  document.getElementById('forecastBtn').addEventListener('click', () => { commitEdit(); insights.forecastSheet(); });
+  document.getElementById('fromFolder').addEventListener('click', () => { commitEdit(); connect.fromFolder(); });
+  document.getElementById('fromDb').addEventListener('click', () => { commitEdit(); connect.fromDatabase(); });
+  document.getElementById('relBtn').addEventListener('click', () => { commitEdit(); relationshipsDialog(); });
+  document.getElementById('recordBtn').addEventListener('click', () => toggleRecording());
   forms = SheetsForms({ book: () => book, sheetByName, newSheet, uniqueName, setCell, snapshot, state, engine, buildGrid: () => { commitEdit(); buildGrid(); } });
   const on = (id, fn) => document.getElementById(id).addEventListener('click', fn);
   on('formBtn', () => { commitEdit(); forms.formsPane(); });
@@ -2893,6 +3103,8 @@
     if (typeof ch.sheet === 'string' && ch.sheet.length <= 31) out.sheet = ch.sheet;
     if (typeof ch.style === 'string' && Object.prototype.hasOwnProperty.call(CHART_STYLES, ch.style)) out.style = ch.style;
     if (ch.labels === true) out.labels = true;
+    if (ch.catCol === true) out.catCol = true;
+    if (TRENDS[ch.trend] && TREND_CHARTS.includes(out.type)) { out.trend = ch.trend; if (ch.trendEq === true) out.trendEq = true; }
     return out;
   }
   const cleanSizes = (obj, lo, hi) => {
@@ -3112,6 +3324,7 @@
       if (ms && ms.name === sn && Array.isArray(ms.slicers)) s.slicers = ms.slicers.map(SheetsTables.cleanSlicer).filter(Boolean).slice(0, 100);
       if (ms && ms.name === sn && Array.isArray(ms.queries)) s.queries = cleanQueries(ms.queries);
       if (ms && ms.name === sn && Array.isArray(ms.cleans)) s.cleans = cleanCleans(ms.cleans);
+      if (ms && ms.name === sn && ms.folder && typeof ms.folder.path === 'string' && ms.folder.path.length <= 1000) s.folder = { path: ms.folder.path, h: Math.max(0, Math.min(MAX_ROWS, Math.floor(+ms.folder.h) || 0)), w: Math.max(0, Math.min(MAX_COLS, Math.floor(+ms.folder.w) || 0)) };
       if (ms && ms.name === sn && cleanSolver(ms.solver)) s.solver = cleanSolver(ms.solver);
       if (ms && ms.name === sn && Array.isArray(ms.dv)) s.dv = ms.dv.map(SheetsDV.clean).filter(Boolean).slice(0, 500);
       else if (ex && typeof ex.dv === 'string' && ex.dv) {
@@ -3127,7 +3340,7 @@
       .filter((n, i, all) => all.findIndex(x => x.name.toLowerCase() === n.name.toLowerCase()) === i).slice(0, 5000);
     const scripts = meta && Array.isArray(meta.scripts) ? meta.scripts.filter(x => x && typeof x.name === 'string' && typeof x.code === 'string').map(x => ({ name: x.name.slice(0, 60), code: x.code.slice(0, 200000) })).slice(0, 100) : [];
     const formList = meta ? SheetsForms.cleanList(meta.forms) : [];
-    return { sheets, active: Math.max(0, Math.min(act, sheets.length - 1)), names, scripts, forms: formList };
+    return { sheets, active: Math.max(0, Math.min(act, sheets.length - 1)), names, scripts, forms: formList, relationships: meta ? cleanRelationships(meta.relationships) : [] };
   }
 
   function toWorkbook() {
@@ -3187,9 +3400,10 @@
       if (s.merges.length) ws['!merges'] = s.merges.map(m => ({ s: { r: m.r1, c: m.c1 }, e: { r: m.r2, c: m.c2 } }));
       XLSX.utils.book_append_sheet(wb, ws, s.name);
       meta.sheets.push({ name: s.name, protect: s.protect || null, styles, charts: s.charts, colWidths: s.colWidths, freezeRow: !!s.freezeRow, freezeCol: !!s.freezeCol, cf: s.cf || [], pivots: s.pivots || [], dv: s.dv || [],
-        tables: s.tables || [], sparklines: s.sparklines || [], slicers: s.slicers || [], queries: s.queries || [], cleans: s.cleans || [], solver: s.solver || null });
+        tables: s.tables || [], sparklines: s.sparklines || [], slicers: s.slicers || [], queries: s.queries || [], cleans: s.cleans || [], solver: s.solver || null, folder: s.folder || null });
     });
     meta.scripts = book.scripts || [];
+    if ((book.relationships || []).length) meta.relationships = book.relationships;
     // Forms keep their owner key, so whoever has the file can collect the answers.
     if ((book.forms || []).length) meta.forms = book.forms.map(f => ({ uid: f.uid, def: f.def, server: f.server, id: f.id, key: f.key, got: f.got, sheet: f.sheet, cols: f.cols }));
     // Workbook names, as Excel's defined names.
@@ -3226,7 +3440,7 @@
       }));
       // Excel has no waterfall, funnel or map in this chart format: it gets columns (bars for a
       // funnel); the chart's own kind comes back from the workbook's Isadek details.
-      parts.push(SheetsCharts.toXml({ type: { waterfall: 'bar', funnel: 'hbar', map: 'bar' }[ch.type] || ch.type, title: ch.title || (series.length === 1 && ch.type !== 'scatter' ? series[0].name : ''), series, palette: chartColors(ch) }));
+      parts.push(SheetsCharts.toXml({ type: { waterfall: 'bar', funnel: 'hbar', map: 'bar' }[ch.type] || ch.type, title: ch.title || (series.length === 1 && ch.type !== 'scatter' ? series[0].name : ''), series, palette: chartColors(ch), trend: ch.trend, trendEq: ch.trendEq }));
       const at = (x, y) => { const c = cellOfPx(s, Math.max(0, x - RH_W), 'col'), r = cellOfPx(s, Math.max(0, y - HEAD_H), 'row'); return { col: c.i, colOff: c.off, row: r.i, rowOff: r.off }; };
       anchors.push({ name: ch.title || 'Chart ' + (i + 1), from: at(ch.x, ch.y), to: at(ch.x + ch.w, ch.y + ch.h) });
     });
@@ -3256,7 +3470,7 @@
       const x = RH_W + colLeft(s, a.from.col) + a.from.colOff / EMU, y = HEAD_H + rowTopOf(s, a.from.row) + a.from.rowOff / EMU;
       const w = a.to ? RH_W + colLeft(s, a.to.col) + a.to.colOff / EMU - x : a.ext ? a.ext.cx / EMU : 440;
       const h = a.to ? HEAD_H + rowTopOf(s, a.to.row) + a.to.rowOff / EMU - y : a.ext ? a.ext.cy / EMU : 280;
-      const ch = cleanChart({ type: spec.type, range: SheetsCF.refOf(box), x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), title: spec.title, ...(sheetName.toLowerCase() !== s.name.toLowerCase() ? { sheet: sheetName } : {}) });
+      const ch = cleanChart({ type: spec.type, range: SheetsCF.refOf(box), x: Math.round(x), y: Math.round(y), w: Math.round(w), h: Math.round(h), title: spec.title, trend: spec.trend, trendEq: spec.trendEq, ...(sheetName.toLowerCase() !== s.name.toLowerCase() ? { sheet: sheetName } : {}) });
       if (ch) out.push(ch);
     });
     return out;
@@ -3740,7 +3954,7 @@
   window.AtlasSheets = {
     loadFile, serialize, select, refreshPivots, get live() { return live; },
     get book() { return book; },
-    get forms() { return forms; },
+    get forms() { return forms; }, createPivot,
     setCell: (ref, v) => { const p = parseRef(ref); setCell(p.row, p.col, { v }); ensureSize(p.row, p.col); changed(); },
     valueOf: ref => { const p = parseRef(ref); return valueAt(p.row, p.col); },
     rawOf: ref => { const p = parseRef(ref); return rawAt(p.row, p.col); },

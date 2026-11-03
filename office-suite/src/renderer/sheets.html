@@ -208,7 +208,16 @@
       <button class="btn big" id="refreshAll" title="Refresh every PivotTable and web query"><span class="ico" data-icon="refresh-cw"></span>Refresh<br>All</button>
       <button class="btn big" id="fromWeb" title="Get data from a CSV or JSON file, or the tables of a web page"><span class="ico" data-icon="globe"></span>From<br>Web</button>
       <button class="btn big" id="cleanData" title="Clean and reshape the selected data step by step (trim, split, filter, remove duplicates, group…)"><span class="ico" data-icon="wand-sparkles"></span>Clean &amp;<br>Transform</button>
+      <div class="controls col">
+        <button class="btn" id="fromFolder" title="Combine every spreadsheet, CSV and JSON file in a folder into one table"><span class="ico" data-icon="folder-input"></span>From Folder</button>
+        <button class="btn" id="fromDb" title="Import a table or a query from a SQLite database file"><span class="ico" data-icon="database"></span>From Database</button>
+        <button class="btn" id="relBtn" title="Relate tables by a shared column, so PivotTables can use columns from both (the data model)"><span class="ico" data-icon="link-2"></span>Relationships</button>
+      </div>
     </div><div class="label">Get &amp; Transform Data</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="analyzeBtn" title="What stands out in this table: trends, top categories, unusual values, related columns"><span class="ico" data-icon="sparkles"></span>Analyze<br>Data</button>
+      <button class="btn big" id="forecastBtn" title="Continue a series of dates and values into the future, with a confidence band"><span class="ico" data-icon="trending-up"></span>Forecast<br>Sheet</button>
+    </div><div class="label">Analysis</div></div>
     <div class="group"><div class="controls">
       <button class="btn big" id="sortAsc2"><span class="ico" data-icon="arrow-down-a-z"></span>Sort<br>A to Z</button>
       <button class="btn big" id="sortDesc2"><span class="ico" data-icon="arrow-down-z-a"></span>Sort<br>Z to A</button>
@@ -231,6 +240,7 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="scriptsBtn" title="Scripts that change this workbook (JavaScript)"><span class="ico" data-icon="square-code"></span>Scripts</button>
       <button class="btn big" id="newScript"><span class="ico" data-icon="file-code"></span>New<br>Script</button>
+      <button class="btn big" id="recordBtn" aria-pressed="false" title="Record what you type and format as a script you can run again"><span class="ico" data-icon="circle-dot"></span><span class="lbl">Record Actions</span></button>
     </div><div class="label">Scripting</div></div>
   </div>
 
@@ -374,6 +384,8 @@
 <script src="js/sheets-clean.js"></script>
 <script src="js/sheets-python.js"></script>
 <script src="js/sheets-data.js"></script>
+<script src="js/sheets-insights.js"></script>
+<script src="js/sheets-connect.js"></script>
 <script src="js/forms-core.js"></script>
 <script src="js/forms-view.js"></script>
 <script src="js/forms-client.js"></script>
