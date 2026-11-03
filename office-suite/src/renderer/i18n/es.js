@@ -5,6 +5,7 @@
   "Clean & Transform": "Limpiar y transformar", "Applied steps": "Pasos aplicados",
   "Waterfall": "Cascada", "Funnel": "Embudo", "Map": "Mapa", "Run Python": "Ejecutar Python",
   "Cameo": "Cameo", "Rehearse with Coach": "Ensayar con el entrenador", "Live Captions": "Subtítulos en directo", "Speaking": "Hablar",
+  "Add-ins": "Complementos", "Add files": "Agregar archivos",
   "Sign Digitally": "Firmar digitalmente", "Digital ID": "Id. digital", "Digital Signature": "Firma digital",
   "Web Clip": "Recorte web", "Picture to Text": "Imagen a texto", "Ink to Text": "Entrada de lápiz a texto", "Math": "Matemáticas", "Convert": "Convertir", "Capture": "Capturar", "Expression or equation": "Expresión o ecuación",
   "From Folder": "Desde carpeta", "From Database": "Desde base de datos", "Relationships": "Relaciones", "Analyze Data": "Analizar datos", "Forecast Sheet": "Hoja de previsión", "Analysis": "Análisis", "Record Actions": "Grabar acciones",

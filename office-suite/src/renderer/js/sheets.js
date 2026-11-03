@@ -157,6 +157,7 @@
   // takes back only your own changes (see Collab.replaySince).
   const undoMarks = [], redoMarks = [];
   let live = null, peers = [], peerLayer = null;
+  let addins = null;
   const liveMark = () => (live ? live.mark() : 0);
   let undoBytes = 0;
   const UNDO_BUDGET = 150e6; // characters of history kept
@@ -3925,6 +3926,37 @@
     drawSelection();
     UI.toast(rows.length === 1 && rows[0].length === 1 ? 'Put in ' + addr(active.r, active.c) : 'Pasted into ' + rangeText(selRange()));
   }
+  // ---------- Add-ins (addins.js): what they may read and change ----------
+  const addinRange = a => {
+    const [x, y] = String(a).replace(/\$/g, '').toUpperCase().split(':');
+    const p = parseRef(x), q = y ? parseRef(y) : p;
+    if (!p || !q) throw new Error(`“${a}” is not a cell or range address`);
+    const g = { r1: Math.min(p.row, q.row), c1: Math.min(p.col, q.col), r2: Math.max(p.row, q.row), c2: Math.max(p.col, q.col) };
+    if ((g.r2 - g.r1 + 1) * (g.c2 - g.c1 + 1) > 1e6) throw new Error('That range is too large');
+    return g;
+  };
+  const addinValue = v => (v instanceof F.FormulaError ? v.error : v === undefined || v === null ? '' : v);
+  const gridOf = g => Array.from({ length: g.r2 - g.r1 + 1 }, (_, i) => Array.from({ length: g.c2 - g.c1 + 1 }, (_, j) => addinValue(valueAt(g.r1 + i, g.c1 + j))));
+  addins = Addins.attach({
+    app: 'sheets',
+    getText: () => sheet().name + '\n' + Object.keys(sheet().cells).slice(0, 100000).map(k => k + '\t' + addinValue(valueAt(parseRef(k).row, parseRef(k).col))).join('\n'),
+    getSelection: () => rangeText(selRange()),
+    getSelectedRange: () => { const g = selRange(); return { address: rangeText(g), sheet: sheet().name, values: gridOf(g) }; },
+    getValues: a => gridOf(addinRange(a)),
+    setValues(a, values) {
+      if (!Array.isArray(values) || !values.every(Array.isArray)) throw new Error('Values must be rows of values, like [[1, 2], [3, 4]]');
+      const g = addinRange(a);
+      if (!guard({ r1: g.r1, c1: g.c1, r2: g.r1 + values.length - 1, c2: g.c1 + Math.max(0, ...values.map(r => r.length)) - 1 })) throw new Error('Those cells can’t be changed');
+      commitEdit();
+      snapshot();
+      values.slice(0, 100000).forEach((row, i) => row.slice(0, 1000).forEach((v, j) => {
+        const raw = typeof v === 'string' && v[0] === '=' ? v : v === null || v === undefined ? '' : rawFor(v);
+        setCell(g.r1 + i, g.c1 + j, { v: raw }); ensureSize(g.r1 + i, g.c1 + j);
+      }));
+      changed();
+      return true;
+    }
+  });
   Assistant.attach({
     app: 'sheets',
     context: aiContext,
@@ -3957,6 +3989,7 @@
   };
 
   window.AtlasSheets = {
+    get addins() { return addins; },
     loadFile, serialize, select, refreshPivots, get live() { return live; },
     get book() { return book; },
     get forms() { return forms; }, createPivot,

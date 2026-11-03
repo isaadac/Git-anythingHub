@@ -3401,6 +3401,28 @@
     state.markDirty();
     UI.toast(`Built ${slides.length} slide${slides.length === 1 ? '' : 's'}`);
   }
+  // ---------- Add-ins (addins.js) ----------
+  const textOfHtml = h => { const d = new DOMParser().parseFromString(String(h || ''), 'text/html').body; d.querySelectorAll('p, li, br, div').forEach(n => n.after('\n')); return d.textContent.replace(/\n{2,}/g, '\n').trim(); };
+  const addins = Addins.attach({
+    app: 'slides',
+    getSlides: () => pres.slides.map((s, i) => ({ index: i + 1, title: textOfHtml((s.elements.find(e => e.ph === 'title') || {}).html), text: s.elements.filter(e => e.type === 'text' && e.ph !== 'title').map(e => textOfHtml(e.html)).filter(Boolean).join('\n'), notes: s.notes || '' })),
+    getText: () => pres.slides.map((s, i) => `## Slide ${i + 1}\n` + s.elements.filter(e => e.type === 'text').map(e => textOfHtml(e.html)).filter(Boolean).join('\n')).join('\n\n'),
+    getSelection: () => { const s = slide(), e = s && s.elements.find(x => x.id === selectedId); return e && e.type === 'text' ? textOfHtml(e.html) : ''; },
+    addSlide(title, bullets) {
+      if (masterTarget) throw new Error('Close Master View first');
+      commitEditing();
+      snapshot();
+      const sl = newSlide(bullets.length ? 'content' : 'title');
+      const t = sl.elements.find(e => e.ph === 'title'), b = sl.elements.find(e => e.ph === 'body' || e.ph === 'subtitle');
+      if (t) t.html = escapeHtml(title.slice(0, 500));
+      if (b && bullets.length) b.html = b.ph === 'body' ? toListHtml(bullets.slice(0, 50).map(x => x.slice(0, 1000))) : escapeHtml(bullets.join(' ').slice(0, 2000));
+      pres.slides.splice(++current, 0, sl);
+      selectedId = null;
+      renderAll();
+      state.markDirty();
+      return current + 1;
+    }
+  });
   Assistant.attach({
     app: 'slides',
     context: aiContext,
@@ -3460,5 +3482,5 @@
     } finally { box.remove(); }
   };
 
-  window.AtlasSlides = { loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide, get live() { return live; }, get showIndex() { return presenter.hidden ? null : showIndex; } };
+  window.AtlasSlides = { addins, loadFile, serialize, get pres() { return pres; }, present, goTo, addSlide, get live() { return live; }, get showIndex() { return presenter.hidden ? null : showIndex; } };
 })();

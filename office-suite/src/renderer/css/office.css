@@ -422,7 +422,15 @@ html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame
 @media (max-width: 1180px) { .tell-me input { width: 200px; } }
 
 /* Assistant: what to include, and dictation */
-.ai-ctxs { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-6); }
+.ai-ctxs { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-6); align-items: center; }
+.ai-attach { border: 1px solid var(--border); background: var(--surface); color: var(--text-2); border-radius: var(--r-pill); padding: 2px 10px 2px 6px; font-size: var(--fs-sm); cursor: pointer; display: inline-flex; align-items: center; gap: 4px; }
+.ai-attach:hover { background: var(--hover); }
+.ai-files { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
+.ai-files[hidden] { display: none; }
+.ai-file { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; background: var(--accent-soft); color: var(--accent-fg); border-radius: var(--r-pill); padding: 2px 4px 2px 10px; font-size: var(--fs-sm); }
+.ai-file .nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; }
+.ai-file .rm { border: 0; background: none; color: inherit; cursor: pointer; font-size: 15px; line-height: 1; padding: 0 4px; }
+.ai-pane.drop { outline: 2px dashed var(--accent); outline-offset: -6px; }
 .ai-input .mic { width: 32px; height: 32px; border-radius: var(--r-pill); border: 1px solid var(--border); background: var(--surface); color: var(--text-2); display: grid; place-items: center; cursor: pointer; margin-left: auto; }
 .ai-input .mic.on, #dictate.on { background: var(--danger-bg); color: var(--danger-fg); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 .ai-input .mic.on .ico, #dictate.on .ico { animation: pulse 1.2s var(--ease-in-out) infinite; }
@@ -509,3 +517,20 @@ html.capturing ::selection { background: transparent; }
 .protect-badge { display: inline-flex; align-items: center; color: var(--muted); margin-right: var(--sp-3); }
 .protect-badge[hidden] { display: none; }
 .protect-badge svg { width: 14px; height: 14px; }
+
+/* Add-ins: their pane (built from plain blocks) */
+.addin-pane { position: fixed; right: var(--sp-4); top: calc(var(--chrome-h, 194px) + var(--sp-2)); bottom: calc(var(--status-h) + var(--sp-2)); width: min(320px, 92vw); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); box-shadow: var(--sh-3); z-index: 58; display: flex; flex-direction: column; overflow: hidden; }
+.addin-pane[hidden] { display: none; }
+.addin-pane header { display: flex; align-items: center; padding: var(--sp-5) var(--sp-5) var(--sp-4) var(--sp-6); border-bottom: 1px solid var(--border); }
+.addin-pane header .sp { flex: 1; }
+.addin-pane header button { border: 0; background: none; cursor: pointer; color: var(--muted); width: 28px; height: 28px; border-radius: var(--r-sm); }
+.addin-pane .body { flex: 1; overflow: auto; padding: var(--sp-5) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-4); font-size: var(--fs-md); }
+.addin-pane .body h3 { margin: var(--sp-3) 0 0; font-size: var(--fs-md); }
+.addin-pane .body p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.addin-pane .body ul { margin: 0; padding-left: 1.3em; }
+.addin-pane .body label { display: flex; flex-direction: column; gap: 4px; color: var(--text-2); font-size: var(--fs-sm); }
+.addin-pane .body input { padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-md); background: var(--surface); color: var(--text); font: inherit; }
+.addin-pane .body button { align-self: flex-start; padding: 6px 12px; border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: var(--r-md); cursor: pointer; }
+.addin-pane .body button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast, #fff); }
+.addin-pane .body progress { width: 100%; }
+.addin-pane .by { padding: var(--sp-3) var(--sp-6); color: var(--muted); font-size: var(--fs-xs); border-top: 1px solid var(--border); }

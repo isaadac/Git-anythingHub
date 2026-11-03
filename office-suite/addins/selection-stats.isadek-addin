@@ -1,0 +1,22 @@
+{
+  "id": "io.github.isaadac.selection-stats",
+  "name": "Selection Statistics",
+  "version": "1.0.0",
+  "author": "Isadek Office samples",
+  "description": "Sum, average, median, spread and more for the selected cells, and puts them in the sheet.",
+  "apps": [
+    "sheets"
+  ],
+  "permissions": [
+    "read",
+    "write"
+  ],
+  "commands": [
+    {
+      "id": "stats",
+      "label": "Statistics",
+      "icon": "calculator"
+    }
+  ],
+  "script": "// Selection Statistics: sum, average, median, spread and more for the selected cells,\n// with a button that writes them beside the selection.\nlet last = null;\nconst fmt = n => (Number.isInteger(n) ? n.toLocaleString() : n.toLocaleString(undefined, { maximumFractionDigits: 4 }));\nasync function show() {\n  const r = await isadek.document.getSelectedRange();\n  const nums = r.values.flat().filter(v => typeof v === 'number' && Number.isFinite(v)).sort((a, b) => a - b);\n  if (!nums.length) return isadek.ui.showPane('Selection Statistics', [{ type: 'text', text: 'Select cells with numbers in them (' + r.address + ' has none).' }]);\n  const n = nums.length, sum = nums.reduce((a, b) => a + b, 0), mean = sum / n;\n  const median = n % 2 ? nums[(n - 1) / 2] : (nums[n / 2 - 1] + nums[n / 2]) / 2;\n  const sd = n > 1 ? Math.sqrt(nums.reduce((a, b) => a + (b - mean) ** 2, 0) / (n - 1)) : 0;\n  last = { address: r.address, rows: [['Count', n], ['Sum', sum], ['Average', mean], ['Median', median], ['Min', nums[0]], ['Max', nums[n - 1]], ['Std. deviation', sd]] };\n  await isadek.ui.showPane('Selection Statistics', [\n    { type: 'heading', text: r.sheet + '!' + r.address },\n    { type: 'list', items: last.rows.map(([k, v]) => k + ': ' + fmt(v)) },\n    { type: 'button', id: 'write', label: 'Put in Sheet', primary: true },\n    { type: 'button', id: 'refresh', label: 'Refresh' }\n  ]);\n}\nisadek.onCommand('stats', show);\nisadek.onAction('refresh', show);\nisadek.onAction('write', async () => {\n  if (!last) return;\n  // Two columns to the right of the selection's last column, from its first row.\n  const m = /^([A-Z]+)(\\d+)(?::([A-Z]+)(\\d+))?$/.exec(last.address);\n  const toNum = s => [...s].reduce((a, c) => a * 26 + c.charCodeAt(0) - 64, 0);\n  const toCol = n => { let s = ''; for (; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s; return s; };\n  const col = toCol(toNum(m[3] || m[1]) + 2);\n  await isadek.document.setValues(col + m[2], last.rows);\n  isadek.ui.toast('Statistics put in ' + col + m[2]);\n});"
+}

@@ -47,6 +47,11 @@ changes from other people in a live session.
   like any pasted HTML. Text recognition runs in a worker from the app's own files.
 - The Assistant accepts pictures only as base64 PNG, JPEG, GIF or WebP (up to four, 3 MB
   each), never by address.
+- Add-ins run each in a dedicated worker with network, storage and page APIs removed; every call
+  to the document is checked against the permissions shown at install (read, write), results are
+  copied as data, panes are built from plain text blocks, and a command is stopped after a minute.
+- Files added to the Assistant are read into text on the device (JSZip, pdf.js); nothing in them
+  runs.
 - Digital signatures (Isadek PDF) are made and checked with WebCrypto (RSA PKCS#1 v1.5 or ECDSA,
   SHA-256); only the CMS and certificate structures are read by the app's own DER code, with
   bounds checks. A Digital ID's private key is created non-extractable and kept in the browser's

@@ -1857,6 +1857,18 @@ ${rules}</style></head>
     text = Assistant.spaced(doc, text);
     if (review.tracking) review.insertText(text); else document.execCommand('insertText', false, text);
   });
+  // ---------- Add-ins (addins.js) ----------
+  const addins = Addins.attach({
+    app: 'write',
+    getText: () => doc.innerText,
+    getSelection: () => { captureSelection(); return savedRange && !savedRange.collapsed ? savedRange.toString() : ''; },
+    insertText(text) {
+      restoreSelection();
+      document.execCommand('insertText', false, String(text).slice(0, 1e6));
+      changed();
+      return true;
+    }
+  });
   Assistant.attach({
     app: 'write',
     context: aiContext,
@@ -1900,5 +1912,5 @@ ${rules}</style></head>
     return { kind: 'write', blocks };
   };
 
-  window.AtlasWrite = { loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; }, get notes() { return notes; }, get forms() { return forms; }, get tools() { return tools; }, get setup() { return setup; } };
+  window.AtlasWrite = { addins, loadFile, serialize, markdownToHtml, htmlToMarkdown, sanitize, get live() { return live; }, get notes() { return notes; }, get forms() { return forms; }, get tools() { return tools; }, get setup() { return setup; } };
 })();
