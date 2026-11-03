@@ -1572,7 +1572,10 @@
   const PROTECTED_MSG = 'The cell or chart you\'re trying to change is on a protected sheet. To make a change, unprotect the sheet (Review > Unprotect Sheet).';
   const isLocked = (r, c) => !(((cellAt(r, c) || {}).s || {}).unlocked);
   /** Whether cells in g may change on this sheet; `allow` names an action the protection may permit. */
+  let liveReadOnly = false; // joined with a link that can only comment or view
+  const LIVE_RO_MSG = 'You joined with a link that can’t change this workbook.';
   function guard(g, allow) {
+    if (liveReadOnly) { UI.toast(LIVE_RO_MSG, 3500); return false; }
     const p = sheet().protect;
     if (!p) return true;
     if (allow && p.allow[allow]) return true;
@@ -1584,6 +1587,7 @@
     return ok;
   }
   function guardSheet(allow) {
+    if (liveReadOnly) { UI.toast(LIVE_RO_MSG, 3500); return false; }
     const p = sheet().protect;
     if (!p || (allow && p.allow[allow])) return true;
     UI.toast(PROTECTED_MSG, 4500);
@@ -3719,6 +3723,7 @@
   }
   live = Collab.attach({
     app: 'sheets', doc: state,
+    readOnly(on) { liveReadOnly = on; if (on) commitEdit(); },
     dirty: () => state.dirty || Object.keys(sheet().cells).length > 0 || book.sheets.length > 1,
     busy: () => editing,
     state() {

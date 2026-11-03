@@ -41,3 +41,21 @@ body[data-pdf-tool="erase"] .pdf-annots > * { cursor: pointer; }
 .sig-pad svg { display: block; width: 100%; height: auto; touch-action: none; cursor: crosshair; border-bottom: 1px dashed #c8ccd4; }
 .sig-dialog .actions .sp { flex: 1; }
 @media print { .titlebar, .ribbon-tabs, .ribbon, .statusbar, .pdf-thumbs, .pdf-find { display: none !important; } .pdf-view { overflow: visible; } .pdf-page { box-shadow: none; break-after: page; } }
+
+/* Digital signatures */
+.sig-bar { display: flex; align-items: center; gap: var(--sp-4); padding: 6px var(--sp-6); font-size: var(--fs-sm); border-bottom: 1px solid var(--border); flex: none; }
+.sig-bar[hidden] { display: none; }
+.sig-bar.good { background: color-mix(in srgb, #107c10 12%, var(--surface)); }
+.sig-bar.warn { background: var(--warn-bg); color: var(--warn-fg); }
+.sig-bar.bad { background: color-mix(in srgb, #c50f1f 14%, var(--surface)); }
+.sig-bar #sigText { flex: 1; }
+.sig-bar button, .sig-item button { border: 1px solid var(--border-strong); background: var(--surface); color: var(--text); border-radius: var(--r-md); padding: 3px 10px; cursor: pointer; }
+.sig-pane { position: fixed; right: var(--sp-4); top: calc(var(--chrome-h, 194px) + var(--sp-2)); bottom: calc(var(--status-h) + var(--sp-2)); width: min(380px, 100vw); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); box-shadow: var(--sh-3); display: flex; flex-direction: column; z-index: 55; overflow: hidden; }
+.sig-pane[hidden] { display: none; }
+.sig-pane header { display: flex; align-items: center; padding: var(--sp-5) var(--sp-6); border-bottom: 1px solid var(--border); }
+.sig-pane header .sp { flex: 1; }
+.sig-pane header button { border: 0; background: none; color: inherit; cursor: pointer; }
+.sig-pane .list { overflow: auto; padding: var(--sp-5) var(--sp-6); display: flex; flex-direction: column; gap: var(--sp-5); }
+.sig-item { border-left: 3px solid var(--border-strong); padding: 4px 0 4px 10px; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.sig-item.good { border-color: #107c10; } .sig-item.warn { border-color: #c19c00; } .sig-item.bad { border-color: #c50f1f; }
+.sig-item button { align-self: flex-start; margin-top: 4px; }

@@ -622,9 +622,9 @@ if (!app.requestSingleInstanceLock()) {
 
   app.whenReady().then(() => {
     // Only the permissions the apps use: clipboard (Paste button), full screen (slide show), the
-    // microphone (narration, audio notes, captions) and, in Slides only, the camera (Cameo) — never
-    // the screen.
-    const allowed = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen']);
+    // microphone (narration, audio notes, captions), notifications (mentions and replies in a live
+    // session) and, in Slides only, the camera (Cameo) — never the screen.
+    const allowed = new Set(['clipboard-read', 'clipboard-sanitized-write', 'fullscreen', 'notifications']);
     const RENDERER_URL = require('url').pathToFileURL(path.join(__dirname, '../renderer/')).href;
     const inSlides = (wc, d) => { const u = (d && d.requestingUrl) || (wc && wc.getURL()) || ''; return u.startsWith(RENDERER_URL + 'slides.html'); };
     const mediaOk = (wc, d) => !!d && Array.isArray(d.mediaTypes) && d.mediaTypes.length > 0 && d.mediaTypes.every(t => t === 'audio' || (t === 'video' && inSlides(wc, d)));

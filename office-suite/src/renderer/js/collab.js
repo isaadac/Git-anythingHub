@@ -52,9 +52,12 @@
       activity: [],           // who changed what: { who, color, own, keys, at }
       remoteLog: [], remoteCount: 0, // remote changes, for undo
       undo: [], redo: [], record: true, // your own changes, for undo that leaves others' edits alone
-      queue: [], n: 0, timer: null, retry: 0, wantOpen: false, first: true, creating: false
+      queue: [], n: 0, timer: null, retry: 0, wantOpen: false, first: true, creating: false,
+      role: 'edit', share: null,   // what this link may do; the comment and view links (for editors)
+      talk: []                     // the session's discussion
     };
-    const listeners = new Set(), activityListeners = new Set();
+    const listeners = new Set(), activityListeners = new Set(), talkListeners = new Set();
+    let roKeysAdded = false;
     const emit = () => listeners.forEach(f => { try { f(S); } catch { /* ignore */ } });
 
     function send(m) { if (S.ws && S.ws.readyState === 1) { S.ws.send(JSON.stringify(m)); return true; } return false; }
@@ -62,7 +65,7 @@
     /** Compares the document with what everyone has and sends the difference. */
     function flush() {
       clearTimeout(S.timer); S.timer = null;
-      if (S.status !== 'live') return;
+      if (S.status !== 'live' || S.role !== 'edit') return;
       if (adapter.busy && adapter.busy()) { S.timer = setTimeout(flush, 300); return; }
       const cur = adapter.state();
       const ops = [], log = [];
@@ -203,13 +206,28 @@
       let m;
       try { m = JSON.parse(e.data); } catch { return; }
       if (m.t === 'error') {
-        S.error = m.error;
         UI.toast(m.error, 5000);
+        if (m.soft) return; // refused, but still in the session
+        S.error = m.error;
         if (S.status !== 'live') stop();
+        return;
+      }
+      if (m.t === 'say') {
+        if (!m.item || typeof m.item.text !== 'string') return;
+        S.talk.push(m.item);
+        if (S.talk.length > 300) S.talk.shift();
+        talkListeners.forEach(f => { try { f(m.item); } catch { /* ignore */ } });
         return;
       }
       if (m.t === 'welcome') {
         S.id = m.id; S.peers = m.peers; S.status = 'live'; S.retry = 0; S.error = null;
+        const wasRole = S.role;
+        S.role = ['edit', 'comment', 'view'].includes(m.role) ? m.role : 'edit';
+        if (m.share && typeof m.share === 'object') S.share = m.share;
+        S.talk = Array.isArray(m.talk) ? m.talk.slice(-300) : [];
+        if (S.role !== 'edit') S.pending.clear(); // nothing of a viewer's is sent
+        if (S.role !== wasRole || S.role !== 'edit') setReadOnly(S.role !== 'edit');
+        talkListeners.forEach(f => { try { f(null); } catch { /* ignore */ } });
         const local = adapter.state();
         const server = m.state;
         const apply = {}, resend = [];
@@ -243,6 +261,8 @@
       }
       if (m.t === 'peers') {
         const old = new Map(S.peers.map(p => [p.id, p]));
+        const joined = m.peers.filter(p => !old.has(p.id) && p.id !== S.id);
+        if (joined.length && S.status === 'live') UI.toast(`${joined.map(p => p.name).join(', ')} joined${joined.length === 1 && joined[0].role && joined[0].role !== 'edit' ? ` (can ${joined[0].role})` : ''}`, 2500);
         S.peers = m.peers.map(p => ({ ...p, presence: p.presence || old.get(p.id)?.presence || null }));
         emit();
         return;
@@ -259,7 +279,7 @@
       let ws;
       try { ws = new WebSocket(S.server); } catch (err) { S.error = err.message; return fail(); }
       S.ws = ws;
-      ws.onopen = () => send({ t: 'hello', room: S.room, create: S.creating, app: adapter.app, name: S.name, color: S.color, init: S.creating ? initState() : undefined });
+      ws.onopen = () => send({ t: 'hello', room: S.room, create: S.creating, app: adapter.app, name: S.name, color: S.color, init: S.creating ? initState() : undefined, share: S.creating ? S.share : undefined });
       ws.onmessage = onMessage;
       ws.onclose = () => { if (S.ws === ws) fail(); };
       ws.onerror = () => {};
@@ -284,8 +304,29 @@
       const ws = S.ws; S.ws = null;
       if (ws) try { ws.close(); } catch { /* ignore */ }
       S.status = 'off'; S.peers = []; S.room = null;
+      if (S.role !== 'edit') setReadOnly(false);
+      S.role = 'edit'; S.share = null;
       emit();
       adapter.left && adapter.left();
+    }
+    /** Links that can only comment or view: the document can't be changed here. */
+    function setReadOnly(on) {
+      if (!roKeysAdded) {
+        roKeysAdded = true;
+        // Keys that would change the document do nothing (typing in panes and dialogs still works).
+        const block = e => {
+          if (!document.body.classList.contains('live-readonly')) return;
+          const t = e.target;
+          if (t && t.closest && t.closest('.talk-pane, .ai-pane, .modal, .activity-pane, input, textarea, select, .math-pane')) return;
+          if (e.type === 'paste' || e.type === 'cut' || e.type === 'drop') { e.preventDefault(); e.stopPropagation(); return; }
+          const k = e.key, mod = e.ctrlKey || e.metaKey;
+          if (k === 'Delete' || k === 'Backspace' || (mod && /^[vxzydbiu]$/i.test(k)) || (k === 'Tab' && document.body.dataset.app === 'board')) { e.preventDefault(); e.stopPropagation(); }
+        };
+        ['keydown', 'paste', 'cut', 'drop'].forEach(t => document.addEventListener(t, block, true));
+      }
+      document.body.classList.toggle('live-readonly', on);
+      document.body.dataset.liveRole = on ? S.role : '';
+      if (adapter.readOnly) adapter.readOnly(on, S.role);
     }
 
     let lastPresence = '', presenceTimer = null;
@@ -306,13 +347,31 @@
       get peers() { return S.peers; },
       get id() { return S.id; },
       get invite() { return S.room ? inviteFor(S.inviteServer || S.server, S.room, adapter.app) : null; },
+      /** The links to hand out: { edit, comment, view } (only an editor has them all). */
+      get invites() {
+        if (!S.room) return {};
+        const at = r => inviteFor(S.inviteServer || S.server, r, adapter.app);
+        if (S.role !== 'edit') return { [S.role]: at(S.room) };
+        return { edit: at(S.room), ...(S.share && S.share.comment ? { comment: at(S.share.comment) } : {}), ...(S.share && S.share.view ? { view: at(S.share.view) } : {}) };
+      },
+      get role() { return S.role; },
+      get talk() { return S.talk; },
+      get name() { return S.name; },
+      onTalk(f) { talkListeners.add(f); },
+      /** Adds a comment (or a reply) to the session's discussion; "@Name" mentions people in it. */
+      say(text, reply) {
+        text = String(text || '').trim();
+        if (!text || S.status !== 'live') return false;
+        const mentions = S.peers.filter(p => p.id !== S.id && p.name && new RegExp('@' + p.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?![\\w])', 'i').test(text)).map(p => p.id);
+        return send({ t: 'say', text: text.slice(0, 4000), reply, mentions });
+      },
       onChange(f) { listeners.add(f); },
       onActivity(f) { activityListeners.add(f); },
       get activity() { return S.activity; },
       /** Starts a session for this document on a server, or joins one. */
       open({ server, inviteServer, room, create, name, color }) {
         if (S.wantOpen) stop();
-        Object.assign(S, { server, inviteServer: inviteServer || null, room: room || newRoom(), creating: !!create, name, color, wantOpen: true, first: !create, retry: 0, error: null, n: 0 });
+        Object.assign(S, { server, inviteServer: inviteServer || null, room: room || newRoom(), creating: !!create, name, color, wantOpen: true, first: !create, retry: 0, error: null, n: 0, talk: [], share: create ? { comment: newRoom(), view: newRoom() } : null });
         S.pending.clear(); S.base.clear(); S.sent.clear(); S.hist.clear(); S.held.clear(); S.lastFrom.clear(); S.seq = 0; S.activity = []; S.known.clear(); S.queue = []; S.remoteLog = []; S.remoteCount = 0; S.undo = []; S.redo = [];
         connect();
       },
@@ -455,6 +514,97 @@
       renderActivity();
     }
 
+    // ---- Discussion: comments in the session, replies, @mentions; unread count and notifications
+    const badge = document.createElement('span');
+    badge.className = 'live-badge';
+    badge.hidden = true;
+    btn.appendChild(badge);
+    let talkPane = null, unread = 0, replyTo = null;
+    const setUnread = n => { unread = n; badge.hidden = !n; badge.dataset.n = n > 9 ? '9+' : String(n); if (n) btn.setAttribute('aria-label', `${label.textContent}, ${n} unread comment${n === 1 ? '' : 's'}`); else btn.removeAttribute('aria-label'); };
+    function renderTalk() {
+      if (!talkPane || talkPane.hidden) return;
+      const list = talkPane.querySelector('.list');
+      list.innerHTML = '';
+      const items = session.talk;
+      if (!items.length) { const e = document.createElement('p'); e.className = 'empty'; e.textContent = session.role === 'view' ? 'Comments people make in this session appear here.' : 'Comment on the document for everyone in the session. Type @ and a name to mention someone.'; list.appendChild(e); }
+      const byId = new Map(items.map(x => [x.id, x]));
+      for (const it of items) {
+        const row = document.createElement('div');
+        row.className = 'talk' + (it.reply ? ' reply' : '') + (it.from && it.from.id === session.id ? ' own' : '') + ((it.mentions || []).includes(session.id) ? ' mentions-me' : '');
+        const head = document.createElement('div'); head.className = 'head';
+        const dot = document.createElement('span'); dot.className = 'dot'; dot.style.background = /^#[0-9a-f]{6}$/i.test(it.from && it.from.color) ? it.from.color : '#888';
+        const who = document.createElement('b'); who.textContent = (it.from && it.from.name) || 'Someone';
+        const when = document.createElement('span'); when.className = 'when'; when.textContent = ago(it.at);
+        head.append(dot, who, when);
+        const body = document.createElement('div'); body.className = 'text';
+        if (it.reply && byId.has(it.reply)) { const q = document.createElement('div'); q.className = 'quote'; q.textContent = `${byId.get(it.reply).from.name}: ${byId.get(it.reply).text.slice(0, 80)}`; body.appendChild(q); }
+        // @Names shown highlighted (as text: nothing in a comment is HTML).
+        const names = session.peers.map(p => p.name).concat(items.map(x => x.from && x.from.name)).filter(Boolean).sort((a, b) => b.length - a.length);
+        let rest = it.text;
+        const re = names.length ? new RegExp('@(' + [...new Set(names)].map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'i') : null;
+        while (re && rest) {
+          const m = re.exec(rest);
+          if (!m) break;
+          body.append(rest.slice(0, m.index));
+          const at = document.createElement('span'); at.className = 'at'; at.textContent = m[0]; body.appendChild(at);
+          rest = rest.slice(m.index + m[0].length);
+        }
+        body.append(rest);
+        row.append(head, body);
+        if (session.role !== 'view') {
+          const r = document.createElement('button'); r.className = 'reply-btn'; r.textContent = 'Reply';
+          r.addEventListener('click', () => { replyTo = it.id; const ta = talkPane.querySelector('textarea'); ta.placeholder = `Reply to ${it.from.name}…`; ta.focus(); });
+          row.appendChild(r);
+        }
+        list.appendChild(row);
+      }
+      list.scrollTop = list.scrollHeight;
+      talkPane.querySelector('.compose').hidden = session.role === 'view' || session.status !== 'live';
+    }
+    function showTalk() {
+      if (!talkPane) {
+        talkPane = document.createElement('aside');
+        talkPane.className = 'activity-pane talk-pane';
+        talkPane.setAttribute('aria-label', 'Discussion');
+        talkPane.innerHTML = '<header><b>Discussion</b><span class="sp"></span><button class="x" title="Close"><span class="ico" data-icon="x"></span></button></header><div class="list" aria-live="polite"></div><div class="compose"><textarea rows="2" placeholder="Comment for everyone… (@name to mention)" aria-label="Comment"></textarea><button class="primary send">Send</button></div>';
+        talkPane.querySelector('.x').addEventListener('click', () => { talkPane.hidden = true; });
+        const ta = talkPane.querySelector('textarea');
+        const send = () => { if (session.say(ta.value, replyTo || undefined)) { ta.value = ''; replyTo = null; ta.placeholder = 'Comment for everyone… (@name to mention)'; } };
+        talkPane.querySelector('.send').addEventListener('click', send);
+        ta.addEventListener('keydown', e => { e.stopPropagation(); if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } if (e.key === 'Escape') { replyTo = null; ta.placeholder = 'Comment for everyone… (@name to mention)'; } });
+        document.body.appendChild(talkPane);
+      }
+      talkPane.hidden = false;
+      setUnread(0);
+      renderTalk();
+    }
+    session.onTalk(item => {
+      if (!item) { renderTalk(); return; } // joined: the discussion so far
+      const mine = item.from && item.from.id === session.id;
+      const open = talkPane && !talkPane.hidden;
+      if (!mine && !(open && document.hasFocus())) setUnread(unread + 1);
+      renderTalk();
+      if (mine) return;
+      const mentioned = (item.mentions || []).includes(session.id);
+      const repliedToMe = item.reply && session.talk.some(x => x.id === item.reply && x.from && x.from.id === session.id);
+      if (mentioned || repliedToMe) {
+        const title = mentioned ? `${item.from.name} mentioned you` : `${item.from.name} replied to you`;
+        if (document.hidden || !document.hasFocus()) notify(title, item.text);
+        else UI.toast(`${title}: ${item.text.slice(0, 80)}`, 5000);
+      }
+    });
+    /** A system notification (asked for once), or nothing if they're turned off. */
+    async function notify(title, body) {
+      try {
+        if (!('Notification' in window)) return;
+        if (Notification.permission === 'default') await Notification.requestPermission();
+        if (Notification.permission !== 'granted') return;
+        const n = new Notification(title, { body: String(body).slice(0, 200), tag: 'isadek-live', silent: false });
+        n.onclick = () => { window.focus(); showTalk(); n.close(); };
+      } catch { /* not available here */ }
+    }
+    session.showTalk = showTalk;
+
     async function askName() {
       let name = userName();
       if (!name) {
@@ -466,10 +616,15 @@
     }
     async function dialog() {
       if (session.status !== 'off') {
-        const i = await UI.choose('Live session', `Send this link to people you want to edit with:\n\n${session.invite}\n\n${session.peers.length} ${session.peers.length === 1 ? 'person' : 'people'} connected.` + (adapter.follow ? ' Click someone\'s picture to follow them.' : ''), ['Copy link', 'Activity', 'Leave session', 'Close']);
-        if (i === 0) { try { await navigator.clipboard.writeText(session.invite); UI.toast('Link copied'); } catch { UI.toast('Copy the link from the dialog'); } }
-        if (i === 1) showActivity();
-        if (i === 2) { session.close(); UI.toast('Left the live session'); }
+        const inv = session.invites, LABEL = { edit: 'Can edit', comment: 'Can comment', view: 'Can view' };
+        const roleNote = session.role === 'edit' ? '' : `\n\nYou joined with a link that can ${session.role === 'comment' ? 'comment on' : 'view'} this document, not change it.`;
+        const text = (session.role === 'edit' ? 'Send a link to the people you want to work with. Each link gives different rights:' : 'Your link:') + '\n\n' +
+          Object.entries(inv).map(([r, l]) => `${LABEL[r]}: ${l}`).join('\n\n') +
+          `\n\n${session.peers.length} ${session.peers.length === 1 ? 'person' : 'people'} connected.` + (adapter.follow ? ' Click someone\'s picture to follow them.' : '') + roleNote;
+        const copies = Object.keys(inv).map(r => ({ label: Object.keys(inv).length > 1 ? `Copy “${LABEL[r]}” Link` : 'Copy Link', run: async () => { try { await navigator.clipboard.writeText(inv[r]); UI.toast('Link copied'); } catch { UI.toast('Copy the link from the dialog'); } } }));
+        const acts = [...copies, { label: 'Discussion', run: showTalk }, { label: 'Activity', run: showActivity }, { label: 'Leave Session', run: () => { session.close(); UI.toast('Left the live session'); } }, { label: 'Close', run: () => {} }];
+        const i = await UI.choose('Live session', text, acts.map(a => a.label));
+        if (acts[i]) await acts[i].run();
         return;
       }
       const opts = Platform.desktop ? ['Start on this computer', 'Start on a server…', 'Join…', 'Cancel'] : ['Start on a server…', 'Join…', 'Cancel'];

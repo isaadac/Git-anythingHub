@@ -1662,6 +1662,7 @@ ${rules}</style></head>
   }
   const live = Collab.attach({
     app: 'write', doc: state,
+    readOnly(on) { [doc, ...HF].forEach(el => el.setAttribute('contenteditable', on ? 'false' : 'true')); },
     dirty: () => state.dirty || !!doc.innerText.trim(),
     busy: () => composing,
     state: liveState,

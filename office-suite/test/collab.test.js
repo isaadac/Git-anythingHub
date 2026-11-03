@@ -94,6 +94,56 @@ test('collab server', async t => {
     await new Promise(r => setTimeout(r, 400));
     assert.ok(!srv.rooms.has(r2));
   });
+
+  await t.test('links that can only comment or view, and the discussion', async () => {
+    const r3 = 'e'.repeat(24), ct = 'c'.repeat(24), vt = 'v'.repeat(24);
+    const ed = client(url), co = client(url), vi = client(url);
+    await Promise.all([ed.opened, co.opened, vi.opened]);
+    ed.send({ t: 'hello', room: r3, create: true, app: 'write', name: 'Ed', share: { comment: ct, view: vt, edit: 'x'.repeat(24) }, init: { 'b:1': { h: 'Hi' } } });
+    const we = await ed.next(m => m.t === 'welcome');
+    assert.strictEqual(we.role, 'edit');
+    assert.deepStrictEqual(we.share, { comment: ct, view: vt });
+    co.send({ t: 'hello', room: ct, app: 'write', name: 'Cy' });
+    const wc = await co.next(m => m.t === 'welcome');
+    assert.strictEqual(wc.role, 'comment');
+    assert.strictEqual(wc.share, undefined);
+    assert.deepStrictEqual(wc.state, { 'b:1': { h: 'Hi' } });
+    vi.send({ t: 'hello', room: vt, app: 'write', name: 'Vi' });
+    const wv = await vi.next(m => m.t === 'welcome');
+    assert.strictEqual(wv.role, 'view');
+    assert.deepStrictEqual(wv.peers.map(p => p.role).sort(), ['comment', 'edit', 'view']);
+    // Only the edit link changes the document.
+    co.send({ t: 'op', n: 1, ops: [{ k: 'b:1', v: { h: 'Hacked' } }] });
+    assert.match((await co.next(m => m.t === 'error')).error, /comment on this document but not change it/);
+    vi.send({ t: 'op', n: 1, ops: [{ k: 'b:2', v: { h: 'x' } }] });
+    assert.match((await vi.next(m => m.t === 'error')).error, /view this document but not change it/);
+    ed.send({ t: 'op', n: 1, ops: [{ k: 'b:1', v: { h: 'Hello' } }] });
+    await vi.next(m => m.t === 'op');
+    assert.deepStrictEqual([...srv.rooms.get(r3).state.keys()], ['b:1']);
+    assert.deepStrictEqual(srv.rooms.get(r3).state.get('b:1').v, { h: 'Hello' });
+    // An unknown "edit" token was not made a way in; a token can't be taken as a new session.
+    assert.ok(!srv.tokens.has('x'.repeat(24)));
+    const z = client(url); await z.opened;
+    z.send({ t: 'hello', room: ct, create: true });
+    assert.match((await z.next(m => m.t === 'error')).error, /already exists/);
+    // Comments: from editors and commenters, with replies and mentions, kept for people who join later.
+    co.send({ t: 'say', text: '  @Ed is this final?  ', mentions: [wc.peers.find(p => p.name === 'Ed').id, 5] });
+    const said = await ed.next(m => m.t === 'say');
+    assert.strictEqual(said.item.text, '@Ed is this final?');
+    assert.strictEqual(said.item.from.name, 'Cy');
+    assert.strictEqual(said.item.mentions.length, 1);
+    ed.send({ t: 'say', text: 'Yes', reply: said.item.id });
+    assert.strictEqual((await co.next(m => m.t === 'say' && m.item.text === 'Yes')).item.reply, said.item.id);
+    vi.send({ t: 'say', text: 'me too' });
+    assert.match((await vi.next(m => m.t === 'error')).error, /not comment/);
+    const late = client(url); await late.opened;
+    late.send({ t: 'hello', room: vt, name: 'Late' });
+    assert.deepStrictEqual((await late.next(m => m.t === 'welcome')).talk.map(x => x.text), ['@Ed is this final?', 'Yes']);
+    // Flooding is slowed down.
+    for (let i = 0; i < 40; i++) co.send({ t: 'say', text: 'spam ' + i });
+    assert.match((await co.next(m => m.t === 'error' && /too quickly/.test(m.error))).error, /too quickly/);
+    [ed, co, vi, z, late].forEach(c => c.ws.close());
+  });
 });
 
 test('fractional positions sort between their neighbours', () => {

@@ -3094,6 +3094,7 @@
   }
   live = Collab.attach({
     app: 'slides', doc: state,
+    readOnly(on) { document.getElementById('stage').classList.toggle('live-readonly-surface', on); document.getElementById('thumbs')?.classList.toggle('live-readonly-surface', on); if (on) select(null); },
     dirty: () => state.dirty || pres.slides.length > 1 || pres.slides.some(s => s.elements.some(e => e.html)),
     busy: () => pointerDown,
     state() {

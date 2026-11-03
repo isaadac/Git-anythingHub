@@ -378,6 +378,7 @@
   const hitItem = e => { const g = e.target.closest && e.target.closest('.item'); return g ? byId(g.dataset.id) : null; };
   const pointers = new Map();
   let drag = null, spaceDown = false, lastMove = 0, cursor = null;
+  let liveReadOnly = false; // joined with a link that can only comment or view: every drag pans
   svg.addEventListener('pointerdown', e => {
     if (editing) stopEditing(true);
     svg.focus({ preventScroll: true });
@@ -388,7 +389,7 @@
       drag = { type: 'pinch', d: Math.hypot(a[0] - b[0], a[1] - b[1]), k: view.k, mid: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], vx: view.x, vy: view.y };
       return;
     }
-    if (e.button === 1 || spaceDown || tool === 'hand' || (e.pointerType === 'touch' && tool === 'select' && !hitItem(e))) {
+    if (e.button === 1 || spaceDown || tool === 'hand' || liveReadOnly || (e.pointerType === 'touch' && tool === 'select' && !hitItem(e))) {
       drag = { type: 'pan', sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y };
       svg.setPointerCapture(e.pointerId);
       svg.classList.add('panning');
@@ -971,6 +972,7 @@
   }
   const live = window.Collab ? Collab.attach({
     app: 'board', doc: state,
+    readOnly(on) { liveReadOnly = on; if (on) { sel.clear(); render(); } },
     busy: () => !!drag || !!editing,
     state() { const out = { board: { bg: board.bg } }; board.items.forEach((i, z) => { out['i:' + i.id] = { ...i, z }; }); return out; },
     apply(changes) {

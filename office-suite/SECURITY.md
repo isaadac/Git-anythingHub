@@ -47,6 +47,10 @@ changes from other people in a live session.
   like any pasted HTML. Text recognition runs in a worker from the app's own files.
 - The Assistant accepts pictures only as base64 PNG, JPEG, GIF or WebP (up to four, 3 MB
   each), never by address.
+- Digital signatures (Isadek PDF) are made and checked with WebCrypto (RSA PKCS#1 v1.5 or ECDSA,
+  SHA-256); only the CMS and certificate structures are read by the app's own DER code, with
+  bounds checks. A Digital ID's private key is created non-extractable and kept in the browser's
+  key storage. Certificate authorities aren't checked: a signer is trusted only by fingerprint.
 - SQLite databases are opened in a worker with sql.js, read-only, with no network access once
   the engine has loaded. Recorded macros are ordinary scripts and run in the script worker.
 - Permissions: clipboard, full screen and microphone; the camera only in Slides (Cameo).
@@ -64,6 +68,9 @@ The web server and the live-editing server (`src/server/web-server.js`,
   connection.
 - Limit message size, rate per connection, presence size, operations per message, connections
   and idle sockets.
+- Live sessions: the comment and view links are separate random tokens; the server refuses changes
+  from them (and comments from view links), and only editors are told the other links. The
+  discussion is plain text, limited in length, count and rate.
 - The Assistant's API key stays on the server. Access codes are compared in constant time, and
   repeated wrong codes lock an address out.
 - Send `X-Frame-Options`/`frame-ancestors`, `nosniff`, `Referrer-Policy`,

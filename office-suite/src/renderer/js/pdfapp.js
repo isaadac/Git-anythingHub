@@ -52,7 +52,8 @@ async function loadFile(f) {
     UI.toast('Could not open the PDF: ' + (err.message || err), 5000);
     return;
   }
-  sources.forEach(s => s.doc.destroy());
+  // (pdf.js: the loading task ends a document and its worker.)
+  sources.forEach(s => { try { (s.doc.loadingTask || s.doc).destroy(); } catch { /* already gone */ } });
   sources = [src];
   linkService.setDocument(src.doc);
   pages = [];
@@ -62,7 +63,9 @@ async function loadFile(f) {
   state.set({ name: f.name, path: f.path || null, dirty: false });
   Platform.rememberRecent(f.name, 'pdf', f.path);
   $('empty').hidden = true;
+  $('sigPane').hidden = true;
   await layout();
+  await checkSignatures(src.bytes);
 }
 
 // ---------- Drawing the pages ----------
@@ -714,10 +717,125 @@ document.addEventListener('keydown', e => {
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'z' && !Platform.desktop) { e.preventDefault(); undo(); }
 });
 
+// ---------- Digital signatures (pdf-sign.js) ----------
+// The Digital ID is kept in this device's storage; its private key can't be copied out.
+const IDB = () => new Promise((resolve, reject) => { const r = indexedDB.open('isadek-sign', 1); r.onupgradeneeded = () => r.result.createObjectStore('ids'); r.onsuccess = () => resolve(r.result); r.onerror = () => reject(r.error); });
+const idStore = async (mode, fn) => { const d = await IDB(); return new Promise((resolve, reject) => { const t = d.transaction('ids', mode); const q = fn(t.objectStore('ids')); t.oncomplete = () => resolve(q && q.result); t.onerror = () => reject(t.error); }); };
+const getIdentity = () => idStore('readonly', st => st.get('default')).catch(() => null);
+const TRUST = 'atlas-pdf-trusted';
+const trusted = () => { try { return JSON.parse(localStorage.getItem(TRUST) || '[]'); } catch { return []; } };
+const setTrusted = list => { try { localStorage.setItem(TRUST, JSON.stringify(list.slice(-200))); } catch { /* ignore */ } };
+const who = n => [n.cn, n.email && `<${n.email}>`, n.o && `(${n.o})`].filter(Boolean).join(' ') || 'Unknown';
+
+async function digitalIdDialog() {
+  const id = await getIdentity();
+  if (id) {
+    const c = PdfSign.readCert(id.certs[0]), fp = await PdfSign.fingerprint(c.der);
+    const i = await UI.choose('Digital ID', `${who(c.subject)}\nIssued by ${c.issuerDer.join() === c.subjectDer.join() ? 'yourself' : who(c.issuer)} · valid until ${c.notAfter ? c.notAfter.toLocaleDateString() : '—'}\nFingerprint ${fp.slice(0, 47)}…`, ['Export Certificate', 'Replace', 'Remove', 'Close'], 'badge-check');
+    if (i === 0) { await Platform.save({ data: new TextEncoder().encode(PdfSign.certPem(c.der)), name: (c.subject.cn || 'certificate').replace(/[^\w .-]/g, '') + '.cer', filters: [{ name: 'Certificate', extensions: ['cer', 'pem'] }], saveAs: true }); return id; }
+    if (i === 2) { if (await UI.confirm('Remove Digital ID', 'Remove your Digital ID from this device? Documents you signed stay signed.')) { await idStore('readwrite', st => st.delete('default')); UI.toast('Digital ID removed'); } return null; }
+    if (i !== 1) return id;
+  }
+  const how = await UI.choose('Digital ID', 'A Digital ID signs documents so others can check who signed and that nothing changed since. Create one here, or use a certificate you have (from your organisation or a certificate authority).', ['Create a Digital ID', 'Use My Certificate…', 'Cancel'], 'badge-check');
+  let made = null;
+  try {
+    if (how === 0) {
+      const v = await UI.form('Create a Digital ID', [{ name: 'name', label: 'Your name', value: localStorage.getItem('atlas-user-name') || '' }, { name: 'email', label: 'Email (optional)' }, { name: 'org', label: 'Organisation (optional)' }], 'Create');
+      if (!v) return null;
+      made = await PdfSign.createIdentity(v);
+    } else if (how === 1) {
+      const v = await UI.form('Use My Certificate', [{ name: 'key', label: 'Private key (PEM, “BEGIN PRIVATE KEY”)', type: 'textarea' }, { name: 'certs', label: 'Certificate, then any issuing certificates (PEM, “BEGIN CERTIFICATE”)', type: 'textarea' }], 'Use');
+      if (!v) return null;
+      made = await PdfSign.importIdentity(v.key, v.certs);
+    } else return null;
+  } catch (err) { UI.toast(err.message, 6000); return null; }
+  await idStore('readwrite', st => st.put({ key: made.key, certs: made.certs, created: Date.now() }, 'default'));
+  setTrusted([...new Set([...trusted(), await PdfSign.fingerprint(made.certs[0])])]);
+  UI.toast('Digital ID ready');
+  return made;
+}
+$('digitalId').addEventListener('click', digitalIdDialog);
+
+$('signDigital').addEventListener('click', async () => {
+  if (!pages.length) return UI.toast('Open a PDF first');
+  if (sources.some(s => s.encrypted)) return UI.toast('Password-protected PDFs can’t be signed here', 5000);
+  const id = (await getIdentity()) || (await digitalIdDialog());
+  if (!id) return;
+  const v = await UI.form('Sign Digitally', [
+    { name: 'reason', label: 'Reason (optional)', placeholder: 'I approve this document' },
+    { name: 'location', label: 'Location (optional)' },
+    { name: 'look', label: 'Appearance', type: 'select', options: [{ value: 'last', label: 'A stamp at the bottom of the last page' }, { value: 'first', label: 'A stamp at the bottom of the first page' }, { value: 'none', label: 'Invisible' }] }
+  ], 'Sign');
+  if (!v) return;
+  // What is signed is the document as it is now: changes made here are written first.
+  const edited = state.dirty || sources.length !== 1 || pages.some((p, i) => p.src !== 0 || p.index !== i || p.rot || p.annots.length) || pages.length !== sources[0].doc.numPages;
+  if (edited && signatures.length && !(await UI.confirm('Sign Digitally', 'Saving your changes rewrites the PDF, so its existing signatures will no longer be valid. Sign anyway?'))) return;
+  let signed;
+  try {
+    const bytes = edited ? await build() : sources[0].bytes;
+    signed = await PdfSign.sign(bytes, id, { reason: v.reason.trim(), location: v.location.trim(), visible: v.look === 'none' ? null : { page: v.look } });
+  } catch (err) { return UI.toast('Couldn’t sign: ' + err.message, 6000); }
+  const name = Platform.baseName(state.name).replace(/-signed$/, '') + '-signed.pdf';
+  const r = await Platform.save({ data: signed, name, filters: [{ name: 'PDF', extensions: ['pdf'] }], saveAs: true });
+  if (!r) return;
+  await loadFile({ data: signed, name: r.name || name, path: r.path || null });
+  UI.toast('Signed and saved');
+});
+
+// Checking signatures: a bar over the pages, and the details.
+let signatures = [];
+async function checkSignatures(bytes) {
+  const bar = $('sigBar');
+  signatures = [];
+  try { signatures = await PdfSign.verify(bytes); } catch { signatures = []; }
+  if (!signatures.length) { bar.hidden = true; return; }
+  const trust = new Set(trusted());
+  signatures.forEach(s => { s.trusted = !!s.fingerprint && trust.has(s.fingerprint); });
+  const bad = signatures.filter(s => !s.ok), latest = signatures[signatures.length - 1];
+  bar.hidden = false;
+  bar.className = 'sig-bar ' + (bad.length ? 'bad' : latest.laterChanges ? 'warn' : 'good');
+  const names = [...new Set(signatures.filter(s => s.signer).map(s => s.signer.cn || 'Unknown'))].join(', ');
+  $('sigText').textContent = bad.length
+    ? `${bad.length === signatures.length ? 'The signature' + (bad.length > 1 ? 's are' : ' is') : bad.length + ' of ' + signatures.length + ' signatures are'} not valid: the document was changed or the signature is damaged.`
+    : latest.laterChanges ? `Signed by ${names}, but the document was changed after the last signature.`
+    : `Signed by ${names}. The document hasn’t changed since it was signed.${signatures.every(s => s.trusted) ? '' : ' The signer’s identity isn’t confirmed by a certificate you trust.'}`;
+}
+$('sigDetails').addEventListener('click', () => {
+  const pane = $('sigPane'), list = pane.querySelector('.list');
+  list.innerHTML = '';
+  signatures.forEach((s, i) => {
+    const el = document.createElement('div');
+    el.className = 'sig-item ' + (s.ok ? (s.laterChanges ? 'warn' : 'good') : 'bad');
+    const h = document.createElement('b'); h.textContent = `${i + 1}. ${s.signer ? who(s.signer) : 'Unknown signer'}`;
+    const lines = [
+      s.ok ? (s.laterChanges ? 'Valid signature; the document was changed after it (later signatures or edits).' : 'Valid signature; the document hasn’t changed since.') : 'Not valid: ' + (s.problems.join('; ') || 'unknown problem'),
+      s.time ? 'Signed ' + s.time.toLocaleString() : '',
+      s.reason ? 'Reason: ' + s.reason : '', s.location ? 'Location: ' + s.location : '',
+      s.signer ? (s.selfSigned ? 'Certificate issued by the signer themselves' : 'Certificate issued by ' + who(s.issuer || {})) + (s.trusted ? ' — you trust this signer' : '') : '',
+      s.fingerprint ? 'Fingerprint ' + s.fingerprint : ''
+    ].filter(Boolean);
+    el.append(h, ...lines.map(t => { const p = document.createElement('div'); p.textContent = t; return p; }));
+    if (s.ok && s.fingerprint) {
+      const b = document.createElement('button');
+      b.textContent = s.trusted ? 'Stop Trusting' : 'Trust This Signer';
+      b.addEventListener('click', async () => {
+        const list = trusted();
+        setTrusted(s.trusted ? list.filter(f => f !== s.fingerprint) : [...list, s.fingerprint]);
+        await checkSignatures(sources[0].bytes);
+        $('sigDetails').click();
+      });
+      el.appendChild(b);
+    }
+    list.appendChild(el);
+  });
+  pane.hidden = false;
+});
+$('sigPaneClose').addEventListener('click', () => { $('sigPane').hidden = true; });
+
 // Thumbnails for Home, and the test hooks.
 Platform.preview = () => null;
 window.AtlasPdf = {
-  loadFile, build, toHtml,
+  loadFile, build, toHtml, get signatures() { return signatures; }, digitalIdDialog,
   get pages() { return pages; },
   get sources() { return sources; },
   get scale() { return scale; },

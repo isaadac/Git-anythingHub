@@ -443,6 +443,27 @@ html:is([data-frame="mac"], [data-frame="mica"]) .backstage, html:is([data-frame
 .activity-pane .what div { color: var(--text-2); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; }
 .activity-pane .empty { color: var(--muted); padding: var(--sp-5); }
 .live-avatar[role=button] { cursor: pointer; }
+/* Live: the discussion, unread comments, and links that can only comment or view */
+.live-btn { position: relative; }
+.live-badge { position: absolute; top: -4px; right: -4px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--danger, #c50f1f); color: #fff; font-size: 10px; line-height: 16px; font-weight: 700; text-align: center; }
+.live-badge::after { content: attr(data-n); }
+.live-badge[hidden] { display: none; }
+.talk-pane { width: min(360px, 92vw); max-height: 70vh; }
+.talk-pane .talk { padding: var(--sp-4); border-radius: var(--r-md); font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 3px; }
+.talk-pane .talk.reply { margin-left: var(--sp-7); border-left: 2px solid var(--border); border-radius: 0 var(--r-md) var(--r-md) 0; }
+.talk-pane .talk.mentions-me { background: var(--accent-soft); }
+.talk-pane .talk .head { display: flex; align-items: center; gap: var(--sp-3); }
+.talk-pane .talk .head .dot { margin-top: 0; }
+.talk-pane .talk .text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.talk-pane .talk .quote { color: var(--muted); border-left: 2px solid var(--border-strong); padding-left: 6px; margin-bottom: 2px; font-size: var(--fs-xs); }
+.talk-pane .talk .at { color: var(--accent-fg); font-weight: 600; }
+.talk-pane .reply-btn { align-self: flex-start; border: 0; background: none; color: var(--accent-fg); cursor: pointer; padding: 0; font-size: var(--fs-xs); }
+.talk-pane .compose { display: flex; gap: var(--sp-3); padding: var(--sp-4); border-top: 1px solid var(--border); align-items: flex-end; }
+.talk-pane .compose[hidden] { display: none; }
+.talk-pane textarea { flex: 1; resize: vertical; min-height: 36px; border: 1px solid var(--border-strong); border-radius: var(--r-md); padding: 6px 8px; font: inherit; background: var(--surface); color: var(--text); }
+body.live-readonly .ribbon-panel:not([data-panel="view"]) .controls { pointer-events: none; opacity: 0.45; }
+body.live-readonly .live-readonly-surface { pointer-events: none; }
+
 .live-avatar.following { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
 .follow-banner { position: fixed; left: 50%; bottom: calc(var(--status-h) + 16px); transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: var(--sp-5); padding: 8px 8px 8px 16px; background: var(--n-800); color: var(--n-0); border-radius: var(--r-pill); box-shadow: var(--sh-3); animation: fade-up var(--dur-3) var(--ease-out); }
 .follow-banner[hidden] { display: none; }

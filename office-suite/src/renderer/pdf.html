@@ -71,6 +71,10 @@
       <button class="btn big" id="dateBtn" title="Click where today’s date goes"><span class="ico" data-icon="calendar"></span>Date</button>
     </div><div class="label">Sign</div></div>
     <div class="group"><div class="controls">
+      <button class="btn big" id="signDigital" title="Sign with your Digital ID so others can check who signed and that nothing changed"><span class="ico" data-icon="badge-check"></span>Sign<br>Digitally</button>
+      <button class="btn big" id="digitalId" title="Create or manage your Digital ID"><span class="ico" data-icon="id-card"></span>Digital<br>ID</button>
+    </div><div class="label">Digital Signature</div></div>
+    <div class="group"><div class="controls">
       <button class="btn big" id="formInfo" title="Form fields in the PDF can be filled in directly on the page"><span class="ico" data-icon="text-cursor-input"></span>Form<br>Fields</button>
     </div><div class="label">Forms</div></div>
   </div>
@@ -98,6 +102,8 @@
   <button class="btn" id="findClose" title="Close"><span class="ico" data-icon="x"></span></button>
 </div>
 
+<div class="sig-bar" id="sigBar" hidden role="status"><span class="ico" data-icon="badge-check"></span><span id="sigText"></span><button id="sigDetails">Signature Details</button></div>
+<aside class="sig-pane" id="sigPane" hidden aria-label="Signatures"><header><b>Signatures</b><span class="sp"></span><button id="sigPaneClose" title="Close"><span class="ico" data-icon="x"></span></button></header><div class="list"></div></aside>
 <div class="workspace pdf-work">
   <nav class="pdf-thumbs" id="thumbs" aria-label="Pages"></nav>
   <main class="pdf-view" id="view" tabindex="0" aria-label="Document">
@@ -145,6 +151,7 @@
 <script src="js/offline.js"></script>
 <script src="js/ink.js"></script>
 <script src="../../node_modules/pdf-lib/dist/pdf-lib.min.js"></script>
+<script src="js/pdf-sign.js"></script>
 <script type="module" src="js/pdfapp.js"></script>
 </body>
 </html>

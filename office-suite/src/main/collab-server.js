@@ -14,7 +14,7 @@ const crypto = require('crypto');
 // rate: bytes one connection may send per minute (a burst up to a whole minute's worth);
 // connections: open sockets in all; helloMs: how long a new socket may take to join a session.
 const LIMITS = { message: 32e6, roomBytes: 200e6, rooms: 200, clientsPerRoom: 50, idleMs: 60 * 60 * 1000, keyLen: 300, backlog: 64e6,
-  rate: 256e6, connections: 2000, helloMs: 15000, presence: 8000, opsPerMessage: 50000 };
+  rate: 256e6, connections: 2000, helloMs: 15000, presence: 8000, opsPerMessage: 50000, talk: 300, talkText: 4000, talkPerMinute: 30 };
 const GUID = '258EAFA5-E914-47DA-95CA-C5AB0DC85B11';
 
 // ---------- WebSocket framing ----------
@@ -113,6 +113,9 @@ class Conn {
 function createCollabServer(opts = {}) {
   const limits = { ...LIMITS, ...opts.limits };
   const rooms = new Map();
+  // Links for people who may only comment or only view: their own tokens, mapped to a session.
+  const tokens = new Map(); // token -> { room, role }
+  const ROLES = ['edit', 'comment', 'view'];
   // opts.server: share an existing HTTP server (the web server), else a server of its own.
   const server = opts.server || http.createServer((req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
@@ -120,18 +123,25 @@ function createCollabServer(opts = {}) {
   });
   const validRoom = r => typeof r === 'string' && /^[\w-]{16,64}$/.test(r);
   let open = 0; // sockets connected now
-  const peerList = room => [...room.clients].map(c => ({ id: c.id, name: c.name, color: c.color, presence: c.presence || null }));
+  const peerList = room => [...room.clients].map(c => ({ id: c.id, name: c.name, color: c.color, role: c.role, presence: c.presence || null }));
   const broadcast = (room, msg, except) => { const s = JSON.stringify(msg); for (const c of room.clients) if (c !== except) c.send(s); };
 
   function onMessage(c, m, size) {
     if (!m || typeof m !== 'object') return;
     if (m.t === 'hello') {
       if (c.room || !validRoom(m.room)) return c.send({ t: 'error', error: 'Invalid session' });
-      let room = rooms.get(m.room);
+      let room = rooms.get(m.room), role = 'edit';
+      if (!room && !m.create && tokens.has(m.room)) ({ room, role } = tokens.get(m.room));
       if (m.create) {
-        if (room) return c.send({ t: 'error', error: 'That session already exists' });
+        if (room || tokens.has(m.room)) return c.send({ t: 'error', error: 'That session already exists' });
         if (rooms.size >= limits.rooms) return c.send({ t: 'error', error: 'The server is full' });
-        room = { id: m.room, app: String(m.app || '').slice(0, 20), state: new Map(), seq: 0, bytes: 0, clients: new Set(), idle: null };
+        room = { id: m.room, app: String(m.app || '').slice(0, 20), state: new Map(), seq: 0, bytes: 0, clients: new Set(), idle: null, talk: [], talkSeq: 0, tokens: [] };
+        // share: { comment, view } — tokens for links with fewer rights (each unlike any session or token).
+        const share = m.share && typeof m.share === 'object' ? m.share : {};
+        for (const r of ['comment', 'view']) {
+          const t = share[r];
+          if (validRoom(t) && t !== m.room && !rooms.has(t) && !tokens.has(t)) { tokens.set(t, { room, role: r }); room.tokens.push(t); }
+        }
         rooms.set(m.room, room);
         if (m.init && typeof m.init === 'object') {
           for (const [k, v] of Object.entries(m.init)) if (typeof k === 'string' && k.length <= limits.keyLen && v !== null) set(room, k, v);
@@ -144,16 +154,39 @@ function createCollabServer(opts = {}) {
       c.id = crypto.randomBytes(6).toString('hex');
       c.name = String(m.name || 'Guest').slice(0, 60);
       c.color = /^#[0-9a-f]{6}$/i.test(m.color) ? m.color : '#888888';
+      c.role = ROLES.includes(role) ? role : 'view';
+      c.talkAllowance = limits.talkPerMinute; c.talkTick = Date.now();
       clearTimeout(c.helloTimer);
       room.clients.add(c);
       const state = {};
       for (const [k, e] of room.state) state[k] = e.v;
-      c.send({ t: 'welcome', id: c.id, seq: room.seq, state, peers: peerList(room), app: room.app });
+      c.send({ t: 'welcome', id: c.id, seq: room.seq, state, peers: peerList(room), app: room.app, role: c.role, talk: room.talk,
+        // Editors may hand out the links that can only comment or view.
+        share: c.role === 'edit' ? Object.fromEntries(room.tokens.map(t => [tokens.get(t).role, t])) : undefined });
       broadcast(room, { t: 'peers', peers: peerList(room) }, c);
       return;
     }
     const room = c.room;
     if (!room) return;
+    if (m.t === 'op' && c.role !== 'edit') return c.send({ t: 'error', error: c.role === 'comment' ? 'You can comment on this document but not change it' : 'You can view this document but not change it', soft: true });
+    if (m.t === 'say') {
+      // The session's discussion: comments and replies, with @mentions of people in it.
+      if (c.role === 'view') return c.send({ t: 'error', error: 'You can view this document but not comment', soft: true });
+      const now = Date.now();
+      c.talkAllowance = Math.min(limits.talkPerMinute, c.talkAllowance + (now - c.talkTick) * limits.talkPerMinute / 60000);
+      c.talkTick = now;
+      if (c.talkAllowance < 1) return c.send({ t: 'error', error: 'You’re sending comments too quickly', soft: true });
+      c.talkAllowance--;
+      const text = typeof m.text === 'string' ? m.text.trim().slice(0, limits.talkText) : '';
+      if (!text) return;
+      const reply = Number.isInteger(m.reply) && room.talk.some(x => x.id === m.reply) ? m.reply : undefined;
+      const mentions = Array.isArray(m.mentions) ? [...new Set(m.mentions.filter(x => typeof x === 'string' && x.length <= 60))].slice(0, 20) : [];
+      const item = { id: ++room.talkSeq, from: { id: c.id, name: c.name, color: c.color }, text, at: now, reply, mentions };
+      room.talk.push(item);
+      if (room.talk.length > limits.talk) room.talk.shift();
+      broadcast(room, { t: 'say', item });
+      return;
+    }
     if (m.t === 'op' && Array.isArray(m.ops)) {
       if (m.ops.length > limits.opsPerMessage) return c.close(1009);
       const ops = m.ops.filter(o => o && typeof o === 'object' && typeof o.k === 'string' && o.k.length <= limits.keyLen);
@@ -187,7 +220,7 @@ function createCollabServer(opts = {}) {
     room.clients.delete(c);
     broadcast(room, { t: 'peers', peers: peerList(room) });
     // An empty session is kept for a while, so people can reconnect.
-    if (!room.clients.size) { room.idle = setTimeout(() => { if (!room.clients.size) rooms.delete(room.id); }, limits.idleMs); room.idle.unref(); }
+    if (!room.clients.size) { room.idle = setTimeout(() => { if (!room.clients.size) { rooms.delete(room.id); room.tokens.forEach(t => tokens.delete(t)); } }, limits.idleMs); room.idle.unref(); }
   }
 
   server.on('upgrade', (req, socket, head) => {
@@ -206,6 +239,7 @@ function createCollabServer(opts = {}) {
     c.ping = setInterval(() => c.send('', 9), 30000);
   });
   server.rooms = rooms;
+  server.tokens = tokens;
   return server;
 }
 
