@@ -42,6 +42,11 @@ changes from other people in a live session.
   services, also after redirects and DNS tricks, and is size- and time-limited.
 - Sheets → From Folder reads only a folder the person picks; a workbook that names a folder for
   Refresh All asks before it is read. Reads are limited to 500 files, 50 MB each and 300 MB.
+- Notes' Web Clip parses the downloaded page in an inert document (nothing in it loads or runs),
+  keeps its pictures as data: images (PNG, JPEG, GIF, WebP up to 3 MB) and sanitizes the result
+  like any pasted HTML. Text recognition runs in a worker from the app's own files.
+- The Assistant accepts pictures only as base64 PNG, JPEG, GIF or WebP (up to four, 3 MB
+  each), never by address.
 - SQLite databases are opened in a worker with sql.js, read-only, with no network access once
   the engine has loaded. Recorded macros are ordinary scripts and run in the script worker.
 - Permissions: clipboard, full screen and microphone; the camera only in Slides (Cameo).

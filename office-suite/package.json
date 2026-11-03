@@ -29,6 +29,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "1.3.0",
+    "@tesseract.js-data/eng": "1.0.0",
     "cfb": "1.2.2",
     "docx": "9.15.0",
     "electron-updater": "6.8.11",
@@ -40,6 +41,7 @@
     "pyodide": "314.0.7",
     "qrcode-generator": "2.0.4",
     "sql.js": "1.14.2",
+    "tesseract.js": "7.0.0",
     "xlsx": "0.18.5"
   },
   "devDependencies": {
@@ -69,6 +71,12 @@
       "src/**/*",
       "!src/server/**",
       "!node_modules/@napi-rs/**",
+      "!node_modules/@tesseract.js-data/eng/4.0.0/**",
+      "!node_modules/tesseract.js-core/*.wasm",
+      "!node_modules/tesseract.js-core/tesseract-core.wasm.js",
+      "!node_modules/tesseract.js-core/tesseract-core-simd.wasm.js",
+      "!node_modules/tesseract.js-core/tesseract-core-relaxedsimd.wasm.js",
+      "!node_modules/tesseract.js/**/*.map",
       "build/icon.png",
       "package.json"
     ],

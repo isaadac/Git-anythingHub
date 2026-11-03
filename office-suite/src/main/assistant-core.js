@@ -10,10 +10,29 @@ const MODELS = [
 ];
 const validModel = m => (MODELS.some(x => x.id === m) ? m : MODELS[0].id);
 
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/gif', 'image/webp'];
+const MAX_IMAGE = 3e6; // base64 characters, per picture
+/** A message's content: text, or text and pictures (base64, a few MB at most), else null. */
+function cleanContent(c) {
+  if (typeof c === 'string') return c || null;
+  if (!Array.isArray(c) || !c.length || c.length > 8) return null;
+  let images = 0;
+  const out = [];
+  for (const b of c) {
+    if (b && b.type === 'text' && typeof b.text === 'string' && b.text) out.push({ type: 'text', text: b.text });
+    else if (b && b.type === 'image' && b.source && b.source.type === 'base64' && IMAGE_TYPES.includes(b.source.media_type) &&
+      typeof b.source.data === 'string' && b.source.data.length <= MAX_IMAGE && /^[A-Za-z0-9+/]+={0,2}$/.test(b.source.data) && ++images <= 4) {
+      out.push({ type: 'image', source: { type: 'base64', media_type: b.source.media_type, data: b.source.data } });
+    } else return null;
+  }
+  return out.some(b => b.type === 'text') ? out : null;
+}
 /** The conversation from a page, or null if there is nothing to ask. */
 function cleanMessages(list) {
   const messages = (Array.isArray(list) ? list : [])
-    .filter(m => m && (m.role === 'user' || m.role === 'assistant') && typeof m.content === 'string' && m.content)
+    .filter(m => m && (m.role === 'user' || m.role === 'assistant'))
+    .map(m => ({ role: m.role, content: m.role === 'user' ? cleanContent(m.content) : (typeof m.content === 'string' && m.content) || null }))
+    .filter(m => m.content)
     .slice(-40);
   return messages.length && messages[0].role === 'user' ? messages : null;
 }

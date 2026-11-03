@@ -610,7 +610,7 @@
   let searchTimer;
   searchEl.addEventListener('input', () => { clearTimeout(searchTimer); searchTimer = setTimeout(search, 150); });
   searchEl.addEventListener('keydown', e => { if (e.key === 'Escape') { searchEl.value = ''; search(); body.focus(); } });
-  function textOf(html) { const d = document.createElement('div'); d.innerHTML = html; d.querySelectorAll('p, li, h1, h2, h3, div, tr, br').forEach(n => n.after(' ')); return d.textContent.replace(/\s+/g, ' ').trim(); }
+  function textOf(html) { const d = document.createElement('div'); d.innerHTML = html; d.querySelectorAll('p, li, h1, h2, h3, div, tr, br').forEach(n => n.after(' ')); d.querySelectorAll('img[data-ocr]').forEach(n => n.after(' ' + n.getAttribute('data-ocr') + ' ')); return d.textContent.replace(/\s+/g, ' ').trim(); }
   function search() {
     commit();
     const q = searchEl.value.trim().toLowerCase();
@@ -795,7 +795,7 @@
     body.focus();
     document.execCommand('insertText', false, Assistant.spaced(body, text));
   });
-  Assistant.attach({
+  const assistant = Assistant.attach({
     app: 'notes',
     context: action => {
       commit();
@@ -838,6 +838,16 @@
     close();
     return out || '<p><br></p>';
   }
+  // ---------- Ink to Text, pictures to text, math, web clips (notes-smart.js) ----------
+  NotesSmart({
+    body, pageEl, sanitize, insertHtml, restoreSel,
+    markChanged: () => { page.modified = Date.now(); markChanged(); },
+    strokes: () => page.ink,
+    removeStrokes: list => { const gone = new Set(list); page.ink = page.ink.filter(s => !gone.has(s)); page.modified = Date.now(); drawInk(); markChanged(); },
+    selectionText: () => { const s = getSelection(); return s.rangeCount && body.contains(s.anchorNode) ? s.toString() : savedRange && !savedRange.collapsed ? savedRange.toString() : ''; },
+    newPage: (title, html) => { addPage(); titleEl.value = String(title).slice(0, 200); body.innerHTML = html || '<p><br></p>'; commit(); markChanged(); renderPages(); },
+    ask: text => { assistant.toggle(true); assistant.ask(text); }
+  });
   Proofing.attach({ app: 'notes', roots: () => [{ el: body, live: true }], lang: () => '', setLang: () => {} });
 
   // ---------- Start ----------

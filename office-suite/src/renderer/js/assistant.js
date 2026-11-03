@@ -366,5 +366,25 @@
     return out;
   }
 
-  window.Assistant = { attach, otherFiles, dictate, dictateButton, spaced, translate, translateHtml };
+  /**
+   * Asks the Assistant about a picture (a PNG or JPEG data URL): resolves to its reply. Used to
+   * read handwriting. Throws with a message to show when the Assistant isn't set up.
+   */
+  async function readImage(dataUrl, instruction) {
+    const st = await backend.status();
+    if (!st.ready) throw new Error(st.message || 'Set up the Assistant first');
+    const m = /^data:(image\/(?:png|jpeg));base64,([A-Za-z0-9+/]+={0,2})$/.exec(String(dataUrl));
+    if (!m) throw new Error('That picture can’t be sent');
+    if (m[2].length > 3e6) throw new Error('That picture is too large to send');
+    const res = await backend.ask({
+      id: 'img' + Date.now().toString(36) + (++trSeq),
+      system: 'You read pictures for a note-taking app. Follow the instruction exactly and reply with only what it asks for.',
+      messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: m[1], data: m[2] } }, { type: 'text', text: String(instruction).slice(0, 2000) }] }]
+    }, () => {});
+    if (!res || res.error || res.cancelled) throw new Error((res && res.error) || 'Cancelled');
+    return String(res.text || '').trim();
+  }
+  const ready = async () => { try { return !!(await backend.status()).ready; } catch { return false; } };
+
+  window.Assistant = { attach, otherFiles, dictate, dictateButton, spaced, translate, translateHtml, readImage, ready };
 })();

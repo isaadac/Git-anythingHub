@@ -71,6 +71,10 @@
       <button class="btn big" id="insRule"><span class="ico" data-icon="minus"></span>Line</button>
     </div><div class="label">Insert</div></div>
     <div class="group"><div class="controls">
+      <button class="btn big" id="webClip" title="Clip a web page's article (or a bookmark of it) into a new page"><span class="ico" data-icon="scissors"></span>Web<br>Clip</button>
+      <button class="btn big" id="picToText" title="Read the words in a picture"><span class="ico" data-icon="scan-text"></span>Picture<br>to Text</button>
+    </div><div class="label">Capture</div></div>
+    <div class="group"><div class="controls">
       <button class="btn big" id="insFile" title="Attach a file to the page (kept in the notebook)"><span class="ico" data-icon="paperclip"></span>File<br>Attachment</button>
       <button class="btn big" id="recAudio" title="Record audio into the page"><span class="ico" data-icon="mic"></span><span class="lbl">Record Audio</span></button>
     </div><div class="label">Files &amp; Recording</div></div>
@@ -94,6 +98,10 @@
     <div class="group"><div class="controls">
       <button class="btn big" id="clearInk"><span class="ico" data-icon="trash-2"></span>Clear<br>Drawing</button>
     </div><div class="label">Ink</div></div>
+    <div class="group"><div class="controls">
+      <button class="btn big" id="inkToText" title="Turn handwriting on the page into typed text"><span class="ico" data-icon="type"></span>Ink to<br>Text</button>
+      <button class="btn big" id="mathBtn" title="Solve, simplify or graph the selected (or handwritten) math"><span class="ico" data-icon="sigma"></span>Math</button>
+    </div><div class="label">Convert</div></div>
   </div>
   <div class="ribbon-panel" data-panel="view">
     <div class="group"><div class="controls">
@@ -130,6 +138,12 @@
       <svg class="ink" id="ink" aria-hidden="true"></svg>
     </article>
   </div>
+  <aside class="math-pane" id="mathPane" hidden aria-label="Math">
+    <header><b>Math</b><span class="sp"></span><button id="mathClose" title="Close"><span class="ico" data-icon="x"></span></button></header>
+    <label class="math-label" for="mathInput">Expression or equation</label>
+    <input id="mathInput" class="math-input" spellcheck="false" autocomplete="off" placeholder="2x + 3 = 11">
+    <div id="mathOut" class="math-out" aria-live="polite"></div>
+  </aside>
 </div>
 
 <div class="statusbar">
@@ -170,6 +184,9 @@
 <script src="js/offline.js"></script>
 <script src="js/notes-extras.js"></script>
 <script src="js/ink.js"></script>
+<script src="js/ocr.js"></script>
+<script src="js/notes-math.js"></script>
+<script src="js/notes-smart.js"></script>
 <script src="js/notes.js"></script>
 </body>
 </html>
