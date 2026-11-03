@@ -7,7 +7,7 @@ const check = (n, c, x = '') => { console.log((c ? 'PASS ' : 'FAIL ') + n + (x !
 
 const out = build(path.join(process.env.E2E_WORK, 'site'));
 const v = '1.2.0', dl = n => `https://github.com/isaadac/Git-anythingHub/releases/download/office-v${v}/${n}`;
-const names = [`Isadek-Office-Setup-${v}-x64.exe`, `Isadek-Office-Setup-${v}-arm64.exe`, `Isadek-Office-${v}-portable.exe`, `Isadek-Office-${v}-universal.dmg`, `Isadek-Office-${v}-universal.zip`,
+const names = [`Isadek-Office-Setup-${v}-x64.exe`, `Isadek-Office-Setup-${v}-arm64.exe`, `Isadek-Office-${v}-portable-x64.exe`, `Isadek-Office-${v}-portable-arm64.exe`, `Isadek-Office-${v}-x64.msi`, `Isadek-Office-${v}-universal.dmg`, `Isadek-Office-${v}-universal.zip`,
   `Isadek-Office-${v}-x86_64.AppImage`, `Isadek-Office-${v}-arm64.AppImage`, `Isadek-Office-${v}-amd64.deb`, `Isadek-Office-${v}-arm64.deb`, `Isadek-Office-${v}-android-release.apk`, 'SHA256SUMS.txt', 'latest.yml'];
 const releases = [
   { tag_name: 'other-v9', draft: false, prerelease: false, assets: [] },
@@ -36,13 +36,13 @@ const UA = {
   };
   const main = p => p.$eval('#mainBtn', a => [a.textContent, a.href]);
 
-  for (const [os, want, text] of [['windows', names[0], 'Download for Windows'], ['mac', names[3], 'Download for macOS'], ['linux', names[5], 'Download for Linux'], ['android', names[9], 'Download for Android']]) {
+  for (const [os, want, text] of [['windows', names[0], 'Download for Windows'], ['mac', names[5], 'Download for macOS'], ['linux', names[7], 'Download for Linux'], ['android', names[11], 'Download for Android']]) {
     const p = await open(UA[os]);
     const [t, href] = await main(p);
     check(`${os}: the big button downloads ${want}`, t === text && href === dl(want), `${t} ${href}`);
     if (os === 'windows') {
       const lists = await p.$$eval('.os', o => o.map(x => [x.dataset.os, x.querySelectorAll('li a').length, x.classList.contains('mine')]));
-      check('every installer is listed under its system, this one marked', JSON.stringify(lists) === JSON.stringify([['windows', 3, true], ['mac', 2, false], ['linux', 4, false], ['android', 1, false]]), JSON.stringify(lists));
+      check('every installer is listed under its system, this one marked', JSON.stringify(lists) === JSON.stringify([['windows', 5, true], ['mac', 2, false], ['linux', 4, false], ['android', 1, false]]), JSON.stringify(lists));
       check('the newest final release is the one shown (not betas or other projects)', (await p.$eval('#version', e => e.textContent)).startsWith('Version 1.2.0'));
     }
     await p.context().close();

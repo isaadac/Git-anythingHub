@@ -6,13 +6,17 @@
   const KINDS = [
     { os: 'windows', re: /Setup-.*-x64\.exe$/, label: 'Installer (64-bit)', main: 'Download for Windows' },
     { os: 'windows', re: /Setup-.*-arm64\.exe$/, label: 'Installer (ARM)' },
-    { os: 'windows', re: /portable\.exe$/, label: 'Portable (no install)' },
+    { os: 'windows', re: /-x64\.msi$/, label: 'MSI package (for IT deployment)' },
+    { os: 'windows', re: /portable(-x64)?\.exe$/, label: 'Portable (no install)' },
+    { os: 'windows', re: /portable-arm64\.exe$/, label: 'Portable (ARM, no install)' },
     { os: 'mac', re: /\.dmg$/, label: 'Disk image (Apple silicon and Intel)', main: 'Download for macOS' },
     { os: 'mac', re: /mac\.zip$|universal.*\.zip$/, label: 'Zip' },
     { os: 'linux', re: /x86_64\.AppImage$/, label: 'AppImage (64-bit)', main: 'Download for Linux' },
     { os: 'linux', re: /arm64\.AppImage$/, label: 'AppImage (ARM)' },
     { os: 'linux', re: /amd64\.deb$/, label: 'Debian/Ubuntu (.deb, 64-bit)' },
     { os: 'linux', re: /arm64\.deb$/, label: 'Debian/Ubuntu (.deb, ARM)' },
+    { os: 'linux', re: /x64\.tar\.gz$/, label: 'Archive (.tar.gz, 64-bit)' },
+    { os: 'linux', re: /arm64\.tar\.gz$/, label: 'Archive (.tar.gz, ARM)' },
     { os: 'android', re: /release\.apk$/, label: 'APK', main: 'Download for Android' }
   ];
   const ua = navigator.userAgent;

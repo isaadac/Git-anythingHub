@@ -42,7 +42,7 @@
     "qrcode-generator": "2.0.4",
     "sql.js": "1.14.2",
     "tesseract.js": "7.0.0",
-    "xlsx": "0.18.5"
+    "xlsx": "npm:@e965/xlsx@0.20.3"
   },
   "devDependencies": {
     "@huggingface/transformers": "4.3.2",
@@ -164,9 +164,16 @@
           ]
         },
         {
-          "target": "portable",
+          "target": "msi",
           "arch": [
             "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64",
+            "arm64"
           ]
         }
       ],
@@ -185,7 +192,7 @@
       "artifactName": "Isadek-Office-Setup-${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "Isadek-Office-${version}-portable.${ext}"
+      "artifactName": "Isadek-Office-${version}-portable-${arch}.${ext}"
     },
     "mac": {
       "target": [
@@ -223,6 +230,13 @@
         },
         {
           "target": "deb",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        },
+        {
+          "target": "tar.gz",
           "arch": [
             "x64",
             "arm64"
@@ -284,6 +298,15 @@
       "enableNodeCliInspectArguments": false,
       "enableEmbeddedAsarIntegrityValidation": true,
       "onlyLoadAppFromAsar": true
+    },
+    "msi": {
+      "oneClick": false,
+      "perMachine": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Isadek Office",
+      "upgradeCode": "6f3f3a1e-5b0c-4f6e-9d2a-1f4b8c7e2a90",
+      "artifactName": "Isadek-Office-${version}-${arch}.${ext}"
     }
   },
   "desktopName": "atlas-office.desktop",

@@ -25,9 +25,10 @@ changes from other people in a live session.
   only after the person allows them.
 - **Python in cells** runs in a separate worker with no network, storage or page access (also
   removed from the prototypes Python can reach), and is stopped if it runs too long.
-- **Spreadsheets are parsed** in a throwaway worker with a time limit, which contains the known
-  advisories in the npm build of SheetJS `xlsx` 0.18.5 (prototype pollution, ReDoS). Upgrading
-  to SheetJS 0.20.3 from `cdn.sheetjs.com` removes them.
+- **Spreadsheets are parsed** in a throwaway worker with a time limit, with SheetJS 0.20.3 (free
+  of the prototype-pollution and ReDoS advisories in the npm registry's `xlsx` 0.18.5). It is
+  installed from the `@e965/xlsx` republish; CI checks each file against SheetJS's own tarball
+  from `cdn.sheetjs.com` (`scripts/verify-sheetjs.js --required`).
 
 ## Desktop app (Electron)
 

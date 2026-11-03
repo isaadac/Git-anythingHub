@@ -54,9 +54,9 @@ All apps have undo/redo, unsaved-changes prompts, recent files, print and PDF ex
 
 Download the installer for your system from the repository's **Releases** page (or from the latest **Actions → Isadek Office** run's artifacts):
 
-- **Windows**: `Isadek-Office-Setup-x.y.z-x64.exe` (installer; `-arm64` for ARM PCs) or `Isadek-Office-x.y.z-portable.exe` (no install needed)
+- **Windows**: `Isadek-Office-Setup-x.y.z-x64.exe` (installer; `-arm64` for ARM PCs), `Isadek-Office-x.y.z-x64.msi` (per-machine MSI for deployment with Intune, SCCM or Group Policy: `msiexec /i Isadek-Office-x.y.z-x64.msi /qn`), or `Isadek-Office-x.y.z-portable-x64.exe` / `-portable-arm64.exe` (no install needed)
 - **macOS**: `Isadek-Office-x.y.z-universal.dmg` (Intel and Apple Silicon)
-- **Linux**: `Isadek-Office-x.y.z-x86_64.AppImage` (any distro: `chmod +x` and run) or `isadek-office_x.y.z_amd64.deb` (Debian/Ubuntu)
+- **Linux**: `Isadek-Office-x.y.z-x86_64.AppImage` (any distro: `chmod +x` and run), `isadek-office_x.y.z_amd64.deb` (Debian/Ubuntu) or `isadek-office-x.y.z-x64.tar.gz` (unpack anywhere); each also for ARM64
 
 Builds are code-signed once signing certificates are added to the repository (see [SIGNING.md](SIGNING.md)). Until then, Windows SmartScreen may warn you ("More info → Run anyway"), and on macOS you right-click the app and choose **Open** the first time.
 
@@ -64,7 +64,7 @@ Builds are code-signed once signing certificates are added to the repository (se
 
 ### Updates
 
-Installed copies (Windows installer, macOS app, Linux AppImage and `.deb`) check the repository's latest GitHub Release every 6 hours, download new versions in the background and offer to restart. Use **Help → Check for Updates…** to check now, or untick **Help → Update Automatically** to turn this off. The portable `.exe` doesn't update itself. On macOS, updates need a signed build (see [SIGNING.md](SIGNING.md)).
+Installed copies (Windows installer, macOS app, Linux AppImage and `.deb`) check the repository's latest GitHub Release every 6 hours, download new versions in the background and offer to restart. Use **Help → Check for Updates…** to check now, or untick **Help → Update Automatically** to turn this off. The portable `.exe`, the `.tar.gz` and MSI installs don't update themselves (MSI deployments are updated by deploying the new MSI). On macOS, updates need a signed build (see [SIGNING.md](SIGNING.md)).
 
 To ship an update, raise `version` in `package.json` and push a tag such as `office-v1.0.1`. The release gets every installer and `SHA256SUMS.txt`; the workflow also publishes the download site (`site/`, built by `npm run site`) and sends store builds — Microsoft Store, Mac App Store, App Store, Google Play, Snap Store — wherever their credentials are set up ([SIGNING.md](SIGNING.md)). Store copies are updated by their store.
 
@@ -110,7 +110,7 @@ To publish a release with installers for all three systems, push a tag such as `
 - Documents are treated as untrusted. Opened and pasted content is sanitized (no scripts, frames, forms or remote content), and every page runs under a strict Content Security Policy.
 - The renderer runs sandboxed with no Node.js access. It can only read or overwrite files the user picked in a dialog, opened from the OS or reopened from the recent list.
 - Live-editing changes from other people go through the same checks as files, and Python, scripts and web data from someone else's workbook wait for permission. Saves are atomic, and the servers survive malformed or hostile input. See [SECURITY.md](SECURITY.md) for the full model.
-- Spreadsheet files are parsed in a throwaway Web Worker with a time limit, so a malicious file can't affect the app or freeze it. This contains the known SheetJS advisories (CVE-2023-30533 and CVE-2024-22363) in the npm build of `xlsx` 0.18.5. Upgrading to SheetJS 0.20.3 (`npm i https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`) removes them entirely.
+- Spreadsheet files are parsed in a throwaway Web Worker with a time limit, so a malicious file can't affect the app or freeze it. The app uses SheetJS 0.20.3, which fixes the advisories in the npm registry's `xlsx` 0.18.5 (CVE-2023-30533, CVE-2024-22363). SheetJS publishes 0.20.3 only on cdn.sheetjs.com, so it is installed from `@e965/xlsx` (an npm republish built with provenance from that tarball) under the name `xlsx`; CI runs `scripts/verify-sheetjs.js --required` to check every file matches SheetJS's own tarball.
 - Sheets renders only the visible part of the grid, so workbooks with hundreds of thousands of rows open and scroll smoothly. Formula chains of any length (such as running totals down 100,000 rows) calculate without hitting the JavaScript stack limit.
 
 ## Known limitations

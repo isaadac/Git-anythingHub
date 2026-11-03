@@ -57,8 +57,14 @@ function supported() {
   // Store copies (Microsoft Store, Mac App Store, Snap Store) are updated by the store.
   if (process.windowsStore || process.mas || process.env.SNAP) return false;
   if (process.platform === 'win32' && process.env.PORTABLE_EXECUTABLE_DIR) return false;
+  // The NSIS installer leaves its uninstaller beside the app; MSI installs (deployed and updated by IT) don't.
+  if (process.platform === 'win32' && !isNsis()) return false;
   if (process.platform === 'linux' && !process.env.APPIMAGE && !isDeb()) return false;
   return true;
+}
+function isNsis() {
+  const fs = require('fs'), path = require('path');
+  try { return fs.readdirSync(path.dirname(process.execPath)).some(f => /^Uninstall .*\.exe$/i.test(f)); } catch { return false; }
 }
 function isDeb() {
   // electron-builder marks .deb installs with resources/package-type.

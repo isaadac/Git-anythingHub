@@ -31,6 +31,8 @@ jobs:
           cache: npm
           cache-dependency-path: office-suite/package-lock.json
       - run: npm ci
+      - name: SheetJS is the official 0.20.3 (installed from an npm republish)
+        run: node scripts/verify-sheetjs.js --required
       - run: npm test
 
   e2e:
@@ -133,10 +135,12 @@ jobs:
           name: isadek-office-${{ runner.os }}
           path: |
             office-suite/dist/*.exe
+            office-suite/dist/*.msi
             office-suite/dist/*.dmg
             office-suite/dist/*.zip
             office-suite/dist/*.AppImage
             office-suite/dist/*.deb
+            office-suite/dist/*.tar.gz
             office-suite/dist/*.blockmap
             office-suite/dist/latest*.yml
           if-no-files-found: error
