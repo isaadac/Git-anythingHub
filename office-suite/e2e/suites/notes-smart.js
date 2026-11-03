@@ -129,6 +129,14 @@ const check = (n, c, x = '') => { console.log((c ? 'PASS ' : 'FAIL ') + n + (x !
   await p.evaluate(src => { const b = document.getElementById('body'); b.focus(); const r = document.createRange(); r.selectNodeContents(b); r.collapse(false); getSelection().removeAllRanges(); getSelection().addRange(r); document.execCommand('insertHTML', false, `<p><img id="pic2" src="${src}" alt=""></p>`); }, pic2);
   await p.waitForFunction(() => /harbour/i.test(document.getElementById('pic2')?.getAttribute('data-ocr') || ''), null, { timeout: 60000 }).catch(() => {});
   check('a picture added to the page is read in the background', /harbour master/i.test(await p.getAttribute('#pic2', 'data-ocr') || ''));
+  // Reading a picture isn't an edit: a page opened with pictures not read yet keeps its date
+  // (sync keeps the newer page), and the words are kept.
+  const pic3 = await textPicture('Lighthouse keeper rota');
+  await p.evaluate(src => { AtlasNotes.notebook; const pg = AtlasNotes.page; pg.html += `<p><img id="pic3" src="${src}" alt=""></p>`; pg.modified = 1000; document.getElementById('body').innerHTML = pg.html; }, pic3);
+  await p.waitForFunction(() => /lighthouse/i.test(document.getElementById('pic3').getAttribute('data-ocr') || ''), null, { timeout: 60000 }).catch(() => {});
+  await p.waitForTimeout(800);
+  const later = await p.evaluate(() => { AtlasNotes.notebook; return [AtlasNotes.page.modified, /data-ocr="[^"]*Lighthouse/i.test(AtlasNotes.page.html)]; });
+  check('a page’s pictures read in the background don’t make the page newer, and the words are kept', later[0] === 1000 && later[1], JSON.stringify(later));
   await p.fill('#search', 'harbour master');
   await p.waitForTimeout(400);
   check('…so searching finds the page by words in a picture', (await p.locator('#results li:not(.none)').count()) === 1);

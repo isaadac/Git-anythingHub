@@ -153,14 +153,15 @@
     }
     /** Pictures without their words read yet, read quietly one at a time so search finds them. */
     let indexing = false;
+    const tried = new WeakSet(); // pictures already read (kept off the page: an attribute would change it)
     async function indexPictures() {
       if (indexing) return;
       indexing = true;
       try {
         for (let i = 0; i < 20; i++) {
-          const img = [...body.querySelectorAll('img:not([data-ocr])')].find(x => x.naturalWidth >= 60 && x.naturalHeight >= 20 && !x.dataset.ocrTried);
+          const img = [...body.querySelectorAll('img:not([data-ocr])')].find(x => x.naturalWidth >= 60 && x.naturalHeight >= 20 && !tried.has(x));
           if (!img) break;
-          img.dataset.ocrTried = '1';
+          tried.add(img);
           const r = await readPicture(img).catch(() => null);
           if (r && body.contains(img)) { img.setAttribute('data-ocr', r.confidence >= 50 ? r.text.slice(0, 20000) : ''); ctx.markChanged(true); }
         }

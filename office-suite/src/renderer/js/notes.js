@@ -841,7 +841,15 @@
   // ---------- Ink to Text, pictures to text, math, web clips (notes-smart.js) ----------
   NotesSmart({
     body, pageEl, sanitize, insertHtml, restoreSel,
-    markChanged: () => { page.modified = Date.now(); markChanged(); },
+    // quiet: saved, but not an edit (words read from pictures in the background don't make the page newer).
+    markChanged: quiet => {
+      if (quiet === true) {
+        // Only if nothing else changed: then the page is stored as it is now, without counting as edited.
+        const html = body.innerHTML, bare = h => h.replace(/ data-ocr="[^"]*"/g, '');
+        if (bare(html) === bare(page.html)) page.html = html;
+      } else page.modified = Date.now();
+      markChanged();
+    },
     strokes: () => page.ink,
     removeStrokes: list => { const gone = new Set(list); page.ink = page.ink.filter(s => !gone.has(s)); page.modified = Date.now(); drawInk(); markChanged(); },
     selectionText: () => { const s = getSelection(); return s.rangeCount && body.contains(s.anchorNode) ? s.toString() : savedRange && !savedRange.collapsed ? savedRange.toString() : ''; },
