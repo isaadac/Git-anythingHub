@@ -534,3 +534,14 @@ html.capturing ::selection { background: transparent; }
 .addin-pane .body button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-contrast, #fff); }
 .addin-pane .body progress { width: 100%; }
 .addin-pane .by { padding: var(--sp-3) var(--sp-6); color: var(--muted); font-size: var(--fs-xs); border-top: 1px solid var(--border); }
+
+/* Right-to-left interface languages (Arabic): the interface is mirrored; documents keep their own
+   direction (grids, slides, boards and PDF pages stay as they are), and each paragraph of a text
+   document follows the direction of its own words. */
+html[dir="rtl"] .ai-pane, html[dir="rtl"] .activity-pane, html[dir="rtl"] .addin-pane, html[dir="rtl"] .math-pane,
+html[dir="rtl"] .sig-pane, html[dir="rtl"] .script-pane, html[dir="rtl"] .designer-pane { right: auto; left: var(--sp-4); }
+html[dir="rtl"] .grid-wrap, html[dir="rtl"] #stage, html[dir="rtl"] .slide, html[dir="rtl"] .board, html[dir="rtl"] .pdf-pages,
+html[dir="rtl"] #formulaBar, html[dir="rtl"] .fx-input, html[dir="rtl"] #doc, html[dir="rtl"] .note-page { direction: ltr; }
+#doc p, #doc li, #doc h1, #doc h2, #doc h3, #doc h4, #doc h5, #doc h6, #doc blockquote, #doc td, #doc th,
+.note-body p, .note-body li, .note-body h1, .note-body h2, .note-body h3, .note-body td { unicode-bidi: plaintext; }
+html[dir="rtl"] .toast { direction: rtl; }

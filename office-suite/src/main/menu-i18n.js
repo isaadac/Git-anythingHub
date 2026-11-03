@@ -33,9 +33,25 @@ const LABELS = {
     'Find and Replace…': 'Localizar e substituir…', View: 'Exibir', 'Zoom In': 'Ampliar', 'Zoom Out': 'Reduzir', 'Actual Size': 'Tamanho real', 'Toggle Full Screen': 'Tela inteira',
     'Toggle Developer Tools': 'Ferramentas de desenvolvedor', Window: 'Janela', Minimize: 'Minimizar', Help: 'Ajuda', 'Check for Updates…': 'Verificar atualizações…',
     'Update Automatically': 'Atualizar automaticamente', 'About Isadek Office': 'Sobre o Isadek Office', 'Help and Support': 'Ajuda e suporte', 'Send Crash Reports': 'Enviar relatórios de falhas', 'Show Crash Reports': 'Mostrar relatórios de falhas', 'Privacy': 'Privacidade'
+  },
+  it: {
+    File: 'File', 'New Whiteboard': 'Nuova lavagna', 'New Document': 'Nuovo documento', 'New Spreadsheet': 'Nuovo foglio di calcolo', 'New Presentation': 'Nuova presentazione', 'Isadek Notes': 'Isadek Notes',
+    New: 'Nuovo', 'Open…': 'Apri…', Save: 'Salva', 'Save As…': 'Salva con nome…', 'Export as PDF…': 'Esporta come PDF…', 'Print…': 'Stampa…', Home: 'Home',
+    Quit: 'Esci', Close: 'Chiudi', Edit: 'Modifica', Undo: 'Annulla', Redo: 'Ripeti', Cut: 'Taglia', Copy: 'Copia', Paste: 'Incolla', 'Select All': 'Seleziona tutto',
+    'Find and Replace…': 'Trova e sostituisci…', View: 'Visualizza', 'Zoom In': 'Zoom avanti', 'Zoom Out': 'Zoom indietro', 'Actual Size': 'Dimensioni effettive', 'Toggle Full Screen': 'Schermo intero',
+    'Toggle Developer Tools': 'Strumenti per sviluppatori', Window: 'Finestra', Minimize: 'Riduci a icona', Help: 'Guida', 'Check for Updates…': 'Verifica aggiornamenti…',
+    'Update Automatically': 'Aggiorna automaticamente', 'About Isadek Office': 'Informazioni su Isadek Office', 'Help and Support': 'Guida e supporto', 'Send Crash Reports': 'Invia segnalazioni di arresto anomalo', 'Show Crash Reports': 'Mostra segnalazioni di arresto anomalo', 'Privacy': 'Privacy'
+  },
+  ar: {
+    File: 'ملف', 'New Whiteboard': 'لوحة بيضاء جديدة', 'New Document': 'مستند جديد', 'New Spreadsheet': 'جدول بيانات جديد', 'New Presentation': 'عرض تقديمي جديد', 'Isadek Notes': 'Isadek Notes',
+    New: 'جديد', 'Open…': 'فتح…', Save: 'حفظ', 'Save As…': 'حفظ باسم…', 'Export as PDF…': 'تصدير كملف PDF…', 'Print…': 'طباعة…', Home: 'الصفحة الرئيسية',
+    Quit: 'إنهاء', Close: 'إغلاق', Edit: 'تحرير', Undo: 'تراجع', Redo: 'إعادة', Cut: 'قص', Copy: 'نسخ', Paste: 'لصق', 'Select All': 'تحديد الكل',
+    'Find and Replace…': 'بحث واستبدال…', View: 'عرض', 'Zoom In': 'تكبير', 'Zoom Out': 'تصغير', 'Actual Size': 'الحجم الفعلي', 'Toggle Full Screen': 'ملء الشاشة',
+    'Toggle Developer Tools': 'أدوات المطور', Window: 'نافذة', Minimize: 'تصغير إلى شريط المهام', Help: 'التعليمات', 'Check for Updates…': 'التحقق من وجود تحديثات…',
+    'Update Automatically': 'التحديث تلقائيًا', 'About Isadek Office': 'حول Isadek Office', 'Help and Support': 'التعليمات والدعم', 'Send Crash Reports': 'إرسال تقارير الأعطال', 'Show Crash Reports': 'إظهار تقارير الأعطال', 'Privacy': 'الخصوصية'
   }
 };
-const LANGS = ['en', 'es', 'fr', 'de', 'pt'];
+const LANGS = ['en', 'es', 'fr', 'de', 'pt', 'it', 'ar'];
 
 /** A translator for the menus in one language (English for an unknown one). */
 function menuText(lang) {

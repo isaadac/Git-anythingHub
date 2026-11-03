@@ -5,7 +5,9 @@
 // live. Documents are never touched: anything inside the document (and any typed text) is skipped.
 (function () {
   const KEY = 'atlas-lang';
-  const LANGS = { en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', pt: 'Português' };
+  const LANGS = { en: 'English', es: 'Español', fr: 'Français', de: 'Deutsch', pt: 'Português', it: 'Italiano', ar: 'العربية' };
+  // Languages written right to left: the interface is mirrored (documents keep their own direction).
+  const RTL = new Set(['ar']);
   const ATTRS = ['title', 'aria-label', 'placeholder'];
   // The document and anything typed: never translated (a text box's placeholder and tooltip are).
   const SKIP = '[data-no-i18n],[contenteditable="true"],[contenteditable=""],textarea,script,style,#doc,#canvas,#grid,#sheetTabs,#stage,#thumbs,#presentSlide,#notes,#pages,#sections,.el,.handout-page';
@@ -133,6 +135,7 @@
   function apply(l) {
     lang = LANGS[l] ? l : 'en';
     document.documentElement.lang = lang;
+    document.documentElement.dir = RTL.has(lang) ? 'rtl' : 'ltr';
     if (lang !== 'en') document.documentElement.dataset.i18nWas = '1';
     load(lang, () => { if (document.body) { translate(); translate(document.querySelector('title')); } });
   }
@@ -140,6 +143,7 @@
   const I18n = {
     LANGS,
     get lang() { return lang; },
+    get rtl() { return RTL.has(lang); },
     t,
     translate,
     set(l) {
@@ -158,6 +162,7 @@
   window.I18n = I18n;
 
   document.documentElement.lang = lang;
+  document.documentElement.dir = RTL.has(lang) ? 'rtl' : 'ltr';
   load(lang, () => {}, true);
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start); else start();
   // Another window changed it.

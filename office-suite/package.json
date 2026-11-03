@@ -266,7 +266,9 @@
         "es-ES",
         "fr-FR",
         "de-DE",
-        "pt-BR"
+        "pt-BR",
+        "it-IT",
+        "ar-SA"
       ],
       "artifactName": "Isadek-Office-${version}-${arch}.${ext}"
     },

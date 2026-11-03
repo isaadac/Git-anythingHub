@@ -8,7 +8,7 @@ const vm = require('vm');
 
 const R = path.join(__dirname, '../src/renderer');
 const ctx = { window: {} };
-for (const l of ['es', 'fr', 'de', 'pt']) vm.runInNewContext(fs.readFileSync(path.join(R, 'i18n', l + '.js'), 'utf8'), ctx);
+for (const l of ['es', 'fr', 'de', 'pt', 'it', 'ar']) vm.runInNewContext(fs.readFileSync(path.join(R, 'i18n', l + '.js'), 'utf8'), ctx);
 const D = ctx.window.ISADEK_I18N;
 const decode = s => s.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/&nbsp;/g, ' ');
 
@@ -27,7 +27,7 @@ function ribbonWords(html) {
 test('every dictionary has the same words, each translated', () => {
   const keys = Object.keys(D.es).sort();
   assert.ok(keys.length > 400);
-  for (const l of ['fr', 'de', 'pt']) {
+  for (const l of ['fr', 'de', 'pt', 'it', 'ar']) {
     assert.deepStrictEqual(Object.keys(D[l]).sort(), keys, l);
     for (const k of keys) assert.ok(typeof D[l][k] === 'string' && D[l][k].trim(), `${l}: ${k}`);
   }
@@ -58,5 +58,5 @@ test('every page loads the language script', () => {
 test('the native menus are translated in every language', () => {
   const { LABELS } = require('../src/main/menu-i18n');
   const keys = Object.keys(LABELS.es).sort();
-  for (const l of ['fr', 'de', 'pt']) assert.deepStrictEqual(Object.keys(LABELS[l]).sort(), keys, l);
+  for (const l of ['fr', 'de', 'pt', 'it', 'ar']) assert.deepStrictEqual(Object.keys(LABELS[l]).sort(), keys, l);
 });
