@@ -41,6 +41,14 @@ test('the dictionaries cover the ribbons of every app', () => {
   assert.deepStrictEqual(missing, []);
 });
 
+test('the dictionaries cover every tooltip', () => {
+  const missing = [];
+  for (const f of fs.readdirSync(R).filter(f => f.endsWith('.html') && !['form.html', 'remote.html', 'help.html'].includes(f))) {
+    for (const m of fs.readFileSync(path.join(R, f), 'utf8').matchAll(/title="([^"]+)"/g)) { const t = decode(m[1]); if (/\p{L}{3}/u.test(t) && !D.es[t]) missing.push(`${f}: ${t}`); }
+  }
+  assert.deepStrictEqual([...new Set(missing)], []);
+});
+
 test('every page loads the language script', () => {
   // form.html and remote.html are the small pages phones open (a form to answer, the slide
   // show remote), served on their own by the forms server: a form is in its author's words.
