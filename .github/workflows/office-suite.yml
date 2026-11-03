@@ -11,7 +11,15 @@ on:
     tags: ['office-v*']
   pull_request:
     paths: ['office-suite/**', '.github/workflows/office-suite.yml']
+  # Actions → Isadek Office → Run workflow: builds everything; with a version (the app's version in
+  # office-suite/package.json, e.g. 1.0.0) it also publishes the release office-v<version>, as
+  # pushing that tag does (store uploads still need the tag push).
   workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Publish a GitHub Release for this version (leave empty to only build)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -340,30 +348,44 @@ jobs:
           if-no-files-found: ignore
 
   release:
-    if: startsWith(github.ref, 'refs/tags/office-v')
+    if: startsWith(github.ref, 'refs/tags/office-v') || (github.event_name == 'workflow_dispatch' && inputs.release_version != '')
     needs: [build, android]
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event_name == 'workflow_dispatch' && format('office-v{0}', inputs.release_version) || github.ref_name }}
     steps:
+      - uses: actions/checkout@v4
+        with:
+          sparse-checkout: office-suite/package.json
+          sparse-checkout-cone-mode: false
+      - name: The version matches the app's
+        working-directory: .
+        run: |
+          want="office-v$(node -p "require('./office-suite/package.json').version")"
+          if [ "$TAG" != "$want" ]; then echo "::error::Release $TAG doesn't match the app's version ($want in office-suite/package.json)"; exit 1; fi
       - uses: actions/download-artifact@v4
         with:
           path: installers
           pattern: isadek-office-*
           merge-multiple: true
       - name: Checksums
-        working-directory: installers
+        working-directory: ${{ github.workspace }}/installers
         run: |
           rm -f *-debug.apk
           sha256sum * > SHA256SUMS.txt
           cat SHA256SUMS.txt
       - uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ env.TAG }}
+          target_commitish: ${{ github.sha }}
+          name: Isadek Office ${{ github.event_name == 'workflow_dispatch' && inputs.release_version || github.ref_name }}
           files: installers/*
           generate_release_notes: true
 
   # The download site on GitHub Pages (Settings → Pages → Source: GitHub Actions, then set the
   # repository variable ISADEK_PAGES to true).
   site:
-    if: startsWith(github.ref, 'refs/tags/office-v') && vars.ISADEK_PAGES == 'true'
+    if: (startsWith(github.ref, 'refs/tags/office-v') || (github.event_name == 'workflow_dispatch' && inputs.release_version != '')) && vars.ISADEK_PAGES == 'true'
     needs: release
     runs-on: ubuntu-latest
     permissions:
