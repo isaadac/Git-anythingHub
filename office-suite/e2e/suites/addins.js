@@ -37,6 +37,7 @@ const sample = f => fs.readFileSync(path.join(process.cwd(), 'addins', f), 'utf8
   const b = await chromium.launch();
   const ctx = await b.newContext({ viewport: { width: 1400, height: 900 } });
   const outside = [];
+  let trapPort = -1; // the address the escaping add-in aims at: what reaches it is counted there
   ctx.on('request', r => { if (!r.url().startsWith(`http://127.0.0.1:${web.address().port}/`) && !/^(data|blob):/.test(r.url())) outside.push(r.url()); });
   const errors = [];
   const page = async app => {
@@ -80,6 +81,20 @@ const sample = f => fs.readFileSync(path.join(process.cwd(), 'addins', f), 'utf8
   check('an add-in without the “write” permission can’t change the document', /may not change the document/.test(rep.insert) && !/HACKED/.test(await w.textContent('#doc')), rep.insert);
   check('…and has no network, storage or page access', rep.fetch === 'undefined' && rep.xhr === 'undefined' && rep.ws === 'undefined' && rep.idb === 'undefined' && rep.doc === 'undefined' && rep.win === 'undefined' && rep.imp === 'undefined', JSON.stringify(rep));
   check('…and what it shows is text, never HTML', !(await w.evaluate(() => !!document.querySelector('.addin-pane img') || window.__xss)));
+  // Every other way out of the worker is closed too: nothing reaches another address.
+  const hits = [];
+  const trap = http.createServer((q, r) => { hits.push(q.url); r.writeHead(200, { 'access-control-allow-origin': '*', 'content-type': 'text/javascript' }); r.end('// nothing'); });
+  trap.on('upgrade', (q, sock) => { hits.push(q.url); sock.destroy(); });
+  await new Promise(r => trap.listen(0, '127.0.0.1', r));
+  await install(w, require('../escape-addin')(`http://127.0.0.1:${trap.address().port}`));
+  await w.click('.addin-cmd[data-cmd="escape"]');
+  await w.waitForFunction(() => /"indexedDB"/.test(document.querySelector('.addin-pane .body').textContent), null, { timeout: 15000 }).catch(() => {});
+  const esc = await w.locator('.addin-pane .body p').first().textContent().catch(() => '');
+  const csp = await new Promise(r => http.get(BASE + 'js/addin-worker.js', res => { res.resume(); r(res.headers['content-security-policy'] || ''); }));
+  check('the web server gives add-in workers a policy that keeps their scripts and data to this site', /script-src 'self' 'unsafe-eval'/.test(csp) && /connect-src 'self'/.test(csp) && /default-src 'none'/.test(csp), csp);
+  trapPort = trap.address().port;
+  check('an add-in can’t get out through the prototypes, import(), a worker or a socket', hits.length === 0 && /"fetch":"gone"/.test(esc) && /"indexedDB":"gone"/.test(esc), `${esc} :: ${hits.join(' ')}`);
+  trap.close();
   // A runaway add-in is stopped; the page keeps working.
   const loop = JSON.stringify({ id: 'test.loop', name: 'Loop', apps: ['write'], permissions: [], commands: [{ id: 'spin', label: 'Spin' }], script: `isadek.onCommand('spin', () => { for (;;) {} });` });
   await install(w, loop);
@@ -139,7 +154,7 @@ const sample = f => fs.readFileSync(path.join(process.cwd(), 'addins', f), 'utf8
   await w.click('.ai-pane .ai-file .rm');
   check('…and the chip can be removed', (await w.locator('.ai-pane .ai-file').count()) === 0);
 
-  check('nothing was fetched from outside', !outside.length, outside.join(' '));
+  check('nothing was fetched from outside', !outside.filter(u => !u.includes(`127.0.0.1:${trapPort}/`)).length, outside.join(' '));
   check('no page errors', !errors.length, errors.join(' | '));
   await b.close();
   web.close(); api.close();

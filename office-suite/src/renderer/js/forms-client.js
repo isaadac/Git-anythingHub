@@ -37,6 +37,7 @@
 
   /** A form's operations: create, update, remove, respond, responses. f: { server, id, key }. */
   function call(f, op, args = {}) {
+    if (window.Platform && Platform.policy.DisableForms && ['create', 'update'].includes(op)) return Promise.reject(new Error('Forms were turned off by your organisation'));
     if (f.server === 'local') return local(op, { id: f.id, key: f.key, ...args });
     const base = '/api/forms' + (f.id ? '/' + f.id : '');
     switch (op) {

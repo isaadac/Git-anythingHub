@@ -2,10 +2,8 @@
 // Runs one add-in away from the page (addins.js starts one worker per add-in). The add-in gets
 // the `isadek` API below and nothing else: no network, storage, page or other add-ins. Every
 // call to the document goes to the page, which checks it against the add-in's permissions.
-const LOCKED = ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts', 'indexedDB', 'caches', 'Worker', 'SharedWorker', 'BroadcastChannel', 'navigator', 'location', 'WebTransport', 'RTCPeerConnection'];
-for (const k of LOCKED) {
-  try { Object.defineProperty(self, k, { value: undefined, configurable: false, writable: false }); } catch { /* not configurable */ }
-}
+importScripts('worker-lockdown.js');
+self.lockDown();
 const post = self.postMessage.bind(self);
 let seq = 0;
 const waiting = new Map();

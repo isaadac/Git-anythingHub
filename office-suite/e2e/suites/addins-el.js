@@ -23,6 +23,23 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   check('desktop: an add-in runs and reads the document', ok, await w.evaluate(() => document.querySelector('.addin-pane .body')?.textContent || document.querySelector('.toast')?.textContent || ''));
   const md = await w.evaluate(async () => (await FileText.extract('a.md', new TextEncoder().encode('hello'))).text);
   check('desktop: files are read for the Assistant', md === 'hello');
+  const pdf = await w.evaluate(async () => {
+    await new Promise(r => { const s = document.createElement('script'); s.src = '../../node_modules/pdf-lib/dist/pdf-lib.min.js'; s.onload = r; document.head.appendChild(s); });
+    const d = await PDFLib.PDFDocument.create(); d.addPage([300, 200]).drawText('Quarterly report', { x: 20, y: 100, size: 18 });
+    try { return (await FileText.extract('r.pdf', await d.save())).text; } catch (e) { return 'ERR ' + e.message; }
+  });
+  check('desktop: …PDFs too (pdf.js from the app’s files)', pdf === '## Page 1\nQuarterly report', pdf);
+  // Nothing an add-in tries gets out of the app (here: through the prototypes, import(), a worker, a socket).
+  const hits = [];
+  const trap = require('http').createServer((q, r) => { hits.push(q.url); r.writeHead(200, { 'access-control-allow-origin': '*', 'content-type': 'text/javascript' }); r.end('// nothing'); });
+  trap.on('upgrade', (q, sock) => { hits.push(q.url); sock.destroy(); });
+  await new Promise(r => trap.listen(0, '127.0.0.1', r));
+  await w.evaluate(t => AtlasWrite.addins.install(t), require('../escape-addin')(`http://127.0.0.1:${trap.address().port}`));
+  await w.click('.addin-cmd[data-cmd="escape"]');
+  await w.waitForFunction(() => /"indexedDB"/.test(document.querySelector('.addin-pane .body')?.textContent || ''), null, { timeout: 15000 }).catch(() => {});
+  const esc = await w.evaluate(() => document.querySelector('.addin-pane .body p')?.textContent || '');
+  check('desktop: an add-in can’t get out of its worker', hits.length === 0 && /"fetch":"gone"/.test(esc), `${esc} :: ${hits.join(' ')}`);
+  trap.close();
   for (const x of app.windows()) await x.evaluate(() => { window.__atlasDirty = false; });
   await require('../close-app')(app);
 })().then(() => process.exit(process.exitCode || 0)).catch(e => { console.error('CRASH', e.message); process.exit(1); });

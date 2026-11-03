@@ -3,7 +3,7 @@
 // Owns windows, native menus, file dialogs, file associations and the recent-files list.
 const { app, BrowserWindow, Menu, dialog, ipcMain, nativeTheme, screen, session, shell } = require('electron');
 require('./ipc-guard'); // before any handler: only the app's own pages may call the main process
-const { policy } = require('./policy'); // what the organisation turned off (before the handlers too)
+const { policy, applyNetwork } = require('./policy'); // what the organisation turned off (before the handlers too)
 const { writeAtomic, readJson, safeGet } = require('./safe-io');
 const { LANGS, menuText } = require('./menu-i18n');
 const path = require('path');
@@ -624,6 +624,10 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   app.whenReady().then(() => {
+    // The pages and their workers only ever run the app's own scripts: a script from the network
+    // (a dynamic import() in code a document or an add-in brought) is refused, and with it
+    // anything such code put in the address. Then the organisation's network policies.
+    applyNetwork(session.defaultSession);
     // Only the permissions the apps use: clipboard (Paste button), full screen (slide show), the
     // microphone (narration, audio notes, captions), notifications (mentions and replies in a live
     // session) and, in Slides only, the camera (Cameo) — never the screen.

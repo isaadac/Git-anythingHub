@@ -48,6 +48,10 @@ changes from other people in a live session.
   like any pasted HTML. Text recognition runs in a worker from the app's own files.
 - The Assistant accepts pictures only as base64 PNG, JPEG, GIF or WebP (up to four, 3 MB
   each), never by address.
+- Workers that run code from documents or add-ins (Sheets scripts, Python, SQLite, add-ins)
+  remove network, storage and messaging APIs from the global object and every prototype behind it
+  (worker-lockdown.js). The web server gives them a CSP that keeps scripts and data to the site;
+  the desktop app refuses any script from the network, so a dynamic import() can't carry data out.
 - Add-ins run each in a dedicated worker with network, storage and page APIs removed; every call
   to the document is checked against the permissions shown at install (read, write), results are
   copied as data, panes are built from plain text blocks, and a command is stopped after a minute.

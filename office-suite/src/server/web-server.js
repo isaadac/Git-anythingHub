@@ -45,6 +45,12 @@ const SECURITY_HEADERS = {
   'Permissions-Policy': 'camera=(self), microphone=(self), geolocation=(), payment=(), usb=()'
 };
 
+// The workers that run code from documents and add-ins get their own policy: scripts and data only
+// from this site, so nothing they run can import or fetch from anywhere else (a dynamic import()
+// would otherwise reach any address, with whatever it put in the URL).
+const WORKER_CSP = "default-src 'none'; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; connect-src 'self'";
+const SANDBOX_WORKERS = /^\/src\/renderer\/js\/(addin-worker|sheets-script-worker|sheets-sql-worker|sheets-python-worker)\.js$/;
+
 /** Library files the pages load (../../node_modules/…): only those are served from node_modules. */
 function libraryFiles() {
   const wanted = new Set();
@@ -164,6 +170,7 @@ function createWebServer(opts = {}) {
 
   const server = http.createServer((req, res) => {
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) res.setHeader(k, v);
+    try { if (SANDBOX_WORKERS.test(new URL(req.url, 'http://x').pathname)) res.setHeader('Content-Security-Policy', WORKER_CSP + "; frame-ancestors 'none'"); } catch { /* bad URL: route() answers it */ }
     try { route(req, res); } catch (err) {
       // Never let one request take the server down.
       if (!res.headersSent) { res.writeHead(500); res.end('Server error'); } else res.destroy();

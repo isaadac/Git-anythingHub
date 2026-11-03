@@ -105,4 +105,40 @@ ipcMain.handle = (channel, fn) => handle(channel, (e, ...args) => {
 });
 ipcMain.on('policy:get', e => { e.returnValue = policy; });
 
-module.exports = { policy, clean, OFF, blocked: c => blocked.has(c) };
+/** Private and loopback addresses: where "This computer" live sessions run. */
+function localHost(host) {
+  const h = host.replace(/^\[|\]$/g, '').toLowerCase();
+  if (h === 'localhost' || h === '::1' || /^127\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h) || /^169\.254\./.test(h)) return true;
+  const m = /^172\.(\d+)\./.exec(h);
+  return (m && +m[1] >= 16 && +m[1] <= 31) || /^f[cd][0-9a-f]{2}:/.test(h) || /^fe80:/.test(h);
+}
+/**
+ * Whether a page may make this network request under the policies. Live sessions (WebSockets),
+ * forms and the speech model download go straight from the pages, so they are checked here, on
+ * the way out, as well as in the pages.
+ */
+function allowed(url) {
+  let u;
+  try { u = new URL(url); } catch { return true; }
+  if (u.protocol === 'ws:' || u.protocol === 'wss:') {
+    if (policy.DisableLiveEditing) return false;
+    const list = policy.LiveServers;
+    if (!list) return true;
+    if (list.includes('local') && localHost(u.hostname)) return true;
+    return list.some(p => p !== 'local' && url.toLowerCase().startsWith(p.toLowerCase()));
+  }
+  if (u.protocol === 'http:' || u.protocol === 'https:') {
+    if (policy.DisableForms && /^\/api\/(forms|remote)(\/|$)/.test(u.pathname)) return false;
+    if (policy.DisableSpeechDownload && /(^|\.)huggingface\.co$/i.test(u.hostname)) return false;
+  }
+  return true;
+}
+/**
+ * Applies to a session's requests (main.js, when the app is ready): no scripts from the network
+ * (the app's are all its own files), and the organisation's network policies.
+ */
+function applyNetwork(ses) {
+  ses.webRequest.onBeforeRequest({ urls: ['ws://*/*', 'wss://*/*', 'http://*/*', 'https://*/*'] }, (d, cb) => cb({ cancel: d.resourceType === 'script' || !allowed(d.url) }));
+}
+
+module.exports = { policy, clean, OFF, blocked: c => blocked.has(c), allowed, applyNetwork };

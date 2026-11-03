@@ -7,9 +7,8 @@ self.window = self;
 importScripts('formula.js');
 const F = self.Formula;
 // Nothing the script could use to reach outside.
-for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'importScripts', 'indexedDB', 'caches', 'Worker', 'SharedWorker', 'BroadcastChannel', 'navigator', 'location']) {
-  try { Object.defineProperty(self, k, { value: undefined, configurable: false, writable: false }); } catch { /* not configurable */ }
-}
+importScripts('worker-lockdown.js');
+self.lockDown();
 
 self.onmessage = e => {
   const { code, book, active, selection } = e.data;

@@ -2,12 +2,10 @@
 // Reads a SQLite database file (Data → From Database) away from the page: SQLite compiled to
 // WebAssembly (sql.js), on a copy of the file in memory, with no network or storage.
 // library files: node_modules/sql.js/dist/sql-wasm.wasm
-importScripts('../../../node_modules/sql.js/dist/sql-wasm.js');
+importScripts('../../../node_modules/sql.js/dist/sql-wasm.js', 'worker-lockdown.js');
 // The engine loads its WebAssembly first; then nothing here can reach the network.
 const ready = initSqlJs({ locateFile: f => '../../../node_modules/sql.js/dist/' + f }).then(SQL => {
-  for (const k of ['fetch', 'XMLHttpRequest', 'WebSocket', 'EventSource', 'indexedDB', 'caches', 'importScripts']) {
-    try { Object.defineProperty(self, k, { value: undefined, configurable: false, writable: false }); } catch { /* not configurable */ }
-  }
+  self.lockDown();
   return SQL;
 });
 let db = null;

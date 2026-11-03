@@ -37,6 +37,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   await w.click('.live-btn');
   await sleep(500);
   check('…joining a server that isn’t listed is refused', toasts.some(t => /doesn’t allow that live-editing server/.test(t)), toasts.join(' | '));
+  // Even a page that skips its own checks can't reach a server that isn't listed: the request is
+  // stopped on its way out (here, a live server on this computer, which "local" would allow).
+  const { createCollabServer } = require(path.join(ROOT, 'src/main/collab-server.js'));
+  const srv = createCollabServer();
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const ws = await w.evaluate(url => new Promise(res => { const s = new WebSocket(url); s.onopen = () => { s.close(); res('open'); }; s.onerror = () => res('blocked'); setTimeout(() => res('timeout'), 5000); }), `ws://127.0.0.1:${srv.address().port}/`);
+  check('…and a live connection to a server that isn’t listed is stopped in the main process', ws === 'blocked', ws);
+  srv.close();
   // The native menu: crash reports and automatic updates can't be turned on.
   const menu = await app.evaluate(({ Menu }) => { const items = []; const walk = m => m.items.forEach(i => { items.push([i.label, i.enabled, i.checked]); if (i.submenu) walk(i.submenu); }); walk(Menu.getApplicationMenu()); return items; });
   const item = l => menu.find(i => i[0] === l) || [];

@@ -25,7 +25,7 @@ places only an administrator can change (later ones win when the same policy is 
 | `DisableAssistant` | true/false (1/0) | No Assistant (Claude) button; its requests are refused |
 | `DisableCloudStorage` | true/false | No Google Drive, OneDrive, Dropbox or WebDAV |
 | `DisableLiveEditing` | true/false | No live sessions |
-| `LiveServers` | list of `ws://`/`wss://` addresses (JSON array, or separated by `;`) | Live sessions only on these servers; include `local` to allow hosting on the person's computer |
+| `LiveServers` | list of `ws://`/`wss://` addresses (JSON array, or separated by `;`) | Live sessions only on these servers; include `local` to allow sessions hosted on computers in the local network (private addresses) |
 | `DisableForms` | true/false | No publishing forms, live polls, audience Q&A or the phone remote |
 | `DisableAddins` | true/false | No installing or running add-ins |
 | `DisableWebData` | true/false | No From Web, Web Clip or other downloads a page asks for |
@@ -47,5 +47,6 @@ Example `policies.json`:
 ```
 
 What a policy turns off is refused in the app's main process, not only hidden in the windows, so
-a document or an add-in can't get round it. Unknown names and values of the wrong kind are ignored.
+a document or an add-in can't get round it: its functions are refused there, and connections to
+live-editing servers, form servers and the speech model download are checked as they leave the app. Unknown names and values of the wrong kind are ignored.
 Policies apply to the desktop app; the web version is configured on its server (see the README).
