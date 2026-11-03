@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<policyDefinitionResources xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <displayName>Isadek Office</displayName>
+  <description>Policies for Isadek Office</description>
+  <resources>
+    <stringTable>
+      <string id="IsadekOffice">Isadek Office</string>
+      <string id="SUPPORTED_IsadekOffice">Isadek Office 1.0 and later</string>
+      <string id="DisableAssistant">Turn off the Assistant</string>
+      <string id="DisableAssistant_Help">Isadek Office doesn't show the Assistant (Claude) and refuses its requests.</string>
+      <string id="DisableCloudStorage">Turn off cloud storage</string>
+      <string id="DisableCloudStorage_Help">People can't connect Google Drive, OneDrive, Dropbox or WebDAV servers.</string>
+      <string id="DisableLiveEditing">Turn off live editing</string>
+      <string id="DisableLiveEditing_Help">People can't start or join live editing sessions.</string>
+      <string id="DisableForms">Turn off forms and audience features</string>
+      <string id="DisableForms_Help">People can't publish forms, live polls, audience Q&amp;A or use the phone remote.</string>
+      <string id="DisableAddins">Turn off add-ins</string>
+      <string id="DisableAddins_Help">People can't install or run add-ins.</string>
+      <string id="DisableWebData">Turn off downloads from the web</string>
+      <string id="DisableWebData_Help">From Web (Sheets), Web Clip (Notes) and other downloads a document asks for are refused.</string>
+      <string id="DisableAutoUpdate">Turn off automatic updates</string>
+      <string id="DisableAutoUpdate_Help">Isadek Office doesn't update itself; deploy new versions yourself.</string>
+      <string id="DisableCrashReports">Turn off crash reports</string>
+      <string id="DisableCrashReports_Help">Crash reports are never sent, and people can't turn them on.</string>
+      <string id="DisableSpeechDownload">Turn off the speech model download</string>
+      <string id="DisableSpeechDownload_Help">On-device speech recognition can't download its model.</string>
+      <string id="LiveServers">Allowed live-editing servers</string>
+      <string id="LiveServers_Help">Live sessions only on these servers: their addresses (ws:// or wss://) separated by semicolons. Add "local" to allow sessions on the person's own computer. Not configured: any server.</string>
+      <string id="DefaultLanguage">Default interface language</string>
+      <string id="DefaultLanguage_Help">The interface language until a person chooses one (File → Language).</string>
+      <string id="Lang_en">English</string>
+      <string id="Lang_es">Español</string>
+      <string id="Lang_fr">Français</string>
+      <string id="Lang_de">Deutsch</string>
+      <string id="Lang_pt">Português</string>
+      <string id="Lang_it">Italiano</string>
+      <string id="Lang_ar">العربية</string>
+    </stringTable>
+    <presentationTable>
+      <presentation id="LiveServers"><textBox refId="LiveServers"><label>Servers:</label></textBox></presentation>
+      <presentation id="DefaultLanguage"><dropdownList refId="DefaultLanguage">Language:</dropdownList></presentation>
+    </presentationTable>
+  </resources>
+</policyDefinitionResources>

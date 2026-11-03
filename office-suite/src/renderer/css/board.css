@@ -1,0 +1,65 @@
+/* Isadek Whiteboard */
+body.app-board { --board-bg: #f8f9fa; --board-dot: #c7cbd1; --board-line: #e3e5e8; }
+:root[data-theme="dark"] body.app-board { --board-bg: #1b1c1f; --board-dot: #3a3d44; --board-line: #2a2c31; }
+.board-work { position: relative; flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.board { flex: 1; width: 100%; height: 100%; display: block; outline: none; touch-action: none; user-select: none; background: var(--board-bg); cursor: default; }
+.board .bg { fill: transparent; }
+.board .bg-dot { fill: var(--board-dot); }
+.board .bg-line { stroke: var(--board-line); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.board.panning, .board.can-pan, body[data-board-tool="hand"] .board { cursor: grab; }
+.board.panning { cursor: grabbing; }
+body[data-board-tool="sticky"] .board, body[data-board-tool="text"] .board, body[data-board-tool="frame"] .board, body[data-board-tool="shape"] .board, body[data-board-tool="connector"] .board { cursor: crosshair; }
+body[data-board-tool="pen"] .board, body[data-board-tool="highlighter"] .board { cursor: crosshair; }
+body[data-board-tool="eraser"] .board { cursor: cell; }
+/* While drawing, items don't take the pointer from the pen. */
+body[data-board-tool="pen"] .item, body[data-board-tool="highlighter"] .item { pointer-events: none; }
+body[data-board-tool="eraser"] .item:not(.item-ink) { pointer-events: none; }
+.item { cursor: move; }
+.item-text text, .item-sticky text, .item-shape text { pointer-events: none; }
+.sticky-shadow { fill: rgb(0 0 0 / .12); }
+:root[data-theme="dark"] .sticky-shadow { fill: rgb(0 0 0 / .45); }
+/* A frame holds what's on it: it's picked up by its title or its edge, not its inside. */
+.item-frame .frame-box { stroke: var(--border-strong, #c4c7cc); stroke-width: 1.5; vector-effect: non-scaling-stroke; pointer-events: visibleStroke; }
+:root[data-theme="dark"] .item-frame .frame-box { fill-opacity: .06; }
+.item-frame .frame-title { cursor: move; }
+:root[data-theme="dark"] .item-frame .frame-title { fill: #c4c7cc; }
+:root[data-theme="dark"] .item-text text[fill="#1f1f1f"] { fill: #e8eaed; }
+.item-ink .ink-hit { pointer-events: none; }
+.item-ink path { pointer-events: visibleStroke; }
+.item-ink path[stroke="none"], .item-ink path:not([stroke]) { pointer-events: visibleFill; }
+.item-connector .conn-hit { pointer-events: stroke; cursor: pointer; }
+.item-connector path:not(.conn-hit) { pointer-events: none; }
+/* Selection */
+.sel-box { fill: none; stroke: var(--accent); stroke-dasharray: 4 3; vector-effect: non-scaling-stroke; pointer-events: none; }
+.handle { fill: var(--surface); stroke: var(--accent); cursor: nwse-resize; }
+.handle[data-h="ne"], .handle[data-h="sw"] { cursor: nesw-resize; }
+.plus { cursor: pointer; }
+.plus circle { fill: var(--accent); stroke: var(--surface); stroke-width: 2; }
+.plus path { stroke: var(--on-accent, #fff); stroke-width: 2; stroke-linecap: round; }
+.plus:hover circle { fill: var(--accent-strong); }
+.marquee { fill: var(--accent-soft); fill-opacity: .5; stroke: var(--accent); vector-effect: non-scaling-stroke; }
+.create-preview, .conn-preview { fill: none; stroke: var(--accent); stroke-dasharray: 5 4; vector-effect: non-scaling-stroke; }
+.peer { pointer-events: none; }
+.peer-sel { fill: none; stroke-dasharray: 6 4; vector-effect: non-scaling-stroke; }
+/* Editing text on the board */
+.board-editor { position: absolute; z-index: 5; resize: none; border: 2px solid var(--accent); border-radius: 4px; padding: 10px 12px; margin: 0; box-sizing: border-box; font-family: Inter, "Segoe UI", system-ui, sans-serif; line-height: 1.3; color: #1f1f1f; outline: none; overflow: hidden; box-shadow: var(--sh-3); }
+.board-editor[hidden] { display: none; }
+.board-empty { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: var(--sp-3); color: var(--muted); text-align: center; pointer-events: none; }
+.board-empty[hidden] { display: none; }
+.board-empty > .ico svg { width: 56px; height: 56px; opacity: .45; }
+.board-empty h2 { margin: 0; color: var(--text); }
+/* The ribbon's shapes and colours */
+.shapes-grid { display: grid !important; grid-template-columns: repeat(4, auto); gap: 2px; }
+.swatches { display: grid !important; grid-template-columns: repeat(4, 22px); gap: 6px; align-content: center; }
+.swatch { width: 22px; height: 22px; border-radius: 50%; border: 1px solid rgb(0 0 0 / .18); cursor: pointer; padding: 0; }
+.swatch.on { box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--accent); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+/* Printing and PDF: the board, fitted to the page */
+.print-board { display: none; }
+@media print {
+  @page { size: landscape; margin: 12mm; }
+  body > *:not(.print-board) { display: none !important; }
+  .print-board { display: block !important; }
+  .print-board svg { width: 100%; height: auto; max-height: 180mm; }
+}
+@media (prefers-reduced-motion: no-preference) { .plus circle { transition: fill .12s; } }

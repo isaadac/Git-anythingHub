@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Isadek Office policies for Group Policy and Intune. Copy this file to
+     C:\Windows\PolicyDefinitions (or the central store) and en-US\isadek-office.adml beside it. -->
+<policyDefinitions xmlns:xsd="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" revision="1.0" schemaVersion="1.0" xmlns="http://schemas.microsoft.com/GroupPolicy/2006/07/PolicyDefinitions">
+  <policyNamespaces>
+    <target prefix="isadekoffice" namespace="Isadek.Policies.IsadekOffice" />
+    <using prefix="windows" namespace="Microsoft.Policies.Windows" />
+  </policyNamespaces>
+  <resources minRequiredRevision="1.0" />
+  <supportedOn>
+    <definitions><definition name="SUPPORTED_IsadekOffice" displayName="$(string.SUPPORTED_IsadekOffice)" /></definitions>
+  </supportedOn>
+  <categories>
+    <category name="IsadekOffice" displayName="$(string.IsadekOffice)" />
+  </categories>
+  <policies>
+    <policy name="DisableAssistant" class="Machine" displayName="$(string.DisableAssistant)" explainText="$(string.DisableAssistant_Help)" key="Software\Policies\Isadek\Office" valueName="DisableAssistant">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableCloudStorage" class="Machine" displayName="$(string.DisableCloudStorage)" explainText="$(string.DisableCloudStorage_Help)" key="Software\Policies\Isadek\Office" valueName="DisableCloudStorage">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableLiveEditing" class="Machine" displayName="$(string.DisableLiveEditing)" explainText="$(string.DisableLiveEditing_Help)" key="Software\Policies\Isadek\Office" valueName="DisableLiveEditing">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableForms" class="Machine" displayName="$(string.DisableForms)" explainText="$(string.DisableForms_Help)" key="Software\Policies\Isadek\Office" valueName="DisableForms">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableAddins" class="Machine" displayName="$(string.DisableAddins)" explainText="$(string.DisableAddins_Help)" key="Software\Policies\Isadek\Office" valueName="DisableAddins">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableWebData" class="Machine" displayName="$(string.DisableWebData)" explainText="$(string.DisableWebData_Help)" key="Software\Policies\Isadek\Office" valueName="DisableWebData">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableAutoUpdate" class="Machine" displayName="$(string.DisableAutoUpdate)" explainText="$(string.DisableAutoUpdate_Help)" key="Software\Policies\Isadek\Office" valueName="DisableAutoUpdate">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableCrashReports" class="Machine" displayName="$(string.DisableCrashReports)" explainText="$(string.DisableCrashReports_Help)" key="Software\Policies\Isadek\Office" valueName="DisableCrashReports">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="DisableSpeechDownload" class="Machine" displayName="$(string.DisableSpeechDownload)" explainText="$(string.DisableSpeechDownload_Help)" key="Software\Policies\Isadek\Office" valueName="DisableSpeechDownload">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <enabledValue><decimal value="1" /></enabledValue>
+      <disabledValue><decimal value="0" /></disabledValue>
+    </policy>
+    <policy name="LiveServers" class="Machine" displayName="$(string.LiveServers)" explainText="$(string.LiveServers_Help)" key="Software\Policies\Isadek\Office" presentation="$(presentation.LiveServers)">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <elements><text id="LiveServers" valueName="LiveServers" maxLength="2000" /></elements>
+    </policy>
+    <policy name="DefaultLanguage" class="Machine" displayName="$(string.DefaultLanguage)" explainText="$(string.DefaultLanguage_Help)" key="Software\Policies\Isadek\Office" presentation="$(presentation.DefaultLanguage)">
+      <parentCategory ref="IsadekOffice" />
+      <supportedOn ref="SUPPORTED_IsadekOffice" />
+      <elements><enum id="DefaultLanguage" valueName="DefaultLanguage">
+        <item displayName="$(string.Lang_en)"><value><string>en</string></value></item>
+        <item displayName="$(string.Lang_es)"><value><string>es</string></value></item>
+        <item displayName="$(string.Lang_fr)"><value><string>fr</string></value></item>
+        <item displayName="$(string.Lang_de)"><value><string>de</string></value></item>
+        <item displayName="$(string.Lang_pt)"><value><string>pt</string></value></item>
+        <item displayName="$(string.Lang_it)"><value><string>it</string></value></item>
+        <item displayName="$(string.Lang_ar)"><value><string>ar</string></value></item>
+      </enum></elements>
+    </policy>
+  </policies>
+</policyDefinitions>

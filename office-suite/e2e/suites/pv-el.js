@@ -1,0 +1,25 @@
+const { _electron: electron } = require('playwright');
+const path = require('path');
+const SP = process.env.E2E_WORK;
+(async () => {
+  const check = (n, c, x = '') => console.log((c ? 'PASS ' : 'FAIL ') + n + (x !== '' ? ' :: ' + x : ''));
+  const app = await electron.launch({ executablePath: path.join(process.cwd(), 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${SP}/ud-pv`, '.'], env: { ...process.env, NODE_OPTIONS: '' } });
+  const home = await app.firstWindow(); await new Promise(r => setTimeout(r, 1500));
+  await home.evaluate(() => window.atlas.newWindow('slides')); await new Promise(r => setTimeout(r, 2000));
+  const w = app.windows().find(x => x.url().includes('slides.html'));
+  await w.evaluate(() => { AtlasSlides.pres.slides[0].elements[0].html = '<div>Hello desktop</div>'; AtlasSlides.addSlide('content'); AtlasSlides.goTo(0); });
+  await w.evaluate(() => document.querySelector('[data-cmd="presenter-view"]').click());
+  await new Promise(r => setTimeout(r, 2500));
+  const aud = app.windows().find(x => /audience=1/.test(x.url()));
+  check('Presenter View opens an audience window', !!aud, app.windows().map(x => x.url().split('/').pop()).join());
+  const t = aud && await aud.evaluate(() => document.querySelector('#presentSlide').textContent);
+  check('the audience window shows the slide', /Hello desktop/.test(t || ''), t);
+  await w.keyboard.press('ArrowRight'); await new Promise(r => setTimeout(r, 800));
+  const n = await w.evaluate(() => document.getElementById('pvCount').textContent);
+  const t2 = await aud.evaluate(() => [...document.querySelectorAll('#presentSlide .el')].length);
+  check('next slide in both windows', n === 'Slide 2 of 2' && t2 >= 1, n + ' / ' + t2);
+  await w.keyboard.press('Escape'); await new Promise(r => setTimeout(r, 1000));
+  check('ending the show closes the audience window', !app.windows().some(x => /audience=1/.test(x.url())));
+  for (const x of app.windows()) await x.evaluate(() => { window.__atlasDirty = false; });
+  await require('../close-app')(app);
+})().then(() => process.exit(process.exitCode || 0)).catch(e => { console.error('CRASH', e.message); process.exit(1); });

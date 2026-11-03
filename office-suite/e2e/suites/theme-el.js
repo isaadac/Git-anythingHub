@@ -1,0 +1,30 @@
+const { _electron: electron } = require('playwright');
+const path = require('path');
+const ROOT = process.cwd();
+const check = (n, c, x = '') => { console.log((c ? 'PASS ' : 'FAIL ') + n + (x !== '' ? ' :: ' + x : '')); if (!c) process.exitCode = 1; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const ud = path.join(process.env.E2E_WORK, 'ud-theme-' + Date.now());
+  const launch = () => electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${ud}`, '.'], env: { ...process.env, NODE_OPTIONS: '' } });
+  let app = await launch();
+  const home = await app.firstWindow(); await sleep(1200);
+  await home.evaluate(() => window.atlas.newWindow('sheets'));
+  let s; for (let i = 0; i < 40 && !s; i++) { await sleep(250); s = app.windows().find(w => w.url().includes('sheets.html')); }
+  await s.waitForFunction(() => window.Theme);
+  check('starts light (system is light here)', (await s.evaluate(() => document.documentElement.dataset.theme)) === 'light');
+  await home.click('#themeBtn');
+  await home.click('.modal .actions button:has-text("Dark")');
+  await sleep(400);
+  check('home switches to dark', (await home.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
+  check('other open windows follow', (await s.evaluate(() => document.documentElement.dataset.theme)) === 'dark');
+  check('native theme follows', await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource === 'dark' && nativeTheme.shouldUseDarkColors));
+  check('grid uses dark colours', (await s.evaluate(() => getComputedStyle(document.getElementById('gridWrap')).backgroundColor)) === 'rgb(31, 31, 31)');
+  await require('../close-app')(app);
+  app = await launch();
+  const h2 = await app.firstWindow(); await sleep(1200);
+  check('choice remembered after restart', (await h2.evaluate(() => document.documentElement.dataset.theme)) === 'dark' && await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource === 'dark'));
+  await h2.evaluate(() => Theme.set('system'));
+  await sleep(200);
+  check('back to the system setting', (await h2.evaluate(() => [document.documentElement.dataset.themeMode, document.documentElement.dataset.theme].join())) === 'system,light' && await app.evaluate(({ nativeTheme }) => nativeTheme.themeSource === 'system'));
+  await require('../close-app')(app);
+})().then(() => process.exit(process.exitCode || 0)).catch(e => { console.log('FAIL exception', e); process.exit(1); });

@@ -1,0 +1,114 @@
+const { _electron: electron } = require('playwright');
+const path = require('path'), http = require('http'), fs = require('fs');
+const ROOT = process.cwd();
+const check = (n, c, x = '') => { console.log((c ? 'PASS ' : 'FAIL ') + n + (x !== '' ? ' :: ' + x : '')); if (!c) process.exitCode = 1; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+(async () => {
+  const reqs = [];
+  let reply = 'Hello';
+  const srv = http.createServer(async (req, res) => {
+    let b = ''; for await (const c of req) b += c;
+    const body = JSON.parse(b || '{}');
+    reqs.push({ url: req.url, headers: req.headers, body });
+    if ((req.headers['x-api-key'] || String(req.headers.authorization).replace(/^Bearer /, '')) !== 'sk-ant-test-key-1234567890') { res.writeHead(401, { 'content-type': 'application/json' }); return res.end(JSON.stringify({ type: 'error', error: { type: 'authentication_error', message: 'invalid x-api-key' } })); }
+    res.writeHead(200, { 'content-type': 'text/event-stream' });
+    const ev = (t, d) => res.write(`event: ${t}\ndata: ${JSON.stringify({ type: t, ...d })}\n\n`);
+    const r = typeof reply === 'function' ? reply(body) : reply;
+    ev('message_start', { message: { id: 'msg_1', type: 'message', role: 'assistant', model: body.model, content: [], stop_reason: null, usage: { input_tokens: 10, output_tokens: 0 } } });
+    ev('content_block_start', { index: 0, content_block: { type: 'text', text: '' } });
+    for (const part of r.match(/[\s\S]{1,7}/g)) { ev('content_block_delta', { index: 0, delta: { type: 'text_delta', text: part } }); await sleep(15); }
+    ev('content_block_stop', { index: 0 });
+    ev('message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 5 } });
+    ev('message_stop', {});
+    res.end();
+  });
+  await new Promise(r => srv.listen(0, '127.0.0.1', r));
+  const ud = path.join(process.env.E2E_WORK, 'ud-ai-' + Date.now());
+  const env = { ...process.env, NODE_OPTIONS: '', ANTHROPIC_BASE_URL: `http://127.0.0.1:${srv.address().port}` };
+  delete env.ANTHROPIC_API_KEY;
+  const app = await electron.launch({ executablePath: path.join(ROOT, 'node_modules/electron/dist/electron'), args: ['--no-sandbox', `--user-data-dir=${ud}`, '.'], env });
+  const home = await app.firstWindow(); await sleep(1200);
+  const win = async name => { let w; for (let i = 0; i < 40 && !w; i++) { await sleep(250); w = app.windows().find(x => x.url().includes(name)); } return w; };
+  await home.evaluate(() => window.atlas.newWindow('write'));
+  const w = await win('write.html');
+  await w.waitForFunction(() => document.querySelector('.ai-btn'));
+  const bad = await w.evaluate(() => window.atlas.aiSetKey('not a key'));
+  check('bad key refused', !!bad.error);
+  await w.evaluate(() => window.atlas.aiSetKey('sk-ant-test-key-1234567890'));
+  const kf = fs.readFileSync(path.join(ud, 'assistant-key.bin'));
+  const enc = await app.evaluate(({ safeStorage }) => safeStorage.isEncryptionAvailable());
+  check('key stored privately' + (enc ? ', encrypted' : ''), (fs.statSync(path.join(ud, 'assistant-key.bin')).mode & 0o077) === 0 && (!enc || !kf.toString().includes('sk-ant')));
+  check('the page never sees the key', !JSON.stringify(await w.evaluate(() => window.atlas.aiStatus())).includes('sk-ant'));
+  // Write: improve the selected text, then replace it
+  await w.click('#doc'); await w.keyboard.type('Ths sentense has erors.'); await w.keyboard.press('Enter'); await w.keyboard.type('Second paragraph.');
+  await w.evaluate(() => { const p = document.querySelector('#doc p'); const r = document.createRange(); r.selectNodeContents(p); getSelection().removeAllRanges(); getSelection().addRange(r); });
+  await w.click('.ai-btn');
+  reply = 'This sentence has errors.';
+  await w.click('.ai-actions .chip:has-text("Fix spelling")');
+  await w.waitForSelector('.ai-msg.assistant .ai-use', { timeout: 10000 });
+  const q = reqs[reqs.length - 1];
+  check('request: model, adaptive thinking, effort, fallback', q.body.model === 'claude-opus-5-5' && q.body.thinking.type === 'adaptive' && q.body.output_config.effort === 'medium' && q.body.fallbacks === 'default' && /server-side-fallback-2026-07-01/.test(q.headers['anthropic-beta']) && q.body.stream === true, JSON.stringify({ m: q.body.model, t: q.body.thinking, e: q.body.output_config, f: q.body.fallbacks, b: q.headers['anthropic-beta'] }));
+  const um = q.body.messages[0].content;
+  check('document and selection sent with the question', um.includes('<document>') && um.includes('Second paragraph.') && um.includes('<selection>\nThs sentense has erors.') && /spelling/.test(um), um.slice(0, 200));
+  check('reply streamed into the pane', (await w.textContent('.ai-msg.assistant .body')) === 'This sentence has errors.');
+  await w.click('.ai-use button:has-text("Replace selection")');
+  const paras = await w.$$eval('#doc > *', ns => ns.map(n => n.textContent));
+  check('Replace selection put the fix in place', paras[0] === 'This sentence has errors.' && paras[1] === 'Second paragraph.', paras.join('|'));
+  // follow-up keeps history but sends the document only with the newest question
+  reply = '# Plan\n\n- one\n- two';
+  await w.fill('.ai-input textarea', 'Give me a plan');
+  await w.press('.ai-input textarea', 'Enter');
+  await w.waitForFunction(() => document.querySelectorAll('.ai-msg.assistant .ai-use').length === 2);
+  const q2 = reqs[reqs.length - 1].body.messages;
+  check('history kept, document only in the last turn', q2.length === 3 && !q2[0].content.includes('<document>') && q2[1].role === 'assistant' && q2[2].content.includes('<document>'), q2.map(m => m.role + ':' + m.content.length).join(','));
+  await w.click('#doc > p:nth-child(2)'); await w.keyboard.press('End');
+  await w.click('.ai-msg.assistant >> nth=1 >> button:has-text("Insert")');
+  const html = await w.$eval('#doc', d => d.innerHTML);
+  check('Markdown reply inserted as a heading and a list', /<h1[^>]*>Plan<\/h1>/.test(html) && /<li>one<\/li>/.test(html), html.slice(0, 300));
+  // stop
+  reply = 'x'.repeat(2000);
+  await w.fill('.ai-input textarea', 'long');
+  await w.press('.ai-input textarea', 'Enter');
+  await sleep(150);
+  await w.click('.ai-input .send');
+  await w.waitForFunction(() => document.querySelector('.ai-input .send').textContent === 'Send', null, { timeout: 5000 });
+  check('Stop cancels the reply', (await w.$$eval('.ai-msg.assistant .body', b => b[b.length - 1].textContent.length)) < 2000);
+  // Sheets
+  await home.evaluate(() => window.atlas.newWindow('sheets'));
+  const s = await win('sheets.html');
+  await s.waitForFunction(() => window.AtlasSheets && document.querySelector('.ai-btn'));
+  await s.evaluate(() => { AtlasSheets.setCell('A1', 'Price'); AtlasSheets.setCell('A2', 10); AtlasSheets.setCell('A3', 32); AtlasSheets.select(3, 0); });
+  await s.click('.ai-btn');
+  reply = '=SUM(A2:A3)\n\nAdds up the prices.';
+  await s.click('.ai-actions .chip:has-text("Write a formula")');
+  await s.waitForSelector('.ai-msg.assistant .ai-use');
+  const sq = reqs[reqs.length - 1].body.messages[0].content;
+  check('sheet sent as a grid with the active cell', sq.includes('1\tPrice') && sq.includes('The active cell is A4'), sq.slice(0, 200));
+  await s.click('.ai-use button:has-text("Put in sheet")');
+  check('formula put in the active cell (explanation dropped)', (await s.evaluate(() => AtlasSheets.valueOf('A4'))) === 42);
+  reply = '| Name | Qty |\n|---|---|\n| Apples | 3 |\n| Pears | 5 |';
+  await s.evaluate(() => AtlasSheets.select(0, 3));
+  await s.fill('.ai-input textarea', 'table'); await s.press('.ai-input textarea', 'Enter');
+  await s.waitForFunction(() => document.querySelectorAll('.ai-msg.assistant .ai-use').length === 2);
+  await s.click('.ai-msg.assistant >> nth=1 >> button:has-text("Put in sheet")');
+  check('Markdown table pasted as cells', (await s.evaluate(() => [AtlasSheets.valueOf('D1'), AtlasSheets.valueOf('E3')].join())) === 'Name,5');
+  // Slides
+  await home.evaluate(() => window.atlas.newWindow('slides'));
+  const p = await win('slides.html');
+  await p.waitForFunction(() => window.AtlasSlides && document.querySelector('.ai-btn'));
+  await p.click('.ai-btn');
+  reply = '## Why it matters\n- Faster\n- Cheaper\nNotes: open with a story\n\n## Next steps\n- Pilot in March';
+  await p.click('.ai-actions .chip:has-text("Draft slides")');
+  check('Draft slides asks for the topic first', (await p.inputValue('.ai-input textarea')).startsWith('Draft 5 to 8 slides'));
+  await p.keyboard.type('solar panels'); await p.keyboard.press('Enter');
+  await p.waitForSelector('.ai-msg.assistant .ai-use');
+  await p.click('.ai-use button:has-text("Add as slides")');
+  const deck = await p.evaluate(() => AtlasSlides.pres.slides.map(s => [s.elements.map(e => e.html).filter(Boolean).join(' / '), s.notes]));
+  check('outline became slides with bullets and notes', deck.length === 3 && deck[1][0].includes('Why it matters') && deck[1][0].includes('<li>Cheaper</li>') && deck[1][1] === 'open with a story' && deck[2][0].includes('Pilot in March'), JSON.stringify(deck));
+  // bad key
+  await p.evaluate(() => window.atlas.aiSetKey('sk-ant-wrong-key-000000000000'));
+  await p.fill('.ai-input textarea', 'hi'); await p.press('.ai-input textarea', 'Enter');
+  await p.waitForSelector('.ai-msg.error', { timeout: 10000 });
+  check('a rejected key gives a clear message', /not accepted/.test(await p.textContent('.ai-msg.error')));
+  await require('../close-app')(app); srv.close();
+})().then(() => process.exit(process.exitCode || 0)).catch(e => { console.log('FAIL exception', e); process.exit(1); });

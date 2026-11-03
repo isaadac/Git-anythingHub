@@ -1,0 +1,21 @@
+{
+  "id": "io.github.isaadac.word-goal",
+  "name": "Word Goal",
+  "version": "1.0.0",
+  "author": "Isadek Office samples",
+  "description": "Shows how far the document is toward a number of words.",
+  "apps": [
+    "write"
+  ],
+  "permissions": [
+    "read"
+  ],
+  "commands": [
+    {
+      "id": "show",
+      "label": "Word Goal",
+      "icon": "target"
+    }
+  ],
+  "script": "// Word Goal: how far the document is toward a number of words.\nlet goal = 500;\nasync function show() {\n  const text = await isadek.document.getText();\n  const words = (text.match(/[\\p{L}\\p{N}’'-]+/gu) || []).length;\n  const left = Math.max(0, goal - words);\n  await isadek.ui.showPane('Word Goal', [\n    { type: 'heading', text: words.toLocaleString() + ' of ' + goal.toLocaleString() + ' words' },\n    { type: 'progress', value: words / goal, label: 'Progress toward the goal' },\n    { type: 'text', text: left ? left.toLocaleString() + ' to go.' : 'Goal reached. Well done!' },\n    { type: 'input', id: 'goal', label: 'Goal (words)', inputType: 'number', value: goal },\n    { type: 'button', id: 'set', label: 'Set Goal', primary: true },\n    { type: 'button', id: 'refresh', label: 'Count Again' }\n  ]);\n}\nisadek.onCommand('show', show);\nisadek.onAction('refresh', show);\nisadek.onAction('set', async values => {\n  const n = Math.round(Number(values.goal));\n  if (!(n > 0)) return isadek.ui.toast('Type a number of words');\n  goal = n;\n  await show();\n});"
+}
